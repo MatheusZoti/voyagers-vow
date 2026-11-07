@@ -61,7 +61,7 @@ export const emptyInput = (): PlayerInput => ({ move: { x: 0, y: 0 }, aim: { x: 
 export type NoticeTone = 'info' | 'good' | 'bad' | 'warn' | 'memory' | 'crisis';
 
 export type SimEvent =
-  | { t: 'damage'; x: number; y: number; amount: number; target: 'enemy' | 'player'; crit?: boolean; pierce?: boolean; immune?: boolean }
+  | { t: 'damage'; x: number; y: number; amount: number; target: 'enemy' | 'player'; id?: number; crit?: boolean; pierce?: boolean; immune?: boolean }
   | { t: 'swing'; x: number; y: number; dir: Vec2; range: number }
   | { t: 'signature'; from: Vec2; to: Vec2; radius: number; beyond: boolean }
   | { t: 'pointCharge' }
@@ -538,7 +538,7 @@ export class Simulation {
       if (e.state === 'dead') continue;
       if (dist(e.pos, center) > radius + e.def.radius) continue;
       if (slot.restrictions.includes('eliteOnly') && !e.def.elite) {
-        this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: 0, target: 'enemy', immune: true });
+        this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: 0, target: 'enemy', id: e.id, immune: true });
         continue;
       }
       hits++;
@@ -593,7 +593,7 @@ export class Simulation {
     e.hurtAgo = 0;
     e.aggro = true;
     if (e.def.boss) p.bossEngaged = true;
-    this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: dmg, target: 'enemy', crit, pierce: opts.ignoreArmor && e.def.armor > 0 });
+    this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: dmg, target: 'enemy', id: e.id, crit, pierce: opts.ignoreArmor && e.def.armor > 0 });
     if (e.hp <= 0) this.killEnemy(e);
   }
 

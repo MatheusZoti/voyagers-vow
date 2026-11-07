@@ -1,0 +1,480 @@
+import * as THREE from 'three';
+import { AFFINITY_COLORS } from '../../sim/flow/affinity';
+import { POSTURES, type Posture } from '../../sim/flow/flow';
+import type { Vec2 } from '../../sim/math';
+import type { SimEvent, Simulation } from '../../sim/sim';
+import type { Enemy } from '../../sim/world/entities';
+import { Effects } from './fx';
+import {
+  animateRig,
+  buildBoss,
+  buildBrute,
+  buildGrunt,
+  buildPlayer,
+  buildStalker,
+  flash,
+  mat,
+  rememberEmissive,
+  setOpacity,
+  type Rig,
+} from './models';
+import { buildWorld, type WorldView } from './world';
+
+const CAM_OFFSET = new THREE.Vector3(0, 17, 12.5);
+
+interface EnemyView {
+  rig: Rig;
+  bar: THREE.Group;
+  barFill: THREE.Mesh;
+  last: THREE.Vector3;
+  dead: number;
+  hurt: number;
+  attack: number;
+}
+
+interface Floater {
+  el: HTMLDivElement;
+  pos: THREE.Vector3;
+  age: number;
+  life: number;
+}
+
+export class GameView {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene = new THREE.Scene();
+  readonly camera: THREE.PerspectiveCamera;
+  private sun: THREE.DirectionalLight;
+  private world: WorldView;
+  private fx: Effects;
+  private player: Rig;
+  private playerLast = new THREE.Vector3();
+  private enemies = new Map<number, EnemyView>();
+  private aura: Record<Posture, THREE.Object3D>;
+  private tideAtk: THREE.Mesh;
+  private tideDef: THREE.Mesh;
+  private tideShown = -1;
+  private impetusLight: THREE.PointLight;
+  private trapMeshes: THREE.Group[] = [];
+  private echoMesh: THREE.Group;
+  private dangerRing: THREE.Mesh;
+  private floaters: Floater[] = [];
+  private raycaster = new THREE.Raycaster();
+  private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private time = 0;
+  private shake = 0;
+  private camTarget = new THREE.Vector3();
+  private playerHurt = 0;
+
+  constructor(
+    private host: HTMLElement,
+    private floaterLayer: HTMLElement,
+    private sim: Simulation,
+  ) {
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    host.appendChild(this.renderer.domElement);
+
+    this.scene.background = new THREE.Color('#9fd3ee');
+    this.scene.fog = new THREE.Fog('#9fd3ee', 28, 62);
+    this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 200);
+
+    this.scene.add(new THREE.HemisphereLight('#dff3ff', '#4c6b2e', 1.1));
+    this.sun = new THREE.DirectionalLight('#fff0d4', 2.4);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    const sc = this.sun.shadow.camera;
+    sc.left = -26;
+    sc.right = 26;
+    sc.top = 26;
+    sc.bottom = -26;
+    sc.near = 1;
+    sc.far = 80;
+    this.sun.shadow.bias = -0.0006;
+    this.sun.shadow.normalBias = 0.03;
+    this.scene.add(this.sun, this.sun.target);
+
+    this.world = buildWorld(sim.map);
+    this.scene.add(this.world.group);
+    this.fx = new Effects(this.scene);
+
+    this.player = buildPlayer(AFFINITY_COLORS[sim.c.affinity]);
+    rememberEmissive(this.player);
+    this.scene.add(this.player.root);
+
+    // Auras das posturas.
+    const additive = (color: string, opacity: number) =>
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const veil = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), additive(POSTURES.veil.color, 0.06));
+    veil.position.y = 1;
+    veil.scale.set(0.85, 1.15, 0.85);
+    const impetus = new THREE.Group();
+    for (let i = 0; i < 7; i++) {
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.9, 4), additive(POSTURES.impetus.color, 0.55));
+      const a = (i / 7) * Math.PI * 2;
+      flame.position.set(Math.cos(a) * 0.55, 0.5, Math.sin(a) * 0.55);
+      flame.userData.phase = i;
+      impetus.add(flame);
+    }
+    const gaze = new THREE.Group();
+    const gazeRing = new THREE.Mesh(new THREE.RingGeometry(13.6, 14, 64), additive(POSTURES.gaze.color, 0.18));
+    gazeRing.rotation.x = -Math.PI / 2;
+    gazeRing.position.y = 0.06;
+    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), new THREE.MeshBasicMaterial({ color: '#e7c8ff' }));
+    const eyeR = eyeL.clone();
+    eyeL.position.set(-0.08, 1.64, 0.21);
+    eyeR.position.set(0.08, 1.64, 0.21);
+    gaze.add(gazeRing);
+    this.player.body.add(eyeL, eyeR);
+    eyeL.userData.gazeEye = eyeR.userData.gazeEye = true;
+    const silence = new THREE.Group();
+    this.aura = { veil, impetus, gaze, silence };
+    for (const o of Object.values(this.aura)) this.player.root.add(o);
+    this.impetusLight = new THREE.PointLight('#ff8a2a', 0, 6, 2);
+    this.impetusLight.position.y = 1.2;
+    this.player.root.add(this.impetusLight);
+
+    this.tideAtk = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.86, 32), additive('#ff7a3a', 0.8));
+    this.tideDef = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.86, 32), additive('#4ab8ff', 0.8));
+    for (const r of [this.tideAtk, this.tideDef]) {
+      r.rotation.x = -Math.PI / 2;
+      r.position.y = 0.07;
+      this.player.root.add(r);
+    }
+    this.dangerRing = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.1, 32), additive('#ff2a2a', 0.0));
+    this.dangerRing.rotation.x = -Math.PI / 2;
+    this.dangerRing.position.y = 0.08;
+    this.player.root.add(this.dangerRing);
+
+    // Armadilhas (só aparecem sob o Olhar).
+    const trapMat = mat('#6c4a8c', { emissive: '#a060ff', emissiveIntensity: 0.8 });
+    for (const t of sim.traps) {
+      const g = new THREE.Group();
+      const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.5, 0.06, 6), trapMat);
+      g.add(plate);
+      for (let i = 0; i < 5; i++) {
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.3, 4), trapMat);
+        const a = (i / 5) * Math.PI * 2;
+        spike.position.set(Math.cos(a) * 0.25, 0.15, Math.sin(a) * 0.25);
+        g.add(spike);
+      }
+      g.position.set(t.pos.x, 0.03, t.pos.y);
+      g.visible = false;
+      this.scene.add(g);
+      this.trapMeshes.push(g);
+    }
+
+    // Eco do jogador.
+    this.echoMesh = new THREE.Group();
+    const ghost = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.6, 6), additive('#a8e6ff', 0.45));
+    ghost.position.y = 1;
+    ghost.rotation.x = Math.PI;
+    const wisp = new THREE.PointLight('#a8e6ff', 4, 5, 2);
+    wisp.position.y = 1.2;
+    this.echoMesh.add(ghost, wisp);
+    this.echoMesh.visible = false;
+    this.scene.add(this.echoMesh);
+
+    this.resize();
+    window.addEventListener('resize', () => this.resize());
+    const p = sim.player.pos;
+    this.camTarget.set(p.x, 0, p.y);
+    this.playerLast.set(p.x, 0, p.y);
+  }
+
+  resize(): void {
+    const w = this.host.clientWidth || window.innerWidth;
+    const h = this.host.clientHeight || window.innerHeight;
+    this.renderer.setSize(w, h);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** Converte o cursor em ponto do chão (coordenadas do mundo). */
+  screenToGround(clientX: number, clientY: number): Vec2 | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const hit = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(this.groundPlane, hit)) return null;
+    return { x: hit.x, y: hit.z };
+  }
+
+  private enemyView(e: Enemy): EnemyView {
+    let v = this.enemies.get(e.id);
+    if (v) return v;
+    const rig =
+      e.kind === 'grunt' ? buildGrunt() : e.kind === 'stalker' ? buildStalker() : e.kind === 'brute' ? buildBrute() : buildBoss();
+    rememberEmissive(rig);
+    const bar = new THREE.Group();
+    const bg = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.12), new THREE.MeshBasicMaterial({ color: '#1a1010', depthTest: false, transparent: true, opacity: 0.8 }));
+    const fill = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.06, 0.08),
+      new THREE.MeshBasicMaterial({ color: e.def.elite ? '#ffb02a' : '#e8433a', depthTest: false }),
+    );
+    fill.position.z = 0.001;
+    bg.renderOrder = 10;
+    fill.renderOrder = 11;
+    bar.add(bg, fill);
+    bar.position.y = rig.height + 0.35;
+    bar.visible = false;
+    if (!e.def.boss) rig.root.add(bar);
+    this.scene.add(rig.root);
+    v = { rig, bar, barFill: fill, last: new THREE.Vector3(e.pos.x, 0, e.pos.y), dead: 0, hurt: 0, attack: 0 };
+    rig.root.position.copy(v.last);
+    this.enemies.set(e.id, v);
+    return v;
+  }
+
+  handleEvents(events: SimEvent[]): void {
+    const sim = this.sim;
+    for (const ev of events) {
+      switch (ev.t) {
+        case 'swing':
+          this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range, POSTURES[sim.player.posture].color);
+          break;
+        case 'signature': {
+          const color = ev.beyond ? '#ffd84a' : AFFINITY_COLORS[sim.c.affinity];
+          this.fx.dashTrail(ev.from, ev.to, color);
+          this.fx.shockwave(ev.to, ev.radius * 1.6, color, 0.5, 0.3);
+          this.fx.burst(ev.to, color, 14, 4);
+          if (ev.beyond) this.fx.pillar(ev.to, '#ffd84a', 5, 0.7);
+          this.shake = Math.max(this.shake, 0.25);
+          break;
+        }
+        case 'pointCharge':
+          this.fx.pillar(sim.player.pos, '#ffffff', 2.5, 0.35);
+          break;
+        case 'telegraph':
+          this.fx.telegraph({ x: ev.x, y: ev.y }, ev.r, ev.duration, ev.heavy);
+          break;
+        case 'enemySwing': {
+          const e = sim.enemies.find((x) => x.id === ev.id);
+          if (e) {
+            this.fx.swing(e.pos, ev.dir, ev.range, '#ff6a4a');
+            const v = this.enemies.get(e.id);
+            if (v) v.attack = 0.3;
+          }
+          break;
+        }
+        case 'damage': {
+          const at = new THREE.Vector3(ev.x, 2, ev.y);
+          if (ev.target === 'enemy') {
+            const e = sim.enemies.find((x) => x.id === ev.id);
+            if (e) {
+              const v = this.enemies.get(e.id);
+              if (v) v.hurt = 0.12;
+              at.y = (v?.rig.height ?? 2) + 0.2;
+            }
+            if (ev.immune) this.floater(at, 'imune', 'imm');
+            else this.floater(at, String(ev.amount), ev.crit ? 'crit' : ev.pierce ? 'pierce' : 'hit');
+            if (!ev.immune) this.fx.burst({ x: ev.x, y: ev.y }, ev.crit ? '#ffffff' : '#ffd08a', ev.crit ? 12 : 4, 2.5, 1);
+            if (ev.crit) this.shake = Math.max(this.shake, 0.3);
+          } else {
+            this.floater(at, `-${ev.amount}`, 'hurt');
+            this.playerHurt = 0.1;
+            this.shake = Math.max(this.shake, Math.min(0.5, ev.amount / 60));
+          }
+          break;
+        }
+        case 'heal':
+          this.floater(new THREE.Vector3(sim.player.pos.x, 2.2, sim.player.pos.y), `+${ev.amount}`, 'heal');
+          break;
+        case 'enemyDeath':
+          this.fx.burst({ x: ev.x, y: ev.y }, ev.boss ? '#7fd3ff' : '#c9b48a', ev.boss ? 40 : 12, ev.boss ? 7 : 3.5);
+          if (ev.boss) {
+            this.fx.shockwave({ x: ev.x, y: ev.y }, 9, '#7fd3ff', 1.2, 0.2);
+            this.fx.pillar({ x: ev.x, y: ev.y }, '#7fd3ff', 9, 1.4);
+          }
+          break;
+        case 'perfectTide':
+          this.fx.shockwave({ x: ev.x, y: ev.y }, 3, '#7fe8ff', 0.6, 0.35);
+          this.floater(new THREE.Vector3(ev.x, 2.6, ev.y), 'Maré perfeita', 'perfect');
+          break;
+        case 'trap':
+          this.fx.burst({ x: ev.x, y: ev.y }, '#b48cff', 12, 3, 0.3);
+          break;
+        case 'playerDeath':
+          this.fx.burst({ x: ev.x, y: ev.y }, '#a8e6ff', 24, 4);
+          break;
+        case 'levelUp':
+          this.fx.pillar(sim.player.pos, '#ffe9a0', 4, 1);
+          this.fx.shockwave(sim.player.pos, 3, '#ffe9a0', 0.8);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  private floater(pos: THREE.Vector3, text: string, cls: string): void {
+    const el = document.createElement('div');
+    el.className = `floater ${cls}`;
+    el.textContent = text;
+    this.floaterLayer.appendChild(el);
+    pos.x += (Math.random() - 0.5) * 0.4;
+    this.floaters.push({ el, pos, age: 0, life: cls === 'perfect' ? 1.4 : 0.9 });
+  }
+
+  render(dt: number): void {
+    const sim = this.sim;
+    const p = sim.player;
+    this.time += dt;
+    this.world.update(this.time);
+
+    // Jogador.
+    const target = new THREE.Vector3(p.pos.x, 0, p.pos.y);
+    const prev = this.player.root.position.clone();
+    const snap = prev.distanceTo(target) > 3;
+    this.player.root.position.lerp(target, snap ? 1 : Math.min(1, dt * 18));
+    const speed = prev.distanceTo(this.player.root.position) / Math.max(dt, 1e-4);
+    const yaw = Math.atan2(p.facing.x, p.facing.y);
+    this.player.body.rotation.y = lerpAngle(this.player.body.rotation.y, yaw, Math.min(1, dt * 16));
+    animateRig(this.player, dt, p.dead ? 0 : speed, { attack: p.attackAnim > 0 ? p.attackAnim / 0.3 : 0, windup: 0, dead: p.dead ? 3 - p.respawnIn : 0 });
+    setOpacity(this.player, p.posture === 'silence' ? 0.45 : 1);
+
+    // Auras.
+    for (const [k, o] of Object.entries(this.aura) as Array<[Posture, THREE.Object3D]>) o.visible = !p.dead && p.posture === k;
+    this.aura.veil.scale.setScalar(1 + Math.sin(this.time * 3) * 0.03);
+    (this.aura.veil as THREE.Mesh).scale.y = 1.15;
+    const veilMat = (this.aura.veil as THREE.Mesh).material as THREE.MeshBasicMaterial;
+    veilMat.opacity = p.flow > 0 ? 0.06 : 0.015;
+    this.aura.impetus.children.forEach((f) => {
+      const ph = f.userData.phase as number;
+      f.scale.y = 0.7 + Math.abs(Math.sin(this.time * 9 + ph * 1.7)) * 0.9;
+      f.position.y = 0.4 + f.scale.y * 0.3;
+    });
+    this.aura.impetus.rotation.y += dt * 2;
+    this.impetusLight.intensity = p.posture === 'impetus' && !p.dead ? 5 + Math.sin(this.time * 20) * 1.2 : 0;
+    this.player.body.traverse((o) => {
+      if (o.userData.gazeEye) o.visible = p.posture === 'gaze';
+    });
+    // Ponto carregado: punhos brilham.
+    const charged = sim.time < p.pointUntil;
+    const dz = sim.time < p.defenseZeroUntil;
+    (this.dangerRing.material as THREE.MeshBasicMaterial).opacity = dz ? 0.5 + Math.sin(this.time * 25) * 0.3 : 0;
+    this.playerHurt = Math.max(0, this.playerHurt - dt);
+    flash(this.player, this.playerHurt > 0 ? 1 : charged ? 0.5 + Math.sin(this.time * 18) * 0.35 : 0);
+
+    // Anel da Maré.
+    const tv = Math.round(p.tide.value * 50) / 50;
+    if (tv !== this.tideShown) {
+      this.tideShown = tv;
+      const atk = Math.max(0.001, tv * Math.PI * 2);
+      this.tideAtk.geometry.dispose();
+      this.tideDef.geometry.dispose();
+      this.tideAtk.geometry = new THREE.RingGeometry(0.7, 0.86, 32, 1, Math.PI / 2, atk);
+      this.tideDef.geometry = new THREE.RingGeometry(0.7, 0.86, 32, 1, Math.PI / 2 + atk, Math.max(0.001, Math.PI * 2 - atk));
+    }
+    this.tideAtk.visible = this.tideDef.visible = !p.dead;
+
+    // Inimigos.
+    for (const e of sim.enemies) {
+      const v = this.enemyView(e);
+      const dead = e.state === 'dead';
+      if (dead) v.dead += dt;
+      else if (v.dead > 0) {
+        v.dead = 0;
+        v.rig.root.position.set(e.pos.x, 0, e.pos.y);
+      }
+      const t = new THREE.Vector3(e.pos.x, 0, e.pos.y);
+      const before = v.rig.root.position.clone();
+      v.rig.root.position.lerp(t, Math.min(1, dt * 15));
+      const sp = dead ? 0 : before.distanceTo(v.rig.root.position) / Math.max(dt, 1e-4);
+      v.rig.body.rotation.y = lerpAngle(v.rig.body.rotation.y, Math.atan2(e.facing.x, e.facing.y), Math.min(1, dt * 10));
+      const windup = e.state === 'windup' && e.attack ? 1 - e.timer / e.attack.windup : 0;
+      v.attack = Math.max(0, v.attack - dt);
+      animateRig(v.rig, dt, sp, { attack: v.attack / 0.3, windup, dead: dead ? v.dead : 0 });
+      let opacity = dead ? Math.max(0, 1 - Math.max(0, v.dead - 1.2) / 0.8) : 1;
+      if (e.def.shadowed && !dead) opacity = e.revealed ? 0.8 : 0;
+      setOpacity(v.rig, opacity);
+      v.hurt = Math.max(0, v.hurt - dt);
+      flash(v.rig, v.hurt > 0 ? 1 : 0);
+      v.bar.visible = !dead && opacity > 0.1 && (e.hp < e.def.hp || e.aggro);
+      if (v.bar.visible) {
+        const k = Math.max(0, e.hp / e.def.hp);
+        v.barFill.scale.x = Math.max(0.001, k);
+        v.barFill.position.x = -(1 - k) * 0.53;
+        v.bar.quaternion.copy(this.camera.quaternion);
+      }
+    }
+    // Remove vistas de inimigos que saíram da simulação (servos invocados).
+    for (const [id, v] of this.enemies) {
+      if (!sim.enemies.some((e) => e.id === id)) {
+        this.scene.remove(v.rig.root);
+        this.enemies.delete(id);
+      }
+    }
+
+    // Armadilhas e Eco.
+    sim.traps.forEach((t, i) => {
+      const m = this.trapMeshes[i]!;
+      m.visible = t.armed && t.revealed;
+      m.rotation.y += dt * 0.5;
+    });
+    if (sim.echo) {
+      this.echoMesh.visible = true;
+      this.echoMesh.position.set(sim.echo.pos.x, Math.sin(this.time * 2) * 0.15, sim.echo.pos.y);
+    } else this.echoMesh.visible = false;
+
+    // Câmera estilo Albion: inclinada, fixa, seguindo o personagem.
+    this.camTarget.lerp(this.player.root.position, Math.min(1, dt * 6));
+    this.shake = Math.max(0, this.shake - dt * 1.8);
+    const sh = this.shake * this.shake;
+    this.camera.position.copy(this.camTarget).add(CAM_OFFSET);
+    this.camera.position.x += (Math.random() - 0.5) * sh;
+    this.camera.position.y += (Math.random() - 0.5) * sh;
+    this.camera.lookAt(this.camTarget.x, this.camTarget.y + 0.8, this.camTarget.z);
+    this.sun.position.set(this.camTarget.x - 14, 30, this.camTarget.z - 8);
+    this.sun.target.position.copy(this.camTarget);
+
+    this.fx.update(dt);
+    this.renderer.render(this.scene, this.camera);
+    this.updateFloaters(dt);
+  }
+
+  private updateFloaters(dt: number): void {
+    const w = this.renderer.domElement.clientWidth;
+    const h = this.renderer.domElement.clientHeight;
+    const v = new THREE.Vector3();
+    for (let i = this.floaters.length - 1; i >= 0; i--) {
+      const f = this.floaters[i]!;
+      f.age += dt;
+      f.pos.y += dt * 1.4;
+      v.copy(f.pos).project(this.camera);
+      f.el.style.transform = `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, -50%)`;
+      f.el.style.opacity = String(Math.max(0, 1 - (f.age / f.life) ** 2));
+      if (f.age >= f.life) {
+        f.el.remove();
+        this.floaters.splice(i, 1);
+      }
+    }
+  }
+
+  /** Projeta um ponto do mundo para a tela (para marcadores do HUD). */
+  project(p: Vec2, height = 0): { x: number; y: number; visible: boolean } {
+    const v = new THREE.Vector3(p.x, height, p.y).project(this.camera);
+    return {
+      x: ((v.x + 1) / 2) * this.renderer.domElement.clientWidth,
+      y: ((1 - v.y) / 2) * this.renderer.domElement.clientHeight,
+      visible: v.z < 1,
+    };
+  }
+
+  dispose(): void {
+    this.renderer.dispose();
+    this.renderer.domElement.remove();
+    for (const f of this.floaters) f.el.remove();
+  }
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}

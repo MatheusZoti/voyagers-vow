@@ -44,7 +44,7 @@ src/sim/      regras puras, sem DOM — prontas para rodar num servidor autorita
   elos.ts     Grade de Elos, Pactos, pontos de forja
   world/      mapa, inimigos, combate
   sim.ts      Simulation: step(dt, input) -> estado + eventos
-src/client/   render isométrico em Canvas 2D, input, HUD, telas
+src/client/   render 3D (Three.js, estilo Albion), input, HUD, telas
 tests/        testes das regras (Vitest)
 ```
 

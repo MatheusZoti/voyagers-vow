@@ -10,11 +10,18 @@ Fonte de verdade do design: o GDD "Sistema de Aura, Psique e Maestria" (document
 - [x] Posturas, Maré, modificadores emocionais do Fluxo
 - [x] Maestria e Afiação: risco, retorno decrescente, reaprendizado 3x, carência em tempo jogado, piso de 50%
 - [x] Grade de Elos: nível efetivo, Além-limite, Pactos, alinhamento com valores, penalidade de afinidade
-- [ ] Arena isométrica jogável: inimigos comuns, elite, espreitador em Sombra, armadilhas ocultas
-- [ ] Chefe com golpe pesado telegrafado (testa a Maré)
-- [ ] Morte com penalidade por níveis e Eco do jogador
-- [ ] HUD: emoção dominante + estresse; ficha, Grade de Elos e Maestria
-- [ ] Salvar personagem localmente
+- [x] Cliente 3D (Three.js) estilo Albion: câmera inclinada fixa, terreno low-poly, modelos procedurais
+- [x] Arena isométrica jogável: inimigos comuns, elite, espreitador em Sombra, armadilhas ocultas
+- [x] Chefe com golpe pesado telegrafado (testa a Maré)
+- [x] Morte com penalidade por níveis e Eco do jogador
+- [x] HUD: emoção dominante + estresse; ficha, Grade de Elos e Maestria
+- [x] Salvar personagem localmente
+
+## Próximo
+
+- Playtest de balanceamento (dano, custos de Fluxo, ritmo do chefe)
+- Sons e música
+- Modelos e animações melhores (GLTF), mantendo o estilo low-poly
 
 ## Depois da fatia
 
