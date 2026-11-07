@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { affinityPenalty, hexDistance, revealAffinity } from '../src/sim/flow/affinity';
+import { AFFINITY_RING, affinityPenalty, hexDistance, minSlotFor } from '../src/sim/flow/affinity';
 import { computeFlowMods, createTide, shiftTide, tickTide } from '../src/sim/flow/flow';
-import { evaluateSlot, newSlot, pointsForLevel } from '../src/sim/elos';
+import { equipError, evaluateSlot, newSlot, pointsForLevel } from '../src/sim/elos';
 import {
   decay,
   deathPenalty,
@@ -10,71 +10,45 @@ import {
   recordUse,
   sharpnessMult,
 } from '../src/sim/mastery';
-import { Rng } from '../src/sim/math';
 import { reactTo } from '../src/sim/psyche/emotions';
 import { chooseCrisis, createPsyche, psycheEvent, tickPsyche } from '../src/sim/psyche/psyche';
-import { RITE_QUESTIONS, runRite } from '../src/sim/psyche/rite';
-import { neutralTraits, neutralValues, TRAIT_IDS, VALUE_IDS } from '../src/sim/psyche/traits';
+import { neutralTraits, neutralValues } from '../src/sim/psyche/traits';
 import { createCharacter } from '../src/sim/character';
 
 const ctx = { playTime: 0, inCombat: true, meditating: false, unmetNeeds: 0 };
 
-describe('Rito do Cálice', () => {
-  it('as 10 perguntas cobrem os 16 traços e os 8 valores', () => {
-    const traits = new Set<string>();
-    const values = new Set<string>();
-    for (const q of RITE_QUESTIONS)
-      for (const o of q.options) {
-        Object.keys(o.traits).forEach((t) => traits.add(t));
-        Object.keys(o.values).forEach((v) => values.add(v));
-      }
-    expect(RITE_QUESTIONS).toHaveLength(10);
-    expect([...traits].sort()).toEqual([...TRAIT_IDS].sort());
-    expect([...values].sort()).toEqual([...VALUE_IDS].sort());
-  });
-
-  it('move traços em 10 ±5 e valores em 15', () => {
-    const { traits, values } = runRite([0, 0, 0, 0, 0, 0, 0, 0, 0, 0], new Rng(1));
-    // Coragem sobe nas perguntas 1 (avançar) — uma vez.
-    expect(traits.courage).toBeGreaterThanOrEqual(55);
-    expect(traits.courage).toBeLessThanOrEqual(65);
-    // Lealdade +15 (pergunta 2), Lei -15 (pergunta 4), Poder +15 (6 e 9) = 30
-    expect(values.loyalty).toBe(15);
-    expect(values.law).toBe(-15);
-    expect(values.power).toBe(30);
-  });
-
-  it('é determinístico com a mesma semente', () => {
-    const a = runRite([1, 2, 0, 1, 2, 0, 1, 2, 0, 1], new Rng(42));
-    const b = runRite([1, 2, 0, 1, 2, 0, 1, 2, 0, 1], new Rng(42));
-    expect(a).toEqual(b);
-  });
-
-  it('revela Vigor para Perseverança e Sinceridade altas e Imaginação baixa', () => {
-    const t = neutralTraits();
-    t.perseverance = 80;
-    t.sincerity = 75;
-    t.imagination = 30;
-    expect(revealAffinity(t)).toBe('vigor');
-  });
-
-  it('revela Projeção para Ira, Impulsividade e Desapego altos', () => {
-    const t = neutralTraits();
-    t.wrath = 85;
-    t.impulsivity = 80;
-    t.detachment = 75;
-    expect(revealAffinity(t)).toBe('projection');
-  });
-});
-
-describe('Hexágono de afinidades', () => {
-  it('distâncias seguem a tabela de vizinhas do GDD', () => {
+describe('Pentágono de afinidades', () => {
+  it('distâncias seguem o desenho: Vigor vizinha de Projeção e Mutação, distante de Domínio e Forja', () => {
     expect(hexDistance('vigor', 'mutation')).toBe(1);
     expect(hexDistance('vigor', 'projection')).toBe(1);
     expect(hexDistance('vigor', 'forge')).toBe(2);
-    expect(hexDistance('vigor', 'singular')).toBe(3);
-    expect(hexDistance('forge', 'dominion')).toBe(2);
+    expect(hexDistance('vigor', 'dominion')).toBe(2);
+    expect(hexDistance('forge', 'dominion')).toBe(1);
+    expect(hexDistance('projection', 'dominion')).toBe(1);
     expect(affinityPenalty('dominion', 'vigor')).toBe(2);
+  });
+
+  it('nunca passa de 2 (pentágono de 5, sem Singular no padrão)', () => {
+    for (const a of AFFINITY_RING) for (const b of AFFINITY_RING) expect(hexDistance(a, b)).toBeLessThanOrEqual(2);
+    expect(AFFINITY_RING).toHaveLength(5);
+  });
+
+  it('Elo mínimo para equipar = 1 + distância', () => {
+    expect(minSlotFor('vigor', 'vigor')).toBe(1);
+    expect(minSlotFor('mutation', 'vigor')).toBe(2);
+    expect(minSlotFor('vigor', 'forge')).toBe(3);
+    expect(minSlotFor('vigor', 'dominion')).toBe(3);
+    expect(equipError(1, 'mutation', 'vigor')).not.toBeNull();
+    expect(equipError(2, 'mutation', 'vigor')).toBeNull();
+    expect(equipError(2, 'vigor', 'forge')).not.toBeNull();
+    expect(equipError(3, 'vigor', 'forge')).toBeNull();
+  });
+
+  it('equipada no Elo mínimo, a magia de fora funciona como nível 1 (nunca negativa)', () => {
+    const v = { values: neutralValues(), characterAffinity: 'vigor' as const, modDiscount: 0 };
+    expect(evaluateSlot(newSlot(3, true), { ...v, techniqueAffinity: 'forge' }).effective).toBe(1);
+    expect(evaluateSlot(newSlot(2, true), { ...v, techniqueAffinity: 'mutation' }).effective).toBe(1);
+    expect(evaluateSlot(newSlot(1, true), { ...v, techniqueAffinity: 'vigor' }).effective).toBe(1);
   });
 });
 
@@ -118,9 +92,9 @@ describe('Grade de Elos', () => {
 
   it('afinidade distante vira penalidade de nível', () => {
     const s = newSlot(4, true);
-    // personagem de Projeção usando técnica de Mutação (duas casas) e de Forja (oposta)
-    expect(evaluateSlot(s, { ...base, techniqueAffinity: 'mutation' }).effective).toBe(2);
-    expect(evaluateSlot(s, { ...base, techniqueAffinity: 'forge' }).effective).toBe(1);
+    // personagem de Projeção: Domínio é vizinha (-1), Forja é distante (-2)
+    expect(evaluateSlot(s, { ...base, techniqueAffinity: 'dominion' }).effective).toBe(3);
+    expect(evaluateSlot(s, { ...base, techniqueAffinity: 'forge' }).effective).toBe(2);
   });
 
   it('pontos da faixa Além-limite', () => {
@@ -251,8 +225,9 @@ describe('Maré', () => {
 
 describe('Personagem', () => {
   it('nasce com Elos 1 e 2 liberados e técnicas equipadas', () => {
-    const c = createCharacter('Teste', [0, 1, 2, 0, 1, 2, 0, 1, 2, 0], 7);
+    const c = createCharacter('Teste', 'vigor', 7);
     expect(c.elos.filter((e) => e.unlocked).map((e) => e.level)).toEqual([1, 2]);
-    expect(c.elos[1]!.technique).toBe('signature');
+    expect(c.elos[0]!.technique).toBe('votePunch');
+    expect(c.elos[1]!.technique).toBe('point');
   });
 });

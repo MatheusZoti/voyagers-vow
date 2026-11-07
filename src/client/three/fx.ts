@@ -45,9 +45,8 @@ export class Effects {
     this.list.push({ obj, age: 0, life, update });
   }
 
-  swing(at: Vec2, dir: Vec2, range: number, color = '#fff2c4'): void {
+  swing(at: Vec2, dir: Vec2, range: number, color = '#fff2c4', arc = (110 * Math.PI) / 180): void {
     const yaw = Math.atan2(dir.y, dir.x);
-    const arc = (110 * Math.PI) / 180;
     const geo = new THREE.RingGeometry(0.5, range, 18, 1, -arc / 2, arc);
     const m = this.groundMat(color, 0.55);
     const mesh = new THREE.Mesh(geo, m);
@@ -83,9 +82,9 @@ export class Effects {
   }
 
   /** Círculo de aviso que se enche até o impacto. */
-  telegraph(at: Vec2, r: number, duration: number, heavy: boolean): void {
+  telegraph(at: Vec2, r: number, duration: number, heavy: boolean, colorOverride?: string): void {
     const g = new THREE.Group();
-    const color = heavy ? '#ff3a2a' : '#ffae3a';
+    const color = colorOverride ?? (heavy ? '#ff3a2a' : '#ffae3a');
     const edge = new THREE.Mesh(new THREE.RingGeometry(r - 0.14, r, 40), this.groundMat(color, 0.95, false));
     const fillMat = this.groundMat(color, 0.28, false);
     const fill = new THREE.Mesh(new THREE.CircleGeometry(r, 40), fillMat);
@@ -122,6 +121,81 @@ export class Effects {
     mesh.rotation.z = -Math.atan2(dy, dx);
     add(mesh, (from.x + to.x) / 2, 0.1, (from.y + to.y) / 2);
     this.push(mesh, 0.3, (_f, k) => (m.opacity = 0.6 * (1 - k)));
+  }
+
+  /** Lança de Fluxo: feixe reto que some rápido. */
+  beam(from: Vec2, to: Vec2, width: number, color: string): void {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.1) return;
+    const g = new THREE.Group();
+    const coreMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending });
+    const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending });
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, len, 6, 1, true), coreMat);
+    const glow = new THREE.Mesh(new THREE.CylinderGeometry(width * 0.6, width * 0.6, len, 8, 1, true), glowMat);
+    g.add(core, glow);
+    g.position.set((from.x + to.x) / 2, 1.1, (from.y + to.y) / 2);
+    g.rotation.z = Math.PI / 2;
+    g.rotation.y = -Math.atan2(dy, dx);
+    // Cilindros nascem no eixo Y: deita no plano e aponta na direção do disparo.
+    g.rotation.set(0, -Math.atan2(dy, dx), Math.PI / 2, 'YXZ');
+    this.push(g, 0.28, (f, k) => {
+      coreMat.opacity = 0.95 * (1 - k);
+      glowMat.opacity = 0.6 * (1 - k);
+      f.obj.scale.set(1, 1 + k * 0.8, 1 + k * 0.8);
+    });
+    this.burst(to, color, 6, 2, 1.1);
+  }
+
+  /** Linhas que somem: fios elásticos (retos) ou raio (em zigue-zague). */
+  lines(points: Vec2[], color: string, jagged: boolean, life = 0.35, y = 1.1): void {
+    if (points.length < 2) return;
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i]!;
+      const b = points[i + 1]!;
+      const n = jagged ? 6 : 1;
+      for (let k = 0; k < n; k++) {
+        const t = k / n;
+        const jx = jagged && k > 0 ? (Math.random() - 0.5) * 0.6 : 0;
+        const jy = jagged && k > 0 ? (Math.random() - 0.5) * 0.5 : 0;
+        pts.push(new THREE.Vector3(a.x + (b.x - a.x) * t + jx, y + jy, a.y + (b.y - a.y) * t + jx));
+      }
+    }
+    const last = points[points.length - 1]!;
+    pts.push(new THREE.Vector3(last.x, y, last.y));
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const m = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
+    const line = new THREE.Line(geo, m);
+    this.push(line, life, (_f, k) => (m.opacity = 1 - k));
+    if (jagged) for (const p of points.slice(1)) this.burst(p, color, 5, 2, y);
+  }
+
+  /** Correntes: anel no chão e elos verticais que sobem e afundam. */
+  chains(at: Vec2, r: number, color: string): void {
+    const g = new THREE.Group();
+    const ringMat = this.groundMat(color, 0.8);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.15, r, 40), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    g.add(ring);
+    const linkMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 });
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2;
+      const link = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.04, 4, 8), linkMat);
+      link.position.set(Math.cos(a) * r * 0.75, 0.4, Math.sin(a) * r * 0.75);
+      link.rotation.y = a;
+      link.userData.base = link.position.y;
+      g.add(link);
+    }
+    add(g, at.x, 0.08, at.y);
+    this.push(g, 0.9, (f, k) => {
+      ringMat.opacity = 0.8 * (1 - k);
+      linkMat.opacity = 0.9 * (1 - k * k);
+      f.obj.children.forEach((c, i) => {
+        if (i > 0) c.position.y = 0.2 + Math.sin(k * Math.PI) * 0.9;
+      });
+    });
   }
 
   update(dt: number): void {

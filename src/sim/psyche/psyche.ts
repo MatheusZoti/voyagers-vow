@@ -108,6 +108,24 @@ const LONG_MEMORY_DRIFT: Partial<Record<PsycheEventKind, Partial<Record<TraitId,
   heavyHit: { wrath: 1 },
   killStreak: { impulsivity: 1 },
   redemption: { perseverance: 1 },
+  retreat: { anxiety: 2, courage: -2 },
+};
+
+/**
+ * O que você faz muda quem você é: cada ação empurra os traços um pouco, na hora.
+ * Muito menor que um diálogo; o efeito aparece com a repetição.
+ */
+const ACTION_NUDGE: Partial<Record<PsycheEventKind, Partial<Record<TraitId, number>>>> = {
+  killElite: { courage: 0.6, competitiveness: 0.3 },
+  killBoss: { courage: 1.5 },
+  killStreak: { impulsivity: 0.4, wrath: 0.2 },
+  perfectTide: { discipline: 0.4 },
+  meditate: { discipline: 0.3, anxiety: -0.3 },
+  death: { anxiety: 0.8 },
+  nearDeath: { courage: 0.3 },
+  retreat: { courage: -0.8, anxiety: 0.6 },
+  pactBroken: { sincerity: -0.5 },
+  redemption: { perseverance: 0.5 },
 };
 
 const MEMORY_TEXT: Record<PsycheEventKind, string> = {
@@ -121,6 +139,7 @@ const MEMORY_TEXT: Record<PsycheEventKind, string> = {
   death: 'Caiu em combate',
   pactBroken: 'Quebrou um juramento',
   redemption: 'Redimiu-se de um juramento quebrado',
+  retreat: 'Fugiu de uma luta perdida',
 };
 
 // ---------------------------------------------------------------------------
@@ -168,6 +187,8 @@ export function psycheEvent(p: PsycheState, kind: PsycheEventKind, playTime: num
     if (!strongest || r.intensity > strongest.intensity) strongest = r;
   }
   if (kind === 'redemption') delete p.emotions.shame;
+  const nudge = ACTION_NUDGE[kind];
+  if (nudge) for (const [t, d] of Object.entries(nudge) as Array<[TraitId, number]>) p.traits[t] = clamp(p.traits[t] + d * magnitude, 0, 100);
   if (strongest) {
     const n = remember(p, kind, strongest.id, Math.min(1, strongest.intensity), playTime);
     if (n) notices.push(n);

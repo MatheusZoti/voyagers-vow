@@ -95,7 +95,8 @@ export type PsycheEventKind =
   | 'meditate'
   | 'death'
   | 'pactBroken'
-  | 'redemption';
+  | 'redemption'
+  | 'retreat';
 
 export interface EmotionReaction {
   id: EmotionId;
@@ -154,5 +155,9 @@ export function reactTo(kind: PsycheEventKind, tr: Traits, magnitude = 1): Emoti
       return [{ id: 'shame', intensity: 0.6 + t01(tr.pride) * 0.4, duration: 9999 }];
     case 'redemption':
       return [{ id: 'calm', intensity: 0.5, duration: 15 }];
+    case 'retreat':
+      return t01(tr.pride) > t01(tr.anxiety)
+        ? [{ id: 'shame', intensity: 0.2 + t01(tr.pride) * 0.4, duration: 30 }]
+        : [{ id: 'fear', intensity: 0.15 + t01(tr.anxiety) * 0.35, duration: 15 }];
   }
 }

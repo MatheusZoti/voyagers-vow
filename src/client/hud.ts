@@ -1,4 +1,4 @@
-import { AFFINITY_NAMES } from '../sim/flow/affinity';
+import { AFFINITY_COLORS, AFFINITY_NAMES } from '../sim/flow/affinity';
 import { POSTURE_IDS, POSTURES } from '../sim/flow/flow';
 import { xpToNext } from '../sim/character';
 import { EMOTION_COLORS, EMOTION_NAMES } from '../sim/psyche/emotions';
@@ -200,10 +200,10 @@ export class Hud {
       el.dataset.key = key;
       el.className = `key slot ${state} ${info?.beyondLimit ? 'beyond' : ''} ${info && p.flow < sim.slotCost(slot, info) ? 'nocost' : ''}`;
       const label = !slot.unlocked ? '—' : slot.sealed ? 'Selado' : tech ? tech.name : 'Vazio';
-      const art = !slot.unlocked ? 'lock' : slot.sealed ? 'seal' : tech ? tech.id : 'empty';
+      const art = !slot.unlocked ? 'lock' : slot.sealed ? 'seal' : tech ? tech.icon : 'empty';
       el.innerHTML =
         `<span class="k">${SLOT_KEYS[i]}</span><span class="lvl">Elo ${slot.level}${info && info.effective !== slot.level ? ` → ${info.effective}` : ''}</span>` +
-        `<span class="si">${icon(art, 22)}</span><span class="n">${label}</span>` +
+        `<span class="si" ${tech && !slot.sealed ? `style="color:${AFFINITY_COLORS[tech.affinity]}"` : ""}>${icon(art, 22)}</span><span class="n">${label}</span>` +
         (info ? `<span class="cost">${Math.round(sim.slotCost(slot, info))}</span>` : '') +
         (cd > 0 ? `<span class="cd">${cd.toFixed(1)}</span>` : '');
     });

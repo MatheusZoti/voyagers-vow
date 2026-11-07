@@ -1,4 +1,4 @@
-import type { Character } from '../sim/character';
+import { migrateCharacter, type Character } from '../sim/character';
 
 /**
  * Persistência local provisória. Quando o servidor existir, o personagem mora nele;
@@ -10,8 +10,7 @@ export function loadCharacter(): Character | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
-    const c = JSON.parse(raw) as Character;
-    return c.version === 1 ? c : null;
+    return migrateCharacter(JSON.parse(raw));
   } catch {
     return null;
   }

@@ -1,4 +1,5 @@
 import type { Vec2 } from '../math';
+import type { SpellId } from '../techniques';
 
 export type EnemyKind = 'grunt' | 'stalker' | 'brute' | 'boss';
 
@@ -147,7 +148,22 @@ export interface Enemy {
   summoned: boolean;
   /** tempo desde o último dano recebido */
   hurtAgo: number;
+  /** preso por Correntes até este tempo (pode atacar, não anda) */
+  rootUntil: number;
+  /** sob a Marca da Discórdia até este tempo (luta contra os aliados) */
+  charmedUntil: number;
 }
+
+/** Grimório caído no chão: ensina uma magia a quem passar por cima. */
+export interface SpellDrop {
+  id: number;
+  spell: SpellId;
+  pos: Vec2;
+  expiresAt: number;
+}
+
+/** Chance de uma criatura deixar um grimório ao morrer. */
+export const SPELL_DROP_CHANCE: Record<EnemyKind, number> = { grunt: 0.04, stalker: 0.08, brute: 0.35, boss: 1 };
 
 export interface Trap {
   pos: Vec2;

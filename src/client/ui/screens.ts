@@ -1,10 +1,9 @@
-import { AFFINITY_COLORS, AFFINITY_DESC, AFFINITY_NAMES } from '../../sim/flow/affinity';
-import type { Character } from '../../sim/character';
-import { RITE_QUESTIONS } from '../../sim/psyche/rite';
-import { TRAIT_IDS, traitPhrase, VALUE_IDS, valuePhrase } from '../../sim/psyche/traits';
+import { AFFINITY_COLORS, AFFINITY_DESC, AFFINITY_NAMES, AFFINITY_PLAYSTYLE, AFFINITY_RING, minSlotFor, type Affinity } from '../../sim/flow/affinity';
+import { SPELLS, STARTER_SPELLS } from '../../sim/techniques';
 import { escapeHtml } from '../util';
+import { icon } from './icons';
 
-/** Telas fora do jogo: título, perguntas do Rito e a revelação no Cálice. */
+/** Telas fora do jogo: título e criação do personagem. */
 
 export function titleScreen(root: HTMLElement, opts: { hasSave: string | null; onContinue: () => void; onNew: () => void }): void {
   root.className = 'screen title';
@@ -17,103 +16,101 @@ export function titleScreen(root: HTMLElement, opts: { hasSave: string | null; o
         ${opts.hasSave ? `<button class="btn primary" data-a="continue">Continuar como ${escapeHtml(opts.hasSave)}</button>` : ''}
         <button class="btn ${opts.hasSave ? '' : 'primary'}" data-a="new">Novo personagem</button>
       </div>
-      <p class="foot">Fatia vertical · v0.1</p>
+      <p class="foot">Fatia vertical · v0.2</p>
     </div>`;
   root.querySelector('[data-a="continue"]')?.addEventListener('click', opts.onContinue);
   root.querySelector('[data-a="new"]')?.addEventListener('click', opts.onNew);
 }
 
-export function riteScreen(root: HTMLElement, onDone: (name: string, answers: number[]) => void): void {
-  root.className = 'screen rite';
-  const answers: number[] = [];
+/** Pentágono das afinidades, clicável. Cada nó mostra o Elo mínimo a partir da escolhida. */
+function pentagon(selected: Affinity): string {
+  const S = 340;
+  const cx = S / 2;
+  const cy = S / 2 + 6;
+  const R = 118;
+  const pos = (i: number) => {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+    return [cx + Math.cos(a) * R, cy + Math.sin(a) * R] as const;
+  };
+  const pts = AFFINITY_RING.map((_, i) => pos(i));
+  const edges = pts.map((p, i) => {
+    const q = pts[(i + 1) % 5]!;
+    return `<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" class="pg-edge"/>`;
+  });
+  const nodes = AFFINITY_RING.map((a, i) => {
+    const [x, y] = pts[i]!;
+    const d = minSlotFor(selected, a);
+    const sel = a === selected;
+    const tag = sel ? 'sua' : `Elo ${d}+`;
+    return `<g class="pg-node ${sel ? 'sel' : ''}" data-aff="${a}" style="--c:${AFFINITY_COLORS[a]}" tabindex="0" role="button" aria-label="${AFFINITY_NAMES[a]}">
+      <circle cx="${x}" cy="${y}" r="${sel ? 34 : 28}" class="pg-halo"/>
+      <circle cx="${x}" cy="${y}" r="${sel ? 24 : 20}" class="pg-dot"/>
+      <text x="${x}" y="${y + (y < cy ? -44 : 50)}" text-anchor="middle" class="pg-name">${AFFINITY_NAMES[a]}</text>
+      <text x="${x}" y="${y + 4}" text-anchor="middle" class="pg-tag">${tag}</text>
+    </g>`;
+  });
+  return `<svg class="pentagon" viewBox="0 0 ${S} ${S + 20}">${edges.join('')}${nodes.join('')}</svg>`;
+}
+
+/**
+ * Criação: o jogador escolhe nome e estilo de poder inicial. Sem questionário —
+ * a personalidade nasce das conversas e ações dentro do jogo.
+ */
+export function creationScreen(root: HTMLElement, onDone: (name: string, affinity: Affinity) => void): void {
+  root.className = 'screen create';
+  let selected: Affinity = 'vigor';
   let name = '';
 
-  const askName = () => {
+  const go = () => onDone(name.trim() || 'Viajante', selected);
+  const render = () => {
+    const color = AFFINITY_COLORS[selected];
+    const spells = STARTER_SPELLS[selected].map((id) => SPELLS[id]);
+    const far = AFFINITY_RING.filter((a) => minSlotFor(selected, a) === 3).map((a) => AFFINITY_NAMES[a]);
+    const near = AFFINITY_RING.filter((a) => minSlotFor(selected, a) === 2).map((a) => AFFINITY_NAMES[a]);
     root.innerHTML = `
-      <div class="rite-card">
-        <p class="eyebrow">Antes do Rito</p>
-        <h2>Como você se chama, viajante?</h2>
-        <input class="name" maxlength="18" placeholder="Seu nome" autofocus />
-        <button class="btn primary" data-a="go">Começar</button>
-      </div>`;
-    const input = root.querySelector<HTMLInputElement>('input')!;
-    const go = () => {
-      name = input.value.trim() || 'Viajante';
-      question(0);
-    };
-    input.addEventListener('keydown', (e) => e.key === 'Enter' && go());
-    root.querySelector('[data-a="go"]')!.addEventListener('click', go);
-    setTimeout(() => input.focus(), 50);
-  };
-
-  const question = (i: number) => {
-    const q = RITE_QUESTIONS[i];
-    if (!q) return onDone(name, answers);
-    root.innerHTML = `
-      <div class="rite-card fade-in">
-        <p class="eyebrow">${i + 1} de ${RITE_QUESTIONS.length}</p>
-        <h2>${q.prompt}</h2>
-        <div class="options">
-          ${q.options.map((o, k) => `<button class="option" data-k="${k}"><span class="num">${k + 1}</span>${o.text}</button>`).join('')}
+      <div class="create-wrap" style="--aff:${color}">
+        <div class="create-left">
+          <p class="eyebrow">Novo personagem</p>
+          <h2>Escolha seu estilo de poder</h2>
+          <p class="sub">Sua afinidade decide quais magias você usa melhor. Magias de outras afinidades também funcionam, mas exigem Elos mais altos.</p>
+          ${pentagon(selected)}
         </div>
-        <div class="progress"><div style="width:${(i / RITE_QUESTIONS.length) * 100}%"></div></div>
+        <div class="create-right">
+          <div class="aff-card">
+            <span class="aff-eyebrow">Afinidade</span>
+            <h3>${AFFINITY_NAMES[selected]}</h3>
+            <p class="aff-desc">${AFFINITY_DESC[selected]}</p>
+            <p class="aff-style">${AFFINITY_PLAYSTYLE[selected]}</p>
+            <h5>Magias iniciais</h5>
+            <div class="starter">${spells
+              .map(
+                (s) =>
+                  `<div class="sp"><span class="sp-ic">${icon(s.icon, 26)}</span><div><b>${s.name}</b><span class="sp-role">${s.role}</span><p>${s.desc}</p></div></div>`,
+              )
+              .join('')}</div>
+            <h5>Outras afinidades</h5>
+            <div class="reach">
+              <span><i class="r1"></i>Vizinhas (${near.join(', ')}): a partir do Elo 2</span>
+              <span><i class="r2"></i>Distantes (${far.join(', ')}): a partir do Elo 3</span>
+            </div>
+          </div>
+          <label class="name-field"><span>Nome</span><input class="name" maxlength="18" placeholder="Seu nome" value="${escapeHtml(name)}"/></label>
+          <button class="btn primary big" data-a="go">Entrar no Vale da Ponte</button>
+          <p class="fine">Sua personalidade não é escolhida aqui: ela nasce do que você diz às pessoas do vale e do que faz em combate.</p>
+        </div>
       </div>`;
-    const pick = (k: number) => {
-      window.removeEventListener('keydown', onKey);
-      answers.push(k);
-      question(i + 1);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      const k = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
-      if (k >= 0) pick(k);
-    };
-    window.addEventListener('keydown', onKey);
-    root.querySelectorAll<HTMLButtonElement>('.option').forEach((b) => b.addEventListener('click', () => pick(+b.dataset.k!)));
+    const input = root.querySelector<HTMLInputElement>('input.name')!;
+    input.addEventListener('input', () => (name = input.value));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') go();
+    });
+    root.querySelectorAll<SVGGElement>('.pg-node').forEach((n) =>
+      n.addEventListener('click', () => {
+        selected = n.dataset.aff as Affinity;
+        render();
+      }),
+    );
+    root.querySelector('[data-a="go"]')!.addEventListener('click', go);
   };
-
-  askName();
+  render();
 }
-
-/** Frases mais marcantes da personalidade (as mais extremas primeiro). */
-export function personalityLines(c: Character, max = 6): string[] {
-  const t = c.psyche.traits;
-  const v = c.psyche.values;
-  const traits = TRAIT_IDS.map((id) => ({ id, d: Math.abs(t[id] - 50), s: traitPhrase(id, t[id]) }))
-    .filter((x) => x.s)
-    .sort((a, b) => b.d - a.d)
-    .map((x) => x.s!);
-  const values = VALUE_IDS.map((id) => ({ d: Math.abs(v[id]), s: valuePhrase(id, v[id]) }))
-    .filter((x) => x.s)
-    .sort((a, b) => b.d - a.d)
-    .map((x) => x.s!);
-  return [...traits.slice(0, max - 2), ...values.slice(0, 2)];
-}
-
-export function revealScreen(root: HTMLElement, c: Character, onEnter: () => void): void {
-  root.className = 'screen reveal';
-  const color = AFFINITY_COLORS[c.affinity];
-  const lines = personalityLines(c);
-  root.innerHTML = `
-    <div class="reveal-wrap" style="--aff:${color}">
-      <p class="eyebrow">O Rito do Cálice</p>
-      <div class="chalice ${c.affinity}">
-        <div class="cup"><div class="water"></div><div class="leaf"></div><div class="glow"></div></div>
-        <div class="stem"></div><div class="base"></div>
-      </div>
-      <p class="omen">A água responde ao seu Fluxo…</p>
-      <div class="result">
-        <h2>Afinidade: <span>${AFFINITY_NAMES[c.affinity]}</span></h2>
-        <p class="desc">${AFFINITY_DESC[c.affinity]}</p>
-        <ul class="lines">${lines.map((l) => `<li>${escapeHtml(capitalize(l))}</li>`).join('')}</ul>
-        ${
-          c.affinity !== 'vigor'
-            ? `<p class="note">Sua Assinatura de partida, o Punho do Voto, é de Vigor. Fora da sua afinidade ela entra nos Elos com penalidade de nível.</p>`
-            : `<p class="note">O Punho do Voto, sua Assinatura de partida, ressoa com a sua natureza.</p>`
-        }
-        <button class="btn primary" data-a="enter">Entrar no Vale da Ponte</button>
-      </div>
-    </div>`;
-  root.querySelector('[data-a="enter"]')!.addEventListener('click', onEnter);
-}
-
-export const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

@@ -1,4 +1,6 @@
 import { Rng, type Vec2 } from '../math';
+import type { NpcId } from '../psyche/dialogues';
+import type { SpellId } from '../techniques';
 
 /**
  * Mapa da fatia vertical: "Vale da Ponte" (tier 1, zona Santuário — sem PvP).
@@ -41,6 +43,9 @@ export interface GameMap {
   bossSpawn: Vec2;
   spawns: SpawnDef[];
   traps: Vec2[];
+  npcs: Array<{ id: NpcId; x: number; y: number }>;
+  /** livros antigos: cada um ensina uma magia fixa */
+  books: Array<{ id: string; spell: SpellId; x: number; y: number }>;
   /** variação visual por tile (0–1), para o cliente */
   variation: Float32Array;
 }
@@ -144,9 +149,23 @@ export function buildMap(seed = 1337): GameMap {
     { kind: 'brute', x: 40, y: 24 },
     { kind: 'brute', x: 33, y: 38 },
   ];
-  // Garante que os pontos de spawn estejam livres.
-  for (const s of spawns) {
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (BLOCKING.has(get(s.x + dx, s.y + dy))) set(s.x + dx, s.y + dy, Tile.Grass);
+  const npcs: Array<{ id: NpcId; x: number; y: number }> = [
+    { id: 'oren', x: 7.5, y: 22.2 },
+    { id: 'kael', x: 12.2, y: 27.2 },
+    { id: 'traveler', x: 15.5, y: 27.5 },
+    { id: 'pilgrim', x: 30.5, y: 29.5 },
+    { id: 'herald', x: 43.2, y: 20.2 },
+    { id: 'huntress', x: 21.5, y: 11.5 },
+  ];
+  const books: Array<{ id: string; spell: SpellId; x: number; y: number }> = [
+    { id: 'tomeNorth', spell: 'chains', x: 17.5, y: 8.5 },
+    { id: 'tomeSouth', spell: 'flowLance', x: 36.5, y: 38.5 },
+  ];
+
+  // Garante que spawns, NPCs e livros estejam em clareiras.
+  for (const s of [...spawns, ...npcs.map((n) => ({ x: Math.floor(n.x), y: Math.floor(n.y) })), ...books.map((b) => ({ x: Math.floor(b.x), y: Math.floor(b.y) }))]) {
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) if (BLOCKING.has(get(s.x + dx, s.y + dy))) set(s.x + dx, s.y + dy, Tile.Grass);
   }
 
   const traps: Vec2[] = [
@@ -168,6 +187,8 @@ export function buildMap(seed = 1337): GameMap {
     bossSpawn: { x: arena.x + 2, y: arena.y },
     spawns,
     traps,
+    npcs,
+    books,
     variation,
   };
 }

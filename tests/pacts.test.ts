@@ -43,12 +43,12 @@ describe('Restrições aplicáveis por técnica', () => {
     expect(TECHNIQUES.point.pacts).not.toContain('missLock');
     expect(TECHNIQUES.point.mods).not.toContain('area');
     expect(TECHNIQUES.point.mods).not.toContain('range');
-    expect(TECHNIQUES.signature.pacts).toEqual([...PACT_IDS]);
+    expect(TECHNIQUES.votePunch.pacts).toEqual([...PACT_IDS]);
   });
 
   it('trocar de técnica remove o que não se aplica', () => {
     const s = newSlot(3, true);
-    s.technique = 'signature';
+    s.technique = 'votePunch';
     s.restrictions = ['missLock', 'eliteOnly'];
     s.mods = { area: 1, damage: 1 };
     s.technique = 'point';
@@ -62,14 +62,12 @@ describe('Restrições aplicáveis por técnica', () => {
 // Efeito em jogo
 // ---------------------------------------------------------------------------
 
-const answers = [0, 1, 2, 0, 1, 2, 0, 1, 2, 0];
-
-function setup(pacts: PactId[], technique: 'signature' | 'point' = 'signature') {
-  const c = createCharacter('Teste', answers, 3);
+function setup(pacts: PactId[], technique: 'votePunch' | 'point' = 'votePunch') {
+  const c = createCharacter('Teste', 'vigor', 3);
   c.psyche.values = neutralValues();
   const sim = new Simulation(c, 5);
   const slot = c.elos[1]!; // Elo 2
-  c.elos[0]!.technique = technique === 'signature' ? 'point' : 'signature';
+  c.elos[0]!.technique = technique === 'votePunch' ? 'point' : 'votePunch';
   slot.technique = technique;
   slot.restrictions = [...pacts];
   return { sim, slot };

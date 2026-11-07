@@ -14,6 +14,17 @@ const P: Record<string, string> = {
   point:
     '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5" opacity=".6"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/>',
   basic: '<path d="M4 20L18.5 5.5M14 4h5v5"/><path d="M6 13l5 5M3 17l4 4" opacity=".6"/>',
+  lance: '<path d="M3 21L17 7"/><path d="M14 4l6-1-1 6-3.5-1.5z"/><path d="M6 13l-2 2M10 17l-2 2" opacity=".55"/>',
+  orbs: '<circle cx="7" cy="7" r="2.6"/><circle cx="16.5" cy="9" r="2.1"/><circle cx="10.5" cy="15.5" r="3"/><path d="M4 21h16" opacity=".5"/><path d="M7 10.5v2M16.5 12v2.5" opacity=".5"/>',
+  pull: '<path d="M3 12h7"/><path d="M6.5 8.5L3 12l3.5 3.5"/><path d="M10 12c2-4 4-4 5 0s3 4 5 0" /><circle cx="20.5" cy="12" r="1.3" opacity=".6"/>',
+  bolt: '<path d="M13 2.5L5 13.5h6l-1.5 8 8.5-11.5h-6z"/>',
+  chains:
+    '<rect x="3" y="9" width="8" height="5" rx="2.5" transform="rotate(-35 7 11.5)"/><rect x="13" y="10" width="8" height="5" rx="2.5" transform="rotate(-35 17 12.5)"/><path d="M10.5 12.5l3 -1" /><path d="M4 21h16" opacity=".5"/>',
+  blade: '<path d="M4 20c5-1 11-6 14-14l2-2-2 .5C11 7 6 13 4 20z"/><path d="M4 20l3.5-3.5" opacity=".6"/>',
+  repel: '<circle cx="12" cy="12" r="2.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/><path d="M5.3 5.3l2.4 2.4M16.3 16.3l2.4 2.4M5.3 18.7l2.4-2.4M16.3 7.7l2.4-2.4" opacity=".55"/>',
+  discord: '<circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M3.5 20c.8-3 2.4-4.5 4.5-4.5s3.7 1.5 4.5 4.5M11.5 20c.8-3 2.4-4.5 4.5-4.5s3.7 1.5 4.5 4.5"/><path d="M11 4l2 2-2 2" opacity=".6"/>',
+  book: '<path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5z"/><path d="M4 20.5A2.5 2.5 0 016.5 18H20v3H6.5" opacity=".6"/><path d="M9 7.5h7M9 10.5h5" opacity=".6"/>',
+  talk: '<path d="M4 5h16v10H9l-5 4z"/><path d="M8 9h8M8 12h5" opacity=".6"/>',
   tide: '<path d="M2.5 9c2 0 2-1.6 4-1.6S8.5 9 10.5 9s2-1.6 4-1.6 2 1.6 4 1.6 2-1.6 3-1.6"/><path d="M2.5 14c2 0 2-1.6 4-1.6s2 1.6 4 1.6 2-1.6 4-1.6 2 1.6 4 1.6 2-1.6 3-1.6"/><path d="M2.5 19c2 0 2-1.6 4-1.6s2 1.6 4 1.6 2-1.6 4-1.6 2 1.6 4 1.6" opacity=".55"/>',
   capacity: '<path d="M12 2.8c3.4 4.4 6.2 8 6.2 11.4a6.2 6.2 0 01-12.4 0C5.8 10.8 8.6 7.2 12 2.8z"/><path d="M8.6 15.2a3.4 3.4 0 003.4 3.1" opacity=".6"/>',
   // Estado

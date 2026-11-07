@@ -1,34 +1,41 @@
 # Roadmap
 
-Fonte de verdade do design: o GDD "Sistema de Aura, Psique e Maestria" (documento interno).
+Fonte de verdade do design: o GDD "Sistema de Aura, Psique e Maestria" (documento interno), com as decisões abaixo por cima dele.
 
-## Fatia vertical — v0.1
+## Decisões que mudam o GDD
 
-- [x] Regras puras: Rito (10 perguntas, 16 traços, 8 valores), hexágono de afinidades
+- **Sem questionário na criação.** O jogador escolhe nome e afinidade inicial. A personalidade nasce das conversas com NPCs (os dilemas do GDD viraram diálogos) e das ações em jogo.
+- **Cinco afinidades em pentágono.** Vigor, Mutação, Forja, Domínio e Projeção. Singular existe no mundo, mas fica fora do padrão: é uma exceção a decidir.
+- **Magias determinísticas no lugar da fábrica de Assinatura.** Cada magia tem uma afinidade (o tipo principal) e um papel, e cai de criaturas e livros.
+- **Regra de equipar:** Elo mínimo = nível mínimo da magia + distância no pentágono. A magia nunca fica com nível negativo.
+
+## Fatia vertical — v0.2
+
 - [x] Emoções filtradas por traços, estresse, Crises (Frenesi, Pânico, Apatia) com aviso de 3 s
-- [x] Memória curta (8) e longa, com deriva lenta de traços
+- [x] Memória curta (8) e longa; traços mudam por diálogo, por ação e por memórias marcantes
 - [x] Posturas, Maré, modificadores emocionais do Fluxo
 - [x] Maestria e Afiação: risco, retorno decrescente, reaprendizado 3x, carência em tempo jogado, piso de 50%
-- [x] Grade de Elos: nível efetivo, Além-limite, Pactos, alinhamento com valores, penalidade de afinidade
-- [x] Cliente 3D (Three.js) estilo Albion: câmera inclinada fixa, terreno low-poly, modelos procedurais
-- [x] Arena isométrica jogável: inimigos comuns, elite, espreitador em Sombra, armadilhas ocultas
-- [x] Chefe com golpe pesado telegrafado (testa a Maré)
-- [x] Morte com penalidade por níveis e Eco do jogador
-- [x] HUD: emoção dominante + estresse; ficha, Grade de Elos e Maestria
-- [x] Salvar personagem localmente
+- [x] Grade de Elos: nível efetivo, Além-limite, Pactos aplicáveis por magia, alinhamento com valores
+- [x] Criação por escolha de afinidade (pentágono) com 2 magias iniciais
+- [x] 10 magias (2 por afinidade): golpe, reforço, projétil, área, puxão, elétrico, controle, golpe amplo, empurrão, discórdia
+- [x] Grimórios caindo de criaturas (o chefe sempre deixa um) e 2 livros antigos no mapa
+- [x] 6 NPCs e um evento na ponte com os 10 dilemas do GDD
+- [x] Cliente 3D estilo Albion, janela do personagem (Psique, Elos, Maestria), HUD com ícones
+- [x] Chefe com golpe pesado telegrafado; morte com penalidade por níveis e Eco
+- [x] Salvamento local com migração de saves antigos
 
 ## Próximo
 
-- Playtest de balanceamento (dano, custos de Fluxo, ritmo do chefe)
-- Sons e música
-- Modelos e animações melhores (GLTF), mantendo o estilo low-poly
+- Sensação de jogo e equilíbrio: painel de debug para ajustar números ao vivo, impacto nos golpes (pausa no acerto, recuo), sons
+- Mais magias por afinidade e onde cada uma cai (tabela de drops por região)
+- Mais conversas e ações que moldam a personalidade (poupar inimigos, saquear, ajudar outros jogadores)
 
 ## Depois da fatia
 
 - Servidor autoritativo (Node + WebSocket) rodando `src/sim`
-- Editor completo de Assinatura (efeito base, modificadores de loot, etiquetas de natureza)
-- Crise de Ruptura e Transe (evolução lendária da Assinatura)
+- Singular como exceção (evento raro)
+- Crise de Ruptura e Transe
 - Necessidades completas (explorar, criar, socializar)
-- Demais afinidades e técnicas avançadas (Campo, Sombra, Impregnar, Bastião)
-- Loot, itens e chance de drop na morte; Selos de proteção
+- Técnicas avançadas (Campo, Sombra, Impregnar, Bastião)
+- Itens, chance de drop na morte, Selos de proteção
 - PvP por zonas e tiers de mapa; Infâmia

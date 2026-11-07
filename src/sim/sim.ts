@@ -1,5 +1,6 @@
 import {
   DEATH_PENALTY,
+  learnSpell,
   maxHpFor,
   PENALTY_MAX,
   PENALTY_WINDOW_S,
@@ -7,7 +8,8 @@ import {
   xpToNext,
   type Character,
 } from './character';
-import { evaluateSlot, PACTS, type EffectiveInfo, type EloSlot } from './elos';
+import { equipError, evaluateSlot, PACTS, type EffectiveInfo, type EloSlot } from './elos';
+import { AFFINITY_COLORS, AFFINITY_NAMES } from './flow/affinity';
 import {
   BASE_FLOW_MAX,
   BASE_FLOW_REGEN,
@@ -36,11 +38,24 @@ import {
 } from './mastery';
 import { angleBetween, clamp, dist, normalize, Rng, type Vec2 } from './math';
 import type { PsycheEventKind } from './psyche/emotions';
+import { applyDialogueChoice, DIALOGUES, type DialogueDef, type DialogueId, type NpcId } from './psyche/dialogues';
 import { psycheEvent, tickPsyche, type PsycheNotice } from './psyche/psyche';
 import { STRONG_VALUE } from './psyche/traits';
-import { MASTERY_NAMES, resonance, sanitizeSlot, TECHNIQUES, type MasteryId, type TechniqueId } from './techniques';
-import { ENEMIES, type AttackDef, type Echo, type Enemy, type EnemyKind, type Trap } from './world/entities';
-import { buildMap, inCircle, moveWithCollision, type GameMap } from './world/map';
+import {
+  isSpell,
+  MASTERY_NAMES,
+  resonance,
+  sanitizeSlot,
+  SPELL_IDS,
+  SPELLS,
+  TECHNIQUES,
+  type MasteryId,
+  type SpellDef,
+  type SpellId,
+  type TechniqueId,
+} from './techniques';
+import { ENEMIES, SPELL_DROP_CHANCE, type AttackDef, type Echo, type Enemy, type EnemyKind, type SpellDrop, type Trap } from './world/entities';
+import { buildMap, inCircle, isBlocked, moveWithCollision, type GameMap } from './world/map';
 
 export const TICK = 1 / 30;
 
@@ -74,6 +89,16 @@ export type SimEvent =
   | { t: 'trap'; x: number; y: number }
   | { t: 'perfectTide'; x: number; y: number }
   | { t: 'levelUp'; level: number }
+  | { t: 'beam'; from: Vec2; to: Vec2; width: number; color: string }
+  | { t: 'spellMark'; x: number; y: number; r: number; duration: number; color: string }
+  | { t: 'impact'; x: number; y: number; r: number; color: string }
+  | { t: 'tether'; from: Vec2; targets: Vec2[]; color: string }
+  | { t: 'chain'; points: Vec2[]; color: string }
+  | { t: 'chains'; x: number; y: number; r: number; color: string }
+  | { t: 'slash'; x: number; y: number; dir: Vec2; range: number; arc: number; color: string }
+  | { t: 'mark'; id: number; color: string }
+  | { t: 'learn'; spell: SpellId; x: number; y: number }
+  | { t: 'dialogue'; id: DialogueId }
   | { t: 'notice'; text: string; tone: NoticeTone };
 
 export interface PlayerState {
@@ -111,6 +136,7 @@ export class Simulation {
   enemies: Enemy[] = [];
   traps: Trap[];
   echo: Echo | null = null;
+  drops: SpellDrop[] = [];
   events: SimEvent[] = [];
   mods: FlowMods;
   /** tempo desta sessão (s) */
@@ -118,6 +144,12 @@ export class Simulation {
   private rng: Rng;
   private nextId = 1;
   private impetusAcc = 0;
+  /** efeitos com atraso (ex.: Chuva de Esferas) */
+  private pending: Array<{ at: number; run: () => void }> = [];
+  /** último ponto mirado (para magias que miram no chão) */
+  lastAim: Vec2 = { x: 0, y: 0 };
+  private wasInSanctuary = true;
+  private bridgePrompted = false;
 
   constructor(character: Character, seed = 99) {
     this.c = character;
@@ -154,7 +186,59 @@ export class Simulation {
     this.traps = this.map.traps.map((p) => ({ pos: { ...p }, armed: true, revealed: false, rearmIn: 0 }));
     this.mods = computeFlowMods(character.psyche, 'veil');
     for (const m of Object.values(character.mastery)) m.sessionUses = 0;
-    for (const slot of character.elos) sanitizeSlot(slot);
+    for (const slot of character.elos) {
+      sanitizeSlot(slot);
+      // Regra de equipar (Elo mínimo = 1 + distância): desequipa o que não cabe mais.
+      if (slot.technique && this.equipProblem(slot.level, slot.technique as SpellId)) {
+        slot.technique = null;
+        sanitizeSlot(slot);
+      }
+    }
+  }
+
+  /** Por que esta magia não entra neste Elo (ou null se entra). */
+  equipProblem(slotLevel: number, spell: SpellId): string | null {
+    const s = SPELLS[spell];
+    return equipError(slotLevel, this.c.affinity, s.affinity, s.minLevel);
+  }
+
+  // -------------------------------------------------------------------------
+  // NPCs e diálogos
+  // -------------------------------------------------------------------------
+
+  /** Próxima conversa disponível com este NPC, se houver. */
+  dialogueFor(npc: NpcId): DialogueDef | null {
+    const done = new Set(this.c.dialogues);
+    for (const d of Object.values(DIALOGUES)) {
+      if (d.npc !== npc || done.has(d.id)) continue;
+      const r = d.requires;
+      if (r?.after && !done.has(r.after)) continue;
+      if (r?.level && this.c.level < r.level) continue;
+      if (r?.deaths && this.c.deaths < r.deaths) continue;
+      return d;
+    }
+    return null;
+  }
+
+  /** NPC sob o ponto do mundo (para clicar e conversar). */
+  npcAt(point: Vec2, radius = 0.9): NpcId | null {
+    const n = this.map.npcs.find((x) => Math.hypot(x.x - point.x, x.y - point.y) <= radius);
+    return n?.id ?? null;
+  }
+
+  npcDistance(npc: NpcId): number {
+    const n = this.map.npcs.find((x) => x.id === npc)!;
+    return Math.hypot(n.x - this.player.pos.x, n.y - this.player.pos.y);
+  }
+
+  /** Aplica a escolha do jogador. A personalidade muda; o jogador só vê a resposta. */
+  answerDialogue(id: DialogueId, option: number): string | null {
+    const d = DIALOGUES[id];
+    const opt = d?.options[option];
+    if (!d || !opt || this.c.dialogues.includes(id)) return null;
+    applyDialogueChoice(this.c.psyche.traits, this.c.psyche.values, opt, this.rng);
+    this.c.dialogues.push(id);
+    return opt.reply;
   }
 
   // -------------------------------------------------------------------------
@@ -209,7 +293,7 @@ export class Simulation {
   /** Custo real em Fluxo de usar o Elo agora. */
   slotCost(slot: EloSlot, info: EffectiveInfo): number {
     const tech = TECHNIQUES[slot.technique as TechniqueId];
-    const res = tech.id === 'signature' ? resonance(tech.tags, this.c.psyche.traits) : 1;
+    const res = resonance(tech.tags, this.c.psyche.traits);
     return ((info.costPct / 100) * this.flowMax() * masteryCostMult(this.c.mastery[tech.id]) * this.mods.techniqueCost) / Math.max(0.5, res);
   }
 
@@ -243,6 +327,8 @@ export class Simulation {
     } else {
       this.updatePlayer(input, dt);
     }
+    for (const fx of this.pending.filter((x) => x.at <= this.time)) fx.run();
+    this.pending = this.pending.filter((x) => x.at > this.time);
     this.updateEnemies(dt);
     this.updateTraps(dt);
     this.updateProgress(dt);
@@ -268,7 +354,8 @@ export class Simulation {
       this.notice(n.text, tone);
       if (n.type === 'crisisStart' && this.c.psyche.crisis.phase === 'active') {
         // Uma Crise derruba a Afiação das técnicas em uso.
-        for (const id of ['basic', 'signature', 'point', this.player.posture] as MasteryId[]) {
+        const inUse = this.c.elos.filter((s) => s.technique).map((s) => s.technique as MasteryId);
+        for (const id of ['basic', this.player.posture, ...inUse] as MasteryId[]) {
           const r = this.c.mastery[id];
           r.sharpness = Math.max(0, r.sharpness - 0.2);
         }
@@ -282,7 +369,7 @@ export class Simulation {
 
   private train(id: MasteryId, baseXp: number, risk: number): void {
     const r = this.c.mastery[id];
-    const tech = id === 'signature' ? TECHNIQUES.signature : null;
+    const tech = isSpell(id) ? SPELLS[id] : null;
     const others = totalMastery(Object.values(this.c.mastery));
     const up = recordUse(r, baseXp, {
       risk,
@@ -364,6 +451,7 @@ export class Simulation {
     const slow = this.time < p.slowUntil ? 0.5 : 1;
     const speed = 5.2 * this.mods.moveSpeed * slow * (p.attackAnim > 0.15 ? 0.55 : 1);
     if (dir.x || dir.y) moveWithCollision(this.map, p.pos, dir.x * speed * dt, dir.y * speed * dt, 0.35);
+    this.lastAim = { ...input.aim };
     const aimDir = normalize({ x: input.aim.x - p.pos.x, y: input.aim.y - p.pos.y });
     if (aimDir.x || aimDir.y) p.facing = aimDir;
     else if (dir.x || dir.y) p.facing = dir;
@@ -408,6 +496,41 @@ export class Simulation {
     if (p.hp / this.maxHp() < 0.25 && p.nearDeathCd <= 0) {
       p.nearDeathCd = 25;
       this.feel('nearDeath');
+    }
+
+    // Grimórios no chão e livros antigos.
+    for (const d of [...this.drops]) {
+      if (this.time > d.expiresAt) this.drops = this.drops.filter((x) => x !== d);
+      else if (dist(d.pos, p.pos) < 1.1) {
+        this.drops = this.drops.filter((x) => x !== d);
+        this.acquireSpell(d.spell, d.pos, 'Grimório');
+      }
+    }
+    for (const b of this.map.books) {
+      if (c.booksRead.includes(b.id) || Math.hypot(b.x - p.pos.x, b.y - p.pos.y) > 1.4) continue;
+      c.booksRead.push(b.id);
+      this.acquireSpell(b.spell, { x: b.x, y: b.y }, 'Livro antigo');
+    }
+
+    // Fugir de uma luta perdida para o santuário molda a personalidade.
+    const inSanct = this.inSanctuary();
+    if (inSanct && !this.wasInSanctuary && p.hp / this.maxHp() < 0.5 && this.live().some((e) => e.aggro && dist(e.pos, p.pos) < 12)) {
+      this.feel('retreat');
+    }
+    this.wasInSanctuary = inSanct;
+
+    // Evento da ponte.
+    const br = this.map.bridge;
+    if (
+      !this.bridgePrompted &&
+      !c.dialogues.includes('bridge') &&
+      p.pos.x >= br.x0 - 1 &&
+      p.pos.x <= br.x1 + 1 &&
+      p.pos.y >= br.y0 - 1 &&
+      p.pos.y <= br.y1 + 2
+    ) {
+      this.bridgePrompted = true;
+      this.events.push({ t: 'dialogue', id: 'bridge' });
     }
 
     // Eco do jogador.
@@ -487,6 +610,8 @@ export class Simulation {
     const p = this.player;
     const slot = this.c.elos[level - 1];
     if (!slot || !slot.unlocked || !slot.technique) return;
+    const problem = this.equipProblem(slot.level, slot.technique as SpellId);
+    if (problem) return this.notice(`${SPELLS[slot.technique as SpellId].name}: ${problem}`, 'warn');
     if (slot.sealed) return this.notice(`Elo ${level} está selado. Cumpra a penitência no santuário.`, 'warn');
     if (this.mods.techniquesBlocked) return this.notice('O Pânico bloqueia suas técnicas.', 'warn');
     if (!POSTURES[p.posture].allowsTechniques) return this.notice('Sem técnicas em Silêncio.', 'warn');
@@ -508,55 +633,229 @@ export class Simulation {
     }
     if (this.contraryPacts(slot) > 0) this.c.psyche.stress = clamp(this.c.psyche.stress + 4, 0, 100);
 
-    if (slot.technique === 'signature') this.castSignature(slot, info);
-    else if (slot.technique === 'point') this.castPoint(info);
+    p.lastCombatAt = this.time;
+    p.attackAnim = 0.3;
+    this.castSpell(SPELLS[slot.technique as SpellId], slot, info);
   }
 
-  private castSignature(slot: EloSlot, info: EffectiveInfo): void {
-    const p = this.player;
-    const tech = TECHNIQUES.signature;
-    const from = { ...p.pos };
-    const dash = tech.range * (1 + 0.25 * (slot.mods.range ?? 0));
-    const steps = 8;
-    for (let i = 0; i < steps; i++) moveWithCollision(this.map, p.pos, (p.facing.x * dash) / steps, (p.facing.y * dash) / steps, 0.35);
-    const radius = tech.radius * (1 + 0.3 * (slot.mods.area ?? 0));
-    const center = { x: p.pos.x + p.facing.x * 0.6, y: p.pos.y + p.facing.y * 0.6 };
-    p.attackAnim = 0.35;
-    this.events.push({ t: 'signature', from, to: { ...p.pos }, radius, beyond: info.beyondLimit });
-    p.lastCombatAt = this.time;
+  // -------------------------------------------------------------------------
+  // Magias
+  // -------------------------------------------------------------------------
 
-    const r = this.c.mastery.signature;
-    const dmgBase =
-      tech.baseDamage *
+  /** Dano de uma magia neste Elo: nível efetivo, forja, postura, Maré, Maestria e Afiação. */
+  private spellDamage(spell: SpellDef, slot: EloSlot, info: EffectiveInfo): number {
+    const r = this.c.mastery[spell.id];
+    return (
+      spell.baseDamage *
       info.power *
       (1 + 0.2 * (slot.mods.damage ?? 0)) *
       this.outgoingMult() *
       this.mods.signature *
       sharpnessMult(r.sharpness) *
-      (1 + 0.02 * (displayLevel(r) - 1));
-    let hits = 0;
-    for (const e of this.enemies) {
-      if (e.state === 'dead') continue;
-      if (dist(e.pos, center) > radius + e.def.radius) continue;
-      if (slot.restrictions.includes('eliteOnly') && !e.def.elite) {
-        this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: 0, target: 'enemy', id: e.id, immune: true });
-        continue;
-      }
-      hits++;
-      e.signatureHits += 1;
-      const pierce = !!slot.mods.shatter || e.signatureHits % 3 === 0;
-      this.hitEnemy(e, dmgBase, { ignoreArmor: pierce, source: 'signature' });
-      if (slot.mods.stun) {
-        e.stun = 0.8;
-        if (e.state === 'windup' || e.state === 'charging') e.state = 'stunned';
-      }
-      this.train('signature', 10, this.currentRisk(e));
+      (1 + 0.02 * (displayLevel(r) - 1))
+    );
+  }
+
+  /** Acerto de magia num inimigo, respeitando "só contra elites" e a forja. Retorna se valeu. */
+  private spellHit(spell: SpellDef, slot: EloSlot, e: Enemy, dmg: number, pierce = false): boolean {
+    if (slot.restrictions.includes('eliteOnly') && !e.def.elite) {
+      this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: 0, target: 'enemy', id: e.id, immune: true });
+      return false;
     }
+    if (slot.mods.stun) this.stunEnemy(e, 0.8);
+    this.train(spell.id, 10, this.currentRisk(e));
+    if (dmg > 0) this.hitEnemy(e, dmg, { ignoreArmor: pierce || !!slot.mods.shatter, source: 'spell' });
+    return true;
+  }
+
+  /** Depois da magia: Restaurar cura se acertou; "se errar" pune se não acertou ninguém. */
+  private afterSpell(slot: EloSlot, hits: number): void {
+    const p = this.player;
     if (hits > 0 && slot.mods.restore) this.healPlayer(this.maxHp() * 0.06);
     if (hits === 0 && slot.restrictions.includes('missLock')) {
       p.flow = 0;
       p.flowLockUntil = this.time + 20;
       this.notice('Restrição: você errou. Fluxo perdido por 20 s.', 'bad');
+    }
+  }
+
+  private stunEnemy(e: Enemy, s: number): void {
+    if (e.def.boss) s *= 0.4;
+    e.stun = Math.max(e.stun, s);
+    if (e.state === 'windup' || e.state === 'charging') e.state = 'stunned';
+  }
+
+  private live(): Enemy[] {
+    return this.enemies.filter((e) => e.state !== 'dead');
+  }
+
+  /** Ponto do mundo na direção da mira, limitado ao alcance. */
+  private aimPoint(range: number): Vec2 {
+    const p = this.player;
+    const a = this.lastAim;
+    const d = Math.min(range, dist(a, p.pos));
+    const dir = normalize({ x: a.x - p.pos.x, y: a.y - p.pos.y });
+    return { x: p.pos.x + dir.x * d, y: p.pos.y + dir.y * d };
+  }
+
+  /** Puxa/empurra um inimigo ao longo de `dir` por `amount` metros, com colisão. */
+  private shove(e: Enemy, dir: Vec2, amount: number): void {
+    if (e.def.boss) return;
+    const k = e.def.elite ? 0.5 : 1;
+    const steps = 6;
+    for (let i = 0; i < steps; i++) moveWithCollision(this.map, e.pos, (dir.x * amount * k) / steps, (dir.y * amount * k) / steps, Math.min(0.45, e.def.radius * 0.6));
+    if (inCircle(this.map.sanctuary, e.pos, 1)) {
+      // Inimigos nunca entram no santuário, nem empurrados.
+      const out = normalize({ x: e.pos.x - this.map.sanctuary.x, y: e.pos.y - this.map.sanctuary.y });
+      e.pos = { x: this.map.sanctuary.x + out.x * (this.map.sanctuary.r + 1.1), y: this.map.sanctuary.y + out.y * (this.map.sanctuary.r + 1.1) };
+    }
+  }
+
+  private castSpell(spell: SpellDef, slot: EloSlot, info: EffectiveInfo): void {
+    const p = this.player;
+    const range = spell.range * (1 + 0.25 * (slot.mods.range ?? 0));
+    const radius = spell.radius * (1 + 0.3 * (slot.mods.area ?? 0));
+    const dmg = this.spellDamage(spell, slot, info);
+    const color = AFFINITY_COLORS[spell.affinity];
+    const beyond = info.beyondLimit;
+    let hits = 0;
+
+    switch (spell.id) {
+      case 'votePunch': {
+        const from = { ...p.pos };
+        for (let i = 0; i < 8; i++) moveWithCollision(this.map, p.pos, (p.facing.x * range) / 8, (p.facing.y * range) / 8, 0.35);
+        const center = { x: p.pos.x + p.facing.x * 0.6, y: p.pos.y + p.facing.y * 0.6 };
+        this.events.push({ t: 'signature', from, to: { ...p.pos }, radius, beyond });
+        for (const e of this.live()) {
+          if (dist(e.pos, center) > radius + e.def.radius) continue;
+          e.signatureHits += 1;
+          if (this.spellHit(spell, slot, e, dmg, e.signatureHits % 3 === 0)) hits++;
+        }
+        return this.afterSpell(slot, hits);
+      }
+      case 'point':
+        return this.castPoint(info);
+      case 'flowLance': {
+        const from = { ...p.pos };
+        const dir = { ...p.facing };
+        let len = 0;
+        while (len < range && !isBlocked(this.map, from.x + dir.x * (len + 0.3), from.y + dir.y * (len + 0.3))) len += 0.3;
+        const to = { x: from.x + dir.x * len, y: from.y + dir.y * len };
+        this.events.push({ t: 'beam', from, to, width: radius, color: beyond ? '#ffd84a' : color });
+        for (const e of this.live()) {
+          const rx = e.pos.x - from.x;
+          const ry = e.pos.y - from.y;
+          const along = rx * dir.x + ry * dir.y;
+          const perp = Math.abs(rx * dir.y - ry * dir.x);
+          if (along < 0 || along > len + e.def.radius || perp > radius + e.def.radius) continue;
+          if (this.spellHit(spell, slot, e, dmg)) hits++;
+        }
+        return this.afterSpell(slot, hits);
+      }
+      case 'orbRain': {
+        const at = this.aimPoint(range);
+        this.events.push({ t: 'spellMark', x: at.x, y: at.y, r: radius, duration: 0.6, color });
+        this.pending.push({
+          at: this.time + 0.6,
+          run: () => {
+            let h = 0;
+            this.events.push({ t: 'impact', x: at.x, y: at.y, r: radius, color: beyond ? '#ffd84a' : color });
+            for (const e of this.live()) if (dist(e.pos, at) <= radius + e.def.radius && this.spellHit(spell, slot, e, dmg)) h++;
+            this.afterSpell(slot, h);
+          },
+        });
+        return;
+      }
+      case 'elasticPull': {
+        const targets: Vec2[] = [];
+        for (const e of this.live()) {
+          const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
+          const d = Math.hypot(to.x, to.y);
+          if (d > range || (d > 0.8 && angleBetween(to, p.facing) > (40 * Math.PI) / 180)) continue;
+          if (!this.spellHit(spell, slot, e, dmg)) continue;
+          hits++;
+          targets.push({ ...e.pos });
+          this.shove(e, normalize({ x: -to.x, y: -to.y }), Math.max(0, d - (e.def.radius + 1)));
+          e.aggro = true;
+        }
+        this.events.push({ t: 'tether', from: { ...p.pos }, targets, color });
+        return this.afterSpell(slot, hits);
+      }
+      case 'discharge': {
+        const aim = this.lastAim;
+        const first = this.live()
+          .filter((e) => dist(e.pos, p.pos) <= range && (e.revealed || !e.def.shadowed))
+          .sort((a, b) => dist(a.pos, aim) - dist(b.pos, aim))[0];
+        if (!first) {
+          this.events.push({ t: 'chain', points: [{ ...p.pos }, this.aimPoint(range)], color });
+          return this.afterSpell(slot, 0);
+        }
+        const chain: Enemy[] = [first];
+        const jumps = 3 + (slot.mods.area ?? 0);
+        while (chain.length <= jumps) {
+          const last = chain[chain.length - 1]!;
+          const next = this.live()
+            .filter((e) => !chain.includes(e) && dist(e.pos, last.pos) <= radius)
+            .sort((a, b) => dist(a.pos, last.pos) - dist(b.pos, last.pos))[0];
+          if (!next) break;
+          chain.push(next);
+        }
+        this.events.push({ t: 'chain', points: [{ ...p.pos }, ...chain.map((e) => ({ ...e.pos }))], color: beyond ? '#ffd84a' : color });
+        chain.forEach((e, i) => {
+          if (e.state !== 'dead' && this.spellHit(spell, slot, e, dmg * Math.pow(0.85, i))) hits++;
+        });
+        return this.afterSpell(slot, hits);
+      }
+      case 'chains': {
+        const at = this.aimPoint(range);
+        this.events.push({ t: 'chains', x: at.x, y: at.y, r: radius, color });
+        for (const e of this.live()) {
+          if (dist(e.pos, at) > radius + e.def.radius) continue;
+          if (!this.spellHit(spell, slot, e, dmg)) continue;
+          hits++;
+          e.rootUntil = this.time + (e.def.boss ? 1.2 : 2.5);
+          e.aggro = true;
+        }
+        return this.afterSpell(slot, hits);
+      }
+      case 'conjuredBlade': {
+        this.events.push({ t: 'slash', x: p.pos.x, y: p.pos.y, dir: { ...p.facing }, range, arc: Math.PI, color: beyond ? '#ffd84a' : color });
+        for (const e of this.live()) {
+          const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
+          const d = Math.hypot(to.x, to.y);
+          if (d > range + e.def.radius || (d > 0.6 && angleBetween(to, p.facing) > Math.PI / 2)) continue;
+          if (this.spellHit(spell, slot, e, dmg)) hits++;
+        }
+        return this.afterSpell(slot, hits);
+      }
+      case 'repel': {
+        this.events.push({ t: 'impact', x: p.pos.x, y: p.pos.y, r: radius, color: beyond ? '#ffd84a' : color });
+        for (const e of this.live()) {
+          const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
+          if (Math.hypot(to.x, to.y) > radius + e.def.radius) continue;
+          if (!this.spellHit(spell, slot, e, dmg)) continue;
+          hits++;
+          this.shove(e, normalize(to), 3);
+          this.stunEnemy(e, 0.6);
+        }
+        return this.afterSpell(slot, hits);
+      }
+      case 'discord': {
+        const aim = this.lastAim;
+        const target = this.live()
+          .filter((e) => !e.def.elite && dist(e.pos, p.pos) <= range && (e.revealed || !e.def.shadowed))
+          .sort((a, b) => dist(a.pos, aim) - dist(b.pos, aim))[0];
+        if (!target) {
+          this.notice('Marca da Discórdia: nenhum inimigo comum ao alcance.', 'warn');
+          return this.afterSpell(slot, 0);
+        }
+        target.charmedUntil = this.time + 6;
+        target.aggro = true;
+        target.state = 'chase';
+        this.train(spell.id, 10, this.currentRisk(target));
+        this.events.push({ t: 'mark', id: target.id, color });
+        return this.afterSpell(slot, 1);
+      }
     }
   }
 
@@ -575,7 +874,7 @@ export class Simulation {
     if (p.hp > before) this.events.push({ t: 'heal', amount: Math.round(p.hp - before) });
   }
 
-  private hitEnemy(e: Enemy, raw: number, opts: { ignoreArmor: boolean; source: 'basic' | 'signature' }): void {
+  private hitEnemy(e: Enemy, raw: number, opts: { ignoreArmor: boolean; source: 'basic' | 'spell' }): void {
     const p = this.player;
     let dmg = raw;
     let crit = false;
@@ -618,6 +917,15 @@ export class Simulation {
     e.state = 'dead';
     e.respawnIn = e.summoned ? Infinity : e.def.respawn;
     this.events.push({ t: 'enemyDeath', id: e.id, x: e.pos.x, y: e.pos.y, boss: e.def.boss });
+    e.charmedUntil = -1;
+    e.rootUntil = -1;
+    if (!e.summoned && this.rng.chance(SPELL_DROP_CHANCE[e.kind])) {
+      // Prefere magias que o personagem ainda não conhece.
+      const unknown = SPELL_IDS.filter((id) => !this.c.knownSpells.includes(id));
+      const spell = this.rng.pick(unknown.length ? unknown : SPELL_IDS);
+      this.drops.push({ id: this.nextId++, spell, pos: { ...e.pos }, expiresAt: this.time + (e.def.boss ? 600 : 120) });
+      this.notice(`${e.def.name} deixou cair um grimório.`, 'good');
+    }
     p.needs.fight = clamp(p.needs.fight + 0.12, 0, 1);
     this.gainXp(e.def.xp, true);
     p.killTimes = p.killTimes.filter((t) => this.time - t < 6);
@@ -694,6 +1002,7 @@ export class Simulation {
     p.hp = 0;
     p.dead = true;
     p.respawnIn = 3;
+    c.deaths += 1;
     p.bossEngaged = false;
     this.events.push({ t: 'playerDeath', x: p.pos.x, y: p.pos.y });
 
@@ -764,6 +1073,8 @@ export class Simulation {
       phase: 1,
       summoned,
       hurtAgo: 99,
+      rootUntil: -1,
+      charmedUntil: -1,
     };
     this.enemies.push(e);
     return e;
@@ -815,6 +1126,11 @@ export class Simulation {
       if (e.stun > 0) {
         e.stun -= dt;
         if (e.stun <= 0 && e.state === 'stunned') e.state = 'chase';
+        continue;
+      }
+
+      if (this.time < e.charmedUntil) {
+        this.updateCharmed(e, dt);
         continue;
       }
 
@@ -902,6 +1218,57 @@ export class Simulation {
     this.separateEnemies();
   }
 
+  /** Marca da Discórdia: o inimigo ataca o aliado mais próximo. */
+  private updateCharmed(e: Enemy, dt: number): void {
+    const foe = this.live()
+      .filter((x) => x !== e && this.time >= x.charmedUntil && dist(x.pos, e.pos) < 12)
+      .sort((a, b) => dist(a.pos, e.pos) - dist(b.pos, e.pos))[0];
+    const atk = e.def.attacks.find((a) => a.type === 'melee')!;
+    if (!foe) {
+      e.state = 'idle';
+      return;
+    }
+    const to = { x: foe.pos.x - e.pos.x, y: foe.pos.y - e.pos.y };
+    const d = Math.hypot(to.x, to.y);
+    e.facing = normalize(to);
+    if (e.state === 'windup') {
+      e.timer -= dt;
+      if (e.timer <= 0) {
+        this.events.push({ t: 'enemySwing', id: e.id, dir: { ...e.facing }, range: atk.range });
+        if (d <= atk.range + foe.def.radius + 0.3) {
+          const dmg = Math.max(1, Math.round(atk.damage * 1.5 - foe.def.armor));
+          foe.hp -= dmg;
+          foe.hurtAgo = 0;
+          this.events.push({ t: 'damage', x: foe.pos.x, y: foe.pos.y, amount: dmg, target: 'enemy', id: foe.id });
+          if (foe.hp <= 0) this.killEnemy(foe);
+        }
+        e.state = 'recover';
+        e.timer = atk.recover;
+      }
+    } else if (e.state === 'recover') {
+      e.timer -= dt;
+      if (e.timer <= 0) e.state = 'chase';
+    } else if (d <= atk.range + foe.def.radius * 0.5 && (e.cooldowns[atk.id] ?? 0) <= 0) {
+      e.cooldowns[atk.id] = atk.cooldown;
+      e.state = 'windup';
+      e.timer = atk.windup;
+    } else {
+      e.state = 'chase';
+      this.moveEnemy(e, e.facing, e.def.speed * dt);
+    }
+  }
+
+  private acquireSpell(spell: SpellId, at: Vec2, source: string): void {
+    const s = SPELLS[spell];
+    if (learnSpell(this.c, spell)) {
+      this.events.push({ t: 'learn', spell, x: at.x, y: at.y });
+      this.notice(`${source}: você aprendeu ${s.name} (${s.role}, ${AFFINITY_NAMES[s.affinity]}). Equipe no santuário (K).`, 'good');
+    } else {
+      this.train(spell, 30, 1);
+      this.notice(`${source}: você já conhece ${s.name}. A leitura aprofunda sua Maestria.`, 'info');
+    }
+  }
+
   private chooseAttack(e: Enemy, d: number): AttackDef | null {
     const ready = e.def.attacks.filter((a) => (e.cooldowns[a.id] ?? 0) <= 0);
     // Pesados primeiro (mais interessantes), depois investida à distância, depois corpo a corpo.
@@ -942,6 +1309,7 @@ export class Simulation {
   }
 
   private moveEnemy(e: Enemy, dir: Vec2, step: number): void {
+    if (this.time < e.rootUntil) return; // preso por Correntes
     const before = { ...e.pos };
     moveWithCollision(this.map, e.pos, dir.x * step, dir.y * step, Math.min(0.45, e.def.radius * 0.6));
     // Inimigos não entram no santuário; o chefe não sai da arena.

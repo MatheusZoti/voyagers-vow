@@ -1,5 +1,5 @@
 import type { Affinity } from './flow/affinity';
-import { affinityPenalty } from './flow/affinity';
+import { affinityPenalty, minSlotFor } from './flow/affinity';
 import { STRONG_VALUE, type ValueId, type Values } from './psyche/traits';
 
 /**
@@ -217,6 +217,15 @@ export function evaluateSlot(
     maxRestrictions: row.restrictions,
     alignedPact: alignedPact ?? null,
   };
+}
+
+/**
+ * Uma magia só entra num Elo se o nível resultante não ficar abaixo de 1:
+ * Elo mínimo = nível mínimo da magia + distância no pentágono.
+ */
+export function equipError(slotLevel: number, characterAffinity: Affinity, spellAffinity: Affinity, spellMinLevel = 1): string | null {
+  const need = minSlotFor(characterAffinity, spellAffinity, spellMinLevel);
+  return slotLevel >= need ? null : `Precisa de Elo ${need} ou maior.`;
 }
 
 /** Valida e explica por que uma mudança não cabe. */

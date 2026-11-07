@@ -3,8 +3,7 @@ import { createCharacter } from '../src/sim/character';
 import { emptyInput, Simulation, TICK } from '../src/sim/sim';
 import { buildMap, isBlocked } from '../src/sim/world/map';
 
-const answers = [0, 1, 2, 0, 1, 2, 0, 1, 2, 0];
-const newSim = () => new Simulation(createCharacter('Teste', answers, 3), 5);
+const newSim = () => new Simulation(createCharacter('Teste', 'vigor', 3), 5);
 
 describe('Mapa', () => {
   it('início, ponte e arena são caminháveis', () => {
@@ -71,15 +70,15 @@ describe('Simulação', () => {
     expect(sim.inSanctuary()).toBe(true);
   });
 
-  it('Assinatura gasta Fluxo e entra em recarga', () => {
+  it('magia gasta Fluxo e entra em recarga', () => {
     const sim = newSim();
     const flow = sim.player.flow;
     const input = emptyInput();
     input.aim = { x: sim.player.pos.x + 3, y: sim.player.pos.y };
-    input.useSlot = 2;
+    input.useSlot = 1;
     sim.step(input);
     expect(sim.player.flow).toBeLessThan(flow);
-    expect(sim.player.slotCd[2]).toBeGreaterThan(0);
+    expect(sim.player.slotCd[1]).toBeGreaterThan(0);
   });
 
   it('fugir do chefe com o juramento sela o Elo', () => {

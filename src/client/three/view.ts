@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { AFFINITY_COLORS } from '../../sim/flow/affinity';
+import { NPCS, type NpcId } from '../../sim/psyche/dialogues';
+import { SPELLS } from '../../sim/techniques';
 import { POSTURES, type Posture } from '../../sim/flow/flow';
 import type { Vec2 } from '../../sim/math';
 import type { SimEvent, Simulation } from '../../sim/sim';
@@ -24,6 +26,8 @@ const CAM_OFFSET = new THREE.Vector3(0, 17, 12.5);
 
 interface EnemyView {
   rig: Rig;
+  markRing: THREE.Mesh;
+  rootRing: THREE.Mesh;
   bar: THREE.Group;
   barFill: THREE.Mesh;
   last: THREE.Vector3;
@@ -63,6 +67,10 @@ export class GameView {
   private time = 0;
   private shake = 0;
   private camTarget = new THREE.Vector3();
+  private npcs: Array<{ id: NpcId; rig: Rig; label: HTMLDivElement }> = [];
+  private books: Array<{ id: string; group: THREE.Group; glow: THREE.Object3D }> = [];
+  private dropMeshes = new Map<number, THREE.Group>();
+  private hoverNpc: NpcId | null = null;
   private playerHurt = 0;
 
   constructor(
@@ -179,6 +187,43 @@ export class GameView {
     this.echoMesh.visible = false;
     this.scene.add(this.echoMesh);
 
+    // NPCs do vale.
+    for (const n of sim.map.npcs) {
+      const def = NPCS[n.id];
+      const rig = buildPlayer(def.color);
+      rememberEmissive(rig);
+      rig.root.position.set(n.x, 0, n.y);
+      rig.body.rotation.y = Math.atan2(sim.map.playerStart.x - n.x, sim.map.playerStart.y - n.y);
+      this.scene.add(rig.root);
+      const label = document.createElement('div');
+      label.className = 'npc-label';
+      this.floaterLayer.appendChild(label);
+      this.npcs.push({ id: n.id, rig, label });
+    }
+
+    // Livros antigos em púlpitos de pedra.
+    for (const b of sim.map.books) {
+      const g = new THREE.Group();
+      const stone = mat('#9a9486');
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 0.9, 6), stone);
+      post.position.y = 0.45;
+      const top = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.5), stone);
+      top.position.y = 0.95;
+      top.rotation.x = -0.35;
+      post.castShadow = top.castShadow = true;
+      const color = AFFINITY_COLORS[SPELLS[b.spell].affinity];
+      const glow = new THREE.Group();
+      const book = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.08, 0.34), mat(color, { emissive: color, emissiveIntensity: 0.9 }));
+      book.position.y = 1.32;
+      const light = new THREE.PointLight(color, 3, 4, 2);
+      light.position.y = 1.6;
+      glow.add(book, light);
+      g.add(post, top, glow);
+      g.position.set(b.x, 0, b.y);
+      this.scene.add(g);
+      this.books.push({ id: b.id, group: g, glow });
+    }
+
     this.resize();
     window.addEventListener('resize', () => this.resize());
     const p = sim.player.pos;
@@ -224,7 +269,22 @@ export class GameView {
     bar.visible = false;
     if (!e.def.boss) rig.root.add(bar);
     this.scene.add(rig.root);
-    v = { rig, bar, barFill: fill, last: new THREE.Vector3(e.pos.x, 0, e.pos.y), dead: 0, hurt: 0, attack: 0 };
+    const markRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.32, 0.05, 6, 20),
+      new THREE.MeshBasicMaterial({ color: AFFINITY_COLORS.dominion, transparent: true, opacity: 0.9 }),
+    );
+    markRing.rotation.x = Math.PI / 2;
+    markRing.position.y = rig.height / (e.def.boss ? 1.75 : 1) + 0.6;
+    markRing.visible = false;
+    const rootRing = new THREE.Mesh(
+      new THREE.TorusGeometry(e.def.radius + 0.25, 0.06, 4, 24),
+      new THREE.MeshBasicMaterial({ color: AFFINITY_COLORS.forge, transparent: true, opacity: 0.9 }),
+    );
+    rootRing.rotation.x = Math.PI / 2;
+    rootRing.position.y = 0.25;
+    rootRing.visible = false;
+    rig.root.add(markRing, rootRing);
+    v = { rig, markRing, rootRing, bar, barFill: fill, last: new THREE.Vector3(e.pos.x, 0, e.pos.y), dead: 0, hurt: 0, attack: 0 };
     rig.root.position.copy(v.last);
     this.enemies.set(e.id, v);
     return v;
@@ -248,6 +308,46 @@ export class GameView {
         }
         case 'pointCharge':
           this.fx.pillar(sim.player.pos, '#ffffff', 2.5, 0.35);
+          break;
+        case 'beam':
+          this.fx.beam(ev.from, ev.to, ev.width, ev.color);
+          this.shake = Math.max(this.shake, 0.12);
+          break;
+        case 'spellMark':
+          this.fx.telegraph({ x: ev.x, y: ev.y }, ev.r, ev.duration, false, ev.color);
+          break;
+        case 'impact':
+          this.fx.shockwave({ x: ev.x, y: ev.y }, ev.r * 1.3, ev.color, 0.5, 0.3);
+          this.fx.burst({ x: ev.x, y: ev.y }, ev.color, 16, 4, 0.6);
+          this.shake = Math.max(this.shake, 0.22);
+          break;
+        case 'tether':
+          for (const t of ev.targets) this.fx.lines([ev.from, t], ev.color, false, 0.45);
+          if (!ev.targets.length) this.fx.swing(ev.from, sim.player.facing, 6, ev.color, 1.4);
+          break;
+        case 'chain':
+          this.fx.lines(ev.points, ev.color, true, 0.4);
+          break;
+        case 'chains':
+          this.fx.chains({ x: ev.x, y: ev.y }, ev.r, ev.color);
+          break;
+        case 'slash':
+          this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range, ev.color, ev.arc);
+          this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range * 0.75, '#ffffff', ev.arc * 0.9);
+          this.shake = Math.max(this.shake, 0.18);
+          break;
+        case 'mark': {
+          const e = sim.enemies.find((x) => x.id === ev.id);
+          if (e) {
+            this.fx.pillar(e.pos, ev.color, 3, 0.6);
+            this.floater(new THREE.Vector3(e.pos.x, 2.4, e.pos.y), 'Discórdia', 'perfect');
+          }
+          break;
+        }
+        case 'learn':
+          this.fx.pillar({ x: ev.x, y: ev.y }, AFFINITY_COLORS[SPELLS[ev.spell].affinity], 5, 1.2);
+          this.fx.burst({ x: ev.x, y: ev.y }, AFFINITY_COLORS[SPELLS[ev.spell].affinity], 24, 3);
+          this.floater(new THREE.Vector3(ev.x, 2.6, ev.y), SPELLS[ev.spell].name, 'perfect');
           break;
         case 'telegraph':
           this.fx.telegraph({ x: ev.x, y: ev.y }, ev.r, ev.duration, ev.heavy);
@@ -421,6 +521,67 @@ export class GameView {
       this.echoMesh.position.set(sim.echo.pos.x, Math.sin(this.time * 2) * 0.15, sim.echo.pos.y);
     } else this.echoMesh.visible = false;
 
+    // NPCs: respiração leve, nome e "!" quando há conversa nova.
+    for (const n of this.npcs) {
+      animateRig(n.rig, dt, 0, { attack: 0, windup: 0, dead: 0 });
+      const fresh = !!sim.dialogueFor(n.id);
+      const pr = this.project({ x: n.rig.root.position.x, y: n.rig.root.position.z }, 2.35);
+      const near = sim.npcDistance(n.id) < 14;
+      n.label.style.display = pr.visible && near ? '' : 'none';
+      n.label.style.transform = `translate(${pr.x}px, ${pr.y}px) translate(-50%, -100%)`;
+      const html = `${fresh ? '<b class="bang">!</b>' : ''}<span>${NPCS[n.id].name}</span>`;
+      if (n.label.dataset.h !== html) {
+        n.label.dataset.h = html;
+        n.label.innerHTML = html;
+      }
+      n.label.classList.toggle('hover', this.hoverNpc === n.id);
+      flash(n.rig, this.hoverNpc === n.id ? 0.35 : 0);
+    }
+    // Livros: brilham até serem lidos.
+    for (const b of this.books) {
+      const read = sim.c.booksRead.includes(b.id);
+      b.glow.visible = !read;
+      b.glow.position.y = Math.sin(this.time * 2) * 0.06;
+      b.glow.rotation.y += dt * 0.6;
+    }
+    // Grimórios caídos.
+    for (const d of sim.drops) {
+      let g = this.dropMeshes.get(d.id);
+      if (!g) {
+        const color = AFFINITY_COLORS[SPELLS[d.spell].affinity];
+        g = new THREE.Group();
+        const book = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.32), mat(color, { emissive: color, emissiveIntensity: 1 }));
+        const halo = new THREE.Mesh(
+          new THREE.RingGeometry(0.45, 0.6, 24),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }),
+        );
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.y = -0.75;
+        const light = new THREE.PointLight(color, 3, 4, 2);
+        g.add(book, halo, light);
+        g.position.set(d.pos.x, 0.9, d.pos.y);
+        this.scene.add(g);
+        this.dropMeshes.set(d.id, g);
+      }
+      g.position.y = 0.9 + Math.sin(this.time * 3 + d.id) * 0.12;
+      g.children[0]!.rotation.y += dt * 2;
+    }
+    for (const [id, g] of this.dropMeshes) {
+      if (!sim.drops.some((d) => d.id === id)) {
+        this.scene.remove(g);
+        this.dropMeshes.delete(id);
+      }
+    }
+    // Estados dos inimigos: preso por Correntes, sob Discórdia.
+    for (const e of sim.enemies) {
+      const v = this.enemies.get(e.id);
+      if (!v) continue;
+      const alive = e.state !== 'dead';
+      v.markRing.visible = alive && sim.time < e.charmedUntil;
+      v.markRing.rotation.z += dt * 3;
+      v.rootRing.visible = alive && sim.time < e.rootUntil;
+    }
+
     // Câmera estilo Albion: inclinada, fixa, seguindo o personagem.
     this.camTarget.lerp(this.player.root.position, Math.min(1, dt * 6));
     this.shake = Math.max(0, this.shake - dt * 1.8);
@@ -465,10 +626,17 @@ export class GameView {
     };
   }
 
+  /** NPC sob o cursor (para destacar e trocar o cursor). */
+  setHoverNpc(id: NpcId | null): void {
+    this.hoverNpc = id;
+    this.renderer.domElement.style.cursor = id ? 'pointer' : 'crosshair';
+  }
+
   dispose(): void {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     for (const f of this.floaters) f.el.remove();
+    for (const n of this.npcs) n.label.remove();
   }
 }
 

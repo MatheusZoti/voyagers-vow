@@ -6,7 +6,7 @@ import { clamp } from '../../sim/math';
 import { EMOTION_COLORS, EMOTION_NAMES, type EmotionId, type EmotionMap } from '../../sim/psyche/emotions';
 import { STRESS_BAND_NAMES, stressBand, type StressBand } from '../../sim/psyche/psyche';
 import { TRAIT_POLES, traitPhrase, VALUE_IDS, VALUE_NAMES, valuePhrase, type TraitId, type Traits, type Values } from '../../sim/psyche/traits';
-import type { MasteryId, TechniqueDef } from '../../sim/techniques';
+import { SPELLS, type MasteryId, type SpellId, type TechniqueDef } from '../../sim/techniques';
 import { escapeHtml } from '../util';
 import { icon } from './icons';
 
@@ -56,7 +56,7 @@ export function affinityRadar(c: Character): string {
   const cy = H / 2 + 4;
   const R = 92;
   const scores = affinityScores(c.psyche.traits);
-  const ang = (i: number) => -Math.PI / 2 + (i * Math.PI) / 3;
+  const ang = (i: number) => -Math.PI / 2 + (i * 2 * Math.PI) / AFFINITY_RING.length;
   const grad = nextId('rg');
   const glow = nextId('gl');
   const hex = (r: number) =>
@@ -64,7 +64,7 @@ export function affinityRadar(c: Character): string {
       .map((p, i) => `${i ? 'L' : 'M'}${f(p[0])},${f(p[1])}`)
       .join(' ') + 'Z';
   const pts = AFFINITY_RING.map((a, i) => {
-    const v = a === 'singular' ? 0.14 : clamp(0.2 + ((scores[a] + 35) / 70) * 0.8, 0.14, 1);
+    const v = clamp(0.2 + ((scores[a] + 35) / 70) * 0.8, 0.14, 1);
     return polar(cx, cy, R * v, ang(i));
   });
   const labels = AFFINITY_RING.map((a, i) => {
@@ -72,7 +72,7 @@ export function affinityRadar(c: Character): string {
     const anchor = Math.abs(x - cx) < 4 ? 'middle' : x > cx ? 'start' : 'end';
     const d = hexDistance(c.affinity, a);
     const own = d === 0;
-    const sub = own ? 'sua afinidade' : a === 'singular' ? 'rara · Transe' : `${['', 'vizinha', 'duas casas', 'oposta'][d]} · −${d}`;
+    const sub = own ? 'sua · Elo 1+' : `${d === 1 ? 'vizinha' : 'distante'} · Elo ${d + 1}+`;
     return `<g class="rl ${own ? 'own' : ''}">
       <text x="${f(x)}" y="${f(y - 2)}" text-anchor="${anchor}" class="rl-name" ${own ? `fill="${AFFINITY_COLORS[a]}"` : ''}>${AFFINITY_NAMES[a]}</text>
       <text x="${f(x)}" y="${f(y + 11)}" text-anchor="${anchor}" class="rl-sub">${sub}</text>
@@ -340,55 +340,89 @@ export interface ConstellationNode {
   label: string;
 }
 
-export const CONSTELLATION: ConstellationNode[] = [
-  { id: 'basic', x: 150, y: 228, parent: 'root', icon: 'basic', label: 'Golpe básico' },
-  { id: 'signature', x: 78, y: 128, parent: 'basic', icon: 'signature', label: 'Punho do Voto' },
-  { id: 'point', x: 188, y: 112, parent: 'basic', icon: 'point', label: 'Ponto' },
-  { id: 'veil', x: 268, y: 168, parent: 'root', icon: 'veil', label: 'Véu' },
-  { id: 'silence', x: 292, y: 62, parent: 'veil', icon: 'silence', label: 'Silêncio' },
-  { id: 'gaze', x: 412, y: 168, parent: 'root', icon: 'gaze', label: 'Olhar' },
-  { id: 'impetus', x: 388, y: 62, parent: 'gaze', icon: 'impetus', label: 'Ímpeto' },
-  { id: 'tide', x: 530, y: 228, parent: 'root', icon: 'tide', label: 'Maré' },
-  { id: 'capacity', x: 600, y: 128, parent: 'tide', icon: 'capacity', label: 'Capacidade' },
-];
-const ROOT = { x: 340, y: 300 };
+const ROOT = { x: 430, y: 340 };
 
-export function constellation(mastery: Record<MasteryId, MasteryRecord>, selected: MasteryId, accent: string): string {
-  const pos = (id: MasteryId | 'root') => (id === 'root' ? ROOT : CONSTELLATION.find((n) => n.id === id)!);
+/** Posturas e Fluxo são fixos; as magias crescem com o grimório (até 10, em duas fileiras). */
+export function buildConstellation(known: SpellId[]): ConstellationNode[] {
+  const nodes: ConstellationNode[] = [
+    { id: 'basic', x: 190, y: 292, parent: 'root', icon: 'basic', label: 'Golpe básico' },
+    { id: 'veil', x: 478, y: 240, parent: 'root', icon: 'veil', label: 'Véu' },
+    { id: 'silence', x: 478, y: 138, parent: 'veil', icon: 'silence', label: 'Silêncio' },
+    { id: 'gaze', x: 592, y: 240, parent: 'root', icon: 'gaze', label: 'Olhar' },
+    { id: 'impetus', x: 592, y: 138, parent: 'gaze', icon: 'impetus', label: 'Ímpeto' },
+    { id: 'tide', x: 705, y: 292, parent: 'root', icon: 'tide', label: 'Maré' },
+    { id: 'capacity', x: 705, y: 186, parent: 'tide', icon: 'capacity', label: 'Capacidade' },
+  ];
+  const cols = [50, 120, 190, 260, 330];
+  known.slice(0, 10).forEach((id, i) => {
+    const row = i < 5 ? 0 : 1;
+    const col = i % 5;
+    const below = row === 1 ? known[col] : undefined;
+    nodes.push({
+      id,
+      x: cols[col]!,
+      y: row === 0 ? 190 : 88,
+      parent: row === 0 ? 'basic' : (below ?? 'basic'),
+      icon: SPELLS[id].icon,
+      label: SPELLS[id].name,
+    });
+  });
+  return nodes;
+}
+
+/** Rótulo em até duas linhas para caber entre os nós. */
+function twoLines(x: number, y: number, text: string): string {
+  const words = text.split(' ');
+  if (text.length <= 11 || words.length === 1) return `<text x="${x}" y="${y}" text-anchor="middle" class="c-label">${text}</text>`;
+  let a = '';
+  while (words.length && (a + ' ' + words[0]).trim().length <= 11) a = (a + ' ' + words.shift()).trim();
+  return `<text x="${x}" y="${y}" text-anchor="middle" class="c-label"><tspan x="${x}">${a}</tspan><tspan x="${x}" dy="11">${words.join(' ')}</tspan></text>`;
+}
+
+export function constellation(mastery: Record<MasteryId, MasteryRecord>, known: SpellId[], selected: MasteryId, accent: string): string {
+  const nodesDef = buildConstellation(known);
+  const pos = (id: MasteryId | 'root') => (id === 'root' ? ROOT : (nodesDef.find((n) => n.id === id) ?? ROOT));
   const glow = nextId('cg');
-  const lines = CONSTELLATION.map((n) => {
-    const p = pos(n.parent);
-    const lit = displayLevel(mastery[n.id]) > 1 || mastery[n.id].level - 1 > 0.25;
-    const mx = (p.x + n.x) / 2;
-    return `<path d="M${p.x},${p.y} Q${mx},${Math.max(p.y, n.y) + 10} ${n.x},${n.y}" class="c-line ${lit ? 'lit' : ''}"/>`;
-  }).join('');
-  const nodes = CONSTELLATION.map((n) => {
-    const r = mastery[n.id];
-    const lvl = displayLevel(r);
-    const frac = r.level - lvl;
-    const rr = 25;
-    const pc = 2 * Math.PI * (rr + 4);
-    const sc = 2 * Math.PI * (rr + 9);
-    const sel = n.id === selected;
-    return `<g class="c-node ${sel ? 'sel' : ''} ${lvl > 1 ? 'lit' : ''}" data-node="${n.id}" tabindex="0">
-      ${sel ? `<circle cx="${n.x}" cy="${n.y}" r="${rr + 16}" fill="${accent}" opacity=".18" filter="url(#${glow})"/>` : ''}
-      <circle cx="${n.x}" cy="${n.y}" r="${rr + 9}" class="c-sharp-track"/>
-      <circle cx="${n.x}" cy="${n.y}" r="${rr + 9}" class="c-sharp" stroke-dasharray="${f(sc * r.sharpness)} ${f(sc)}" transform="rotate(-90 ${n.x} ${n.y})"/>
+  const lines = nodesDef
+    .map((n) => {
+      const p = pos(n.parent);
+      const lit = displayLevel(mastery[n.id]) > 1 || mastery[n.id].level - 1 > 0.25;
+      const mx = (p.x + n.x) / 2;
+      return `<path d="M${p.x},${p.y} Q${mx},${Math.max(p.y, n.y) + 10} ${n.x},${n.y}" class="c-line ${lit ? 'lit' : ''}"/>`;
+    })
+    .join('');
+  const nodes = nodesDef
+    .map((n) => {
+      const r = mastery[n.id];
+      const lvl = displayLevel(r);
+      const frac = r.level - lvl;
+      const rr = 23;
+      const pc = 2 * Math.PI * (rr + 4);
+      const sc = 2 * Math.PI * (rr + 8);
+      const sel = n.id === selected;
+      const ring = isSpellId(n.id) ? AFFINITY_COLORS[SPELLS[n.id].affinity] : accent;
+      return `<g class="c-node ${sel ? 'sel' : ''} ${lvl > 1 ? 'lit' : ''}" data-node="${n.id}" tabindex="0">
+      ${sel ? `<circle cx="${n.x}" cy="${n.y}" r="${rr + 16}" fill="${ring}" opacity=".2" filter="url(#${glow})"/>` : ''}
+      <circle cx="${n.x}" cy="${n.y}" r="${rr + 8}" class="c-sharp-track"/>
+      <circle cx="${n.x}" cy="${n.y}" r="${rr + 8}" class="c-sharp" stroke-dasharray="${f(sc * r.sharpness)} ${f(sc)}" transform="rotate(-90 ${n.x} ${n.y})"/>
       <circle cx="${n.x}" cy="${n.y}" r="${rr + 4}" class="c-prog-track"/>
-      <circle cx="${n.x}" cy="${n.y}" r="${rr + 4}" class="c-prog" stroke="${accent}" stroke-dasharray="${f(pc * frac)} ${f(pc)}" transform="rotate(-90 ${n.x} ${n.y})"/>
+      <circle cx="${n.x}" cy="${n.y}" r="${rr + 4}" class="c-prog" stroke="${ring}" stroke-dasharray="${f(pc * frac)} ${f(pc)}" transform="rotate(-90 ${n.x} ${n.y})"/>
       <circle cx="${n.x}" cy="${n.y}" r="${rr}" class="c-core"/>
-      <g transform="translate(${n.x - 12} ${n.y - 12})" class="c-ic">${icon(n.icon, 24)}</g>
-      <circle cx="${n.x + 21}" cy="${n.y + 19}" r="10" class="c-badge"/>
-      <text x="${n.x + 21}" y="${n.y + 23}" text-anchor="middle" class="c-lvl">${lvl}</text>
-      <text x="${n.x}" y="${n.y + rr + 26}" text-anchor="middle" class="c-label">${n.label}</text>
+      <g transform="translate(${n.x - 11} ${n.y - 11})" class="c-ic">${icon(n.icon, 22)}</g>
+      <circle cx="${n.x + 19}" cy="${n.y + 18}" r="9.5" class="c-badge"/>
+      <text x="${n.x + 19}" y="${n.y + 21.5}" text-anchor="middle" class="c-lvl">${lvl}</text>
+      ${twoLines(n.x, n.y + rr + 22, n.label)}
     </g>`;
-  }).join('');
-  return `<svg class="constellation" viewBox="0 0 680 340" role="img" aria-label="Maestria">
+    })
+    .join('');
+  return `<svg class="constellation" viewBox="0 0 760 370" role="img" aria-label="Maestria">
     <defs><filter id="${glow}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8"/></filter></defs>
-    <text x="110" y="24" class="c-group">TÉCNICAS</text><text x="340" y="24" text-anchor="middle" class="c-group">POSTURAS</text><text x="570" y="24" text-anchor="end" class="c-group">FLUXO</text>
-    <path d="M60,300 A280,280 0 0 1 620,300" class="c-arc"/>
+    <text x="190" y="30" text-anchor="middle" class="c-group">MAGIAS</text><text x="535" y="30" text-anchor="middle" class="c-group">POSTURAS</text><text x="705" y="30" text-anchor="middle" class="c-group">FLUXO</text>
+    <path d="M40,340 A390,390 0 0 1 740,340" class="c-arc"/>
     ${lines}
     <circle cx="${ROOT.x}" cy="${ROOT.y}" r="14" class="c-root"/><circle cx="${ROOT.x}" cy="${ROOT.y}" r="5" fill="${accent}"/>
     ${nodes}
   </svg>`;
 }
+
+const isSpellId = (id: MasteryId): id is SpellId => id in SPELLS;

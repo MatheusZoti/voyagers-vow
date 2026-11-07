@@ -13,6 +13,8 @@ export class InputController {
   onKey: (code: string) => void = () => {};
   enabled = true;
   rightClickSlot: () => number | null = () => null;
+  /** clique esquerdo no mundo; retorna true se foi consumido (ex.: conversar com NPC) */
+  onLeftClick: (x: number, y: number) => boolean = () => false;
   private ac = new AbortController();
 
   constructor(private el: HTMLElement) {
@@ -41,6 +43,7 @@ export class InputController {
     }, o);
     el.addEventListener('mousedown', (e) => {
       if (!this.enabled) return;
+      if (e.button === 0 && this.onLeftClick(e.clientX, e.clientY)) return;
       if (e.button === 0) this.mouse.left = true;
       if (e.button === 2) this.pendingSlot = this.rightClickSlot();
     }, o);
