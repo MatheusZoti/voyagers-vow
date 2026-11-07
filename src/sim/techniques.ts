@@ -1,3 +1,4 @@
+import type { EloSlot, ModId, PactId } from './elos';
 import type { Affinity } from './flow/affinity';
 import type { Posture } from './flow/flow';
 
@@ -23,6 +24,10 @@ export interface TechniqueDef {
   radius: number;
   tags: NatureTag[];
   desc: string;
+  /** Restrições que fazem sentido para esta técnica; as outras nem aparecem na lista. */
+  pacts: PactId[];
+  /** Modificadores de forja que têm efeito nesta técnica. */
+  mods: ModId[];
 }
 
 /** A fatia vertical: uma Assinatura de Vigor e o Ponto. */
@@ -37,6 +42,8 @@ export const TECHNIQUES: Record<TechniqueId, TechniqueDef> = {
     radius: 1.1,
     tags: ['aggressive', 'patient'],
     desc: 'Avança e golpeia com o Fluxo no punho. A cada 3 acertos no mesmo alvo, ignora a armadura.',
+    pacts: ['eliteOnly', 'recentlyHit', 'lowFlow', 'missLock', 'neverFlee', 'lifeCost', 'bloodOath'],
+    mods: ['damage', 'area', 'range', 'cadence', 'restore', 'stun', 'shatter'],
   },
   point: {
     id: 'point',
@@ -48,8 +55,24 @@ export const TECHNIQUES: Record<TechniqueId, TechniqueDef> = {
     radius: 0,
     tags: ['aggressive'],
     desc: 'Concentra todo o Fluxo no próximo golpe: crítico gigante. Defesa zero por 2 s.',
+    // Ponto não é um golpe em si (carrega o próximo): "se errar" não se aplica.
+    pacts: ['eliteOnly', 'recentlyHit', 'lowFlow', 'neverFlee', 'lifeCost', 'bloodOath'],
+    // Sem área nem alcance próprios: só o que muda o crítico e a recarga.
+    mods: ['damage', 'cadence', 'restore', 'stun', 'shatter'],
   },
 };
+
+/** Remove do Elo Restrições e modificadores que não se aplicam à técnica equipada. */
+export function sanitizeSlot(slot: EloSlot): void {
+  const tech = slot.technique ? TECHNIQUES[slot.technique as TechniqueId] : null;
+  if (!tech) {
+    slot.restrictions = [];
+    slot.mods = {};
+    return;
+  }
+  slot.restrictions = slot.restrictions.filter((id) => tech.pacts.includes(id));
+  for (const id of Object.keys(slot.mods) as ModId[]) if (!tech.mods.includes(id)) delete slot.mods[id];
+}
 
 /** Tudo o que tem Maestria. */
 export type MasteryId = TechniqueId | Posture | 'tide' | 'basic' | 'capacity';

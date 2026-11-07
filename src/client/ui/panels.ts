@@ -5,7 +5,16 @@ import { EMOTION_COLORS, EMOTION_NAMES, type Emotion } from '../../sim/psyche/em
 import { STRESS_BAND_NAMES, stressBand } from '../../sim/psyche/psyche';
 import { TRAIT_GROUPS, traitPhrase, VALUE_IDS, VALUE_NAMES, valuePhrase } from '../../sim/psyche/traits';
 import type { Simulation } from '../../sim/sim';
-import { MASTERY_IDS, MASTERY_NAMES, NATURE_NAMES, resonance, TECHNIQUES, type MasteryId, type TechniqueId } from '../../sim/techniques';
+import {
+  MASTERY_IDS,
+  MASTERY_NAMES,
+  NATURE_NAMES,
+  resonance,
+  sanitizeSlot,
+  TECHNIQUES,
+  type MasteryId,
+  type TechniqueId,
+} from '../../sim/techniques';
 import { escapeHtml } from '../hud';
 import { capitalize } from './screens';
 
@@ -149,27 +158,31 @@ export class Panels {
           .join('')}</select>`;
         if (!tech || !info) return `<div class="elo"><div class="elo-head"><b>Elo ${slot.level}</b>${select}</div></div>`;
         const pen = tech.affinity ? affinityPenalty(c.affinity, tech.affinity) : 0;
+        const capped = slot.level + info.restrictionBonus + info.alignedBonus > slot.level + 4;
         const breakdown = [
           `Elo ${slot.level}`,
           info.restrictionBonus ? `+${info.restrictionBonus} Restrições` : '',
-          info.alignedBonus ? `+1 valor forte` : '',
+          info.alignedBonus ? `+1 valor forte (${VALUE_NAMES[PACTS[info.alignedPact!].value!]})` : '',
+          capped ? `(teto Elo + 4)` : '',
           pen ? `−${pen} afinidade (${AFFINITY_NAMES[tech.affinity!]})` : '',
         ]
           .filter(Boolean)
           .join(' ');
-        const pacts = PACT_IDS.map((id) => {
+        // Só aparecem as Restrições que fazem sentido para esta técnica.
+        const pacts = PACT_IDS.filter((id) => tech.pacts.includes(id)).map((id) => {
           const on = slot.restrictions.includes(id);
           const why = on ? null : canAddRestriction(slot, id);
           const d = PACTS[id];
           const aligned = d.value && c.psyche.values[d.value] >= 25;
           const contrary = d.value && c.psyche.values[d.value] <= -25;
-          return `<label class="pact ${on ? 'on' : ''} ${why ? 'off' : ''}" title="${escapeHtml(why ?? d.onBreak)}">
+          return `<label class="pact ${on ? 'on' : ''} ${why ? 'off' : ''}" title="${escapeHtml(why ?? '')}">
             <input type="checkbox" data-pact="${id}" data-slot="${slot.level}" ${on ? 'checked' : ''} ${!editable || (why && !on) ? 'disabled' : ''}/>
-            <span class="lv">+${d.level}</span> ${d.name}
-            ${d.value ? `<span class="val ${aligned ? 'good' : contrary ? 'bad' : ''}">${VALUE_NAMES[d.value]}</span>` : ''}
+            <span class="lv">+${d.level}</span>
+            <span class="pact-text"><span class="pact-name">${d.name}</span><span class="pact-desc">${d.desc}</span></span>
+            ${d.value ? `<span class="val ${aligned ? 'good' : contrary ? 'bad' : ''}" title="${aligned ? 'Valor forte: a primeira Restrição alinhada conta +1 nível' : contrary ? 'Contra os seus valores: cada uso soma estresse' : ''}">${VALUE_NAMES[d.value]}</span>` : ''}
           </label>`;
         }).join('');
-        const mods = MOD_IDS.map((id) => {
+        const mods = MOD_IDS.filter((id) => tech.mods.includes(id)).map((id) => {
           const n = slot.mods[id] ?? 0;
           const why = canAddMod(slot, info, id, discount);
           return `<div class="mod" title="${MODS[id].desc}">
@@ -209,6 +222,8 @@ export class Panels {
         }
         slot.technique = val;
         slot.mods = {};
+        sanitizeSlot(slot);
+        if (other) sanitizeSlot(other);
         this.render();
       }),
     );

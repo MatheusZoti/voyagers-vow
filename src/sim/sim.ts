@@ -38,7 +38,7 @@ import { angleBetween, clamp, dist, normalize, Rng, type Vec2 } from './math';
 import type { PsycheEventKind } from './psyche/emotions';
 import { psycheEvent, tickPsyche, type PsycheNotice } from './psyche/psyche';
 import { STRONG_VALUE } from './psyche/traits';
-import { MASTERY_NAMES, resonance, TECHNIQUES, type MasteryId, type TechniqueId } from './techniques';
+import { MASTERY_NAMES, resonance, sanitizeSlot, TECHNIQUES, type MasteryId, type TechniqueId } from './techniques';
 import { ENEMIES, type AttackDef, type Echo, type Enemy, type EnemyKind, type Trap } from './world/entities';
 import { buildMap, inCircle, moveWithCollision, type GameMap } from './world/map';
 
@@ -154,6 +154,7 @@ export class Simulation {
     this.traps = this.map.traps.map((p) => ({ pos: { ...p }, armed: true, revealed: false, rearmIn: 0 }));
     this.mods = computeFlowMods(character.psyche, 'veil');
     for (const m of Object.values(character.mastery)) m.sessionUses = 0;
+    for (const slot of character.elos) sanitizeSlot(slot);
   }
 
   // -------------------------------------------------------------------------
@@ -578,22 +579,36 @@ export class Simulation {
     const p = this.player;
     let dmg = raw;
     let crit = false;
-    if (this.time < p.pointUntil) {
-      const pointSlot = this.c.elos.find((s) => s.technique === 'point');
-      const info = pointSlot ? this.slotInfo(pointSlot) : null;
+    let ignoreArmor = opts.ignoreArmor;
+    const pointSlot = this.c.elos.find((s) => s.technique === 'point' && s.unlocked);
+    // Ponto com "só contra elites": a carga espera um alvo de elite e não se gasta em comuns.
+    const pointAllowed = !pointSlot?.restrictions.includes('eliteOnly') || e.def.elite;
+    if (this.time < p.pointUntil && pointSlot && pointAllowed) {
+      const info = this.slotInfo(pointSlot);
       const pm = this.c.mastery.point;
-      dmg *= (2.5 + 0.1 * displayLevel(pm)) * (0.7 + 0.3 * (info?.power ?? 1)) * sharpnessMult(pm.sharpness);
+      const mods = pointSlot.mods;
+      dmg *=
+        (2.5 + 0.1 * displayLevel(pm)) *
+        (0.7 + 0.3 * (info?.power ?? 1)) *
+        (1 + 0.2 * (mods.damage ?? 0)) *
+        sharpnessMult(pm.sharpness);
       crit = true;
       p.pointUntil = -1;
+      if (mods.shatter) ignoreArmor = true;
+      if (mods.stun) {
+        e.stun = 0.8;
+        if (e.state === 'windup' || e.state === 'charging') e.state = 'stunned';
+      }
+      if (mods.restore) this.healPlayer(this.maxHp() * 0.06);
       this.train('point', 8, this.currentRisk(e));
     }
-    if (!opts.ignoreArmor) dmg = Math.max(1, dmg - e.def.armor);
+    if (!ignoreArmor) dmg = Math.max(1, dmg - e.def.armor);
     dmg = Math.round(dmg);
     e.hp -= dmg;
     e.hurtAgo = 0;
     e.aggro = true;
     if (e.def.boss) p.bossEngaged = true;
-    this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: dmg, target: 'enemy', id: e.id, crit, pierce: opts.ignoreArmor && e.def.armor > 0 });
+    this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: dmg, target: 'enemy', id: e.id, crit, pierce: ignoreArmor && e.def.armor > 0 });
     if (e.hp <= 0) this.killEnemy(e);
   }
 
@@ -684,8 +699,8 @@ export class Simulation {
 
     // Penalidade por níveis, estilo Tibia.
     if (this.playTime - c.lastDeathAt < PENALTY_WINDOW_S) c.penaltyLevel = Math.min(PENALTY_MAX, c.penaltyLevel + 1);
-    if (c.elos.some((s) => s.technique && s.restrictions.includes('bloodOath')))
-      c.penaltyLevel = Math.min(PENALTY_MAX, c.penaltyLevel + 2);
+    const oathBroken = c.elos.some((s) => s.unlocked && s.technique && s.restrictions.includes('bloodOath'));
+    if (oathBroken) c.penaltyLevel = Math.min(PENALTY_MAX, c.penaltyLevel + 2);
     c.lastDeathAt = this.playTime;
     c.penaltyClock = 0;
     const row = DEATH_PENALTY[c.penaltyLevel]!;
@@ -701,6 +716,10 @@ export class Simulation {
     this.echo = { pos: { ...p.pos }, xpBack: Math.round(xpLoss / 2), expiresAt: this.playTime + 30 * 60 };
     this.notice(`Você caiu. Penalidade ${c.penaltyLevel} (${row.mult}x): -${xpLoss} XP. Seu Eco ficou onde você caiu.`, 'bad');
     this.feel('death');
+    if (oathBroken) {
+      this.feel('pactBroken');
+      this.notice('Juramento de sangue quebrado: a penalidade de morte subiu 2 níveis extras.', 'bad');
+    }
     const boss = this.boss();
     if (boss && boss.state !== 'dead') this.resetEnemy(boss);
   }

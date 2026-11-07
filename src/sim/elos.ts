@@ -47,22 +47,74 @@ export type PactId = (typeof PACT_IDS)[number];
 
 export interface PactDef {
   name: string;
+  /** a regra exata, como o jogador lê no editor */
+  desc: string;
   level: number;
   onBreak: string;
   /** valor ao qual a cláusula se alinha */
   value: ValueId | null;
-  /** juramentos podem ser quebrados (selam o Elo); restrições só deixam de se aplicar */
+  /** juramentos podem ser quebrados; restrições só deixam de se aplicar */
   oath: boolean;
 }
 
+/** Cada nível de Restrição soma exatamente 1 ao nível efetivo da técnica. */
 export const PACTS: Record<PactId, PactDef> = {
-  eliteOnly: { name: 'Só funciona contra elites e chefes', level: 1, onBreak: 'Não se aplica (restrição de alvo)', value: 'power', oath: false },
-  recentlyHit: { name: 'Só se recebi dano nos últimos 3 s', level: 1, onBreak: 'Não se aplica (restrição de estado)', value: 'vengeance', oath: false },
-  lowFlow: { name: 'Só com a reserva de Fluxo abaixo de 30%', level: 2, onBreak: 'Não se aplica (restrição de estado)', value: 'freedom', oath: false },
-  missLock: { name: 'Se errar o golpe, perco o Fluxo por 20 s', level: 2, onBreak: 'Penalidade automática', value: 'law', oath: false },
-  neverFlee: { name: 'Juro nunca fugir de um chefe', level: 2, onBreak: 'Elo selado até cumprir uma penitência', value: 'loyalty', oath: true },
-  lifeCost: { name: 'Pago com vida máxima a cada uso', level: 3, onBreak: 'Não se aplica (custo direto)', value: null, oath: false },
-  bloodOath: { name: 'Juramento de sangue', level: 4, onBreak: 'Penalidade de morte sobe 2 níveis', value: 'loyalty', oath: true },
+  eliteOnly: {
+    name: 'Só contra elites e chefes',
+    desc: 'A técnica não tem efeito em inimigos comuns.',
+    level: 1,
+    onBreak: 'Não se aplica (restrição de alvo)',
+    value: 'power',
+    oath: false,
+  },
+  recentlyHit: {
+    name: 'Só depois de receber dano',
+    desc: 'Só pode ser usada até 3 s depois de você levar um golpe.',
+    level: 1,
+    onBreak: 'Não se aplica (restrição de estado)',
+    value: 'vengeance',
+    oath: false,
+  },
+  lowFlow: {
+    name: 'Só com pouco Fluxo',
+    desc: 'Só pode ser usada com a reserva de Fluxo abaixo de 30%.',
+    level: 2,
+    onBreak: 'Não se aplica (restrição de estado)',
+    value: 'freedom',
+    oath: false,
+  },
+  missLock: {
+    name: 'Se errar, perco o Fluxo',
+    desc: 'Se o golpe não acertar ninguém, sua reserva vai a zero e não regenera por 20 s.',
+    level: 2,
+    onBreak: 'Penalidade automática',
+    value: 'law',
+    oath: false,
+  },
+  neverFlee: {
+    name: 'Juro nunca fugir de um chefe',
+    desc: 'Se você sair da arena de um chefe durante a luta, este Elo fica selado até a penitência no santuário.',
+    level: 2,
+    onBreak: 'Elo selado até cumprir uma penitência',
+    value: 'loyalty',
+    oath: true,
+  },
+  lifeCost: {
+    name: 'Pago com a minha vida',
+    desc: 'Cada uso reduz sua vida máxima em 1, para sempre.',
+    level: 3,
+    onBreak: 'Não se aplica (custo direto)',
+    value: null,
+    oath: false,
+  },
+  bloodOath: {
+    name: 'Juramento de sangue: não cair',
+    desc: 'Você jura não morrer com esta técnica equipada. Se morrer, a penalidade de morte sobe 2 níveis extras e você sente Vergonha.',
+    level: 4,
+    onBreak: 'Penalidade de morte sobe 2 níveis',
+    value: 'loyalty',
+    oath: true,
+  },
 };
 
 // ---------------------------------------------------------------------------
