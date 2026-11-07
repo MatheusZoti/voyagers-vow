@@ -1,12 +1,12 @@
-import { AFFINITY_NAMES, affinityPenalty } from '../../sim/flow/affinity';
-import { canAddMod, canAddRestriction, MOD_IDS, MODS, modCost, PACT_IDS, PACTS, trimMods, type ModId, type PactId } from '../../sim/elos';
-import { displayLevel, modifierDiscount } from '../../sim/mastery';
+import { AFFINITY_COLORS, AFFINITY_DESC, AFFINITY_NAMES } from '../../sim/flow/affinity';
+import { canAddRestriction, PACT_IDS, PACTS, trimMods, type ModId, type PactId } from '../../sim/elos';
+import { xpToNext } from '../../sim/character';
+import { displayLevel, GRACE_PLAYED_S, masteryCostMult, modifierDiscount, sharpnessMult } from '../../sim/mastery';
 import { EMOTION_COLORS, EMOTION_NAMES, type Emotion } from '../../sim/psyche/emotions';
-import { STRESS_BAND_NAMES, stressBand } from '../../sim/psyche/psyche';
-import { TRAIT_GROUPS, traitPhrase, VALUE_IDS, VALUE_NAMES, valuePhrase } from '../../sim/psyche/traits';
+import { CRISIS_DESC, CRISIS_NAMES } from '../../sim/psyche/psyche';
+import { TRAIT_GROUPS, VALUE_NAMES } from '../../sim/psyche/traits';
 import type { Simulation } from '../../sim/sim';
 import {
-  MASTERY_IDS,
   MASTERY_NAMES,
   NATURE_NAMES,
   resonance,
@@ -15,16 +15,57 @@ import {
   type MasteryId,
   type TechniqueId,
 } from '../../sim/techniques';
-import { escapeHtml } from '../hud';
-import { capitalize } from './screens';
+import { escapeHtml } from '../util';
+import {
+  affinityRadar,
+  constellation,
+  CONSTELLATION,
+  emotionWheel,
+  forgeEqualizer,
+  levelLadder,
+  pactPips,
+  traitSliders,
+  valuesEqualizer,
+} from './charts';
+import { icon } from './icons';
 
-export type PanelId = 'sheet' | 'elos' | 'mastery' | 'help' | 'pause';
+export type TabId = 'psyche' | 'elos' | 'mastery';
+export type PanelId = TabId | 'help' | 'pause';
 
-/** Painéis sobre o jogo. O jogo pausa enquanto um painel está aberto. */
+const TABS: Array<{ id: TabId; name: string; key: string }> = [
+  { id: 'psyche', name: 'Psique', key: 'C' },
+  { id: 'elos', name: 'Grade de Elos', key: 'K' },
+  { id: 'mastery', name: 'Maestria', key: 'M' },
+];
+
+const GROUP_COLORS: Record<string, string> = {
+  Temperamento: '#ff7a6a',
+  Mente: '#6fd0ff',
+  Social: '#7ee0a8',
+  'Ambição': '#e2b65a',
+};
+
+const TECH_ICON: Record<TechniqueId, string> = { signature: 'signature', point: 'point' };
+
+const MASTERY_EFFECT: Record<MasteryId, string> = {
+  basic: '+3% de dano do golpe básico por nível.',
+  signature: '+2% de dano por nível; −1,5% de custo de Fluxo por nível; −1 no custo dos modificadores a cada 5 níveis.',
+  point: 'Crítico mais forte (+0,1x por nível); −1,5% de custo por nível.',
+  veil: '+0,5% de redução de dano no Véu por nível.',
+  silence: 'Sobe meditando em Silêncio no santuário.',
+  impetus: 'Sobe sustentando o Ímpeto em combate.',
+  gaze: 'Sobe revelando inimigos em Sombra e armadilhas.',
+  tide: '+4% de velocidade da Maré por nível. Sobe com Marés perfeitas.',
+  capacity: '+4 de reserva de Fluxo por nível. Sobe sustentando o Ímpeto.',
+};
+
+/** Janela do personagem (abas) e menus de ajuda e pausa. O jogo pausa enquanto ela está aberta. */
 export class Panels {
   current: PanelId | null = null;
   onClose: () => void = () => {};
   onQuit: () => void = () => {};
+  private selectedElo = 2;
+  private selectedNode: MasteryId = 'signature';
 
   constructor(
     private root: HTMLElement,
@@ -45,237 +86,356 @@ export class Panels {
     this.current = null;
     this.root.className = 'screen';
     this.root.innerHTML = '';
+    this.root.onclick = null;
+    this.root.onmousedown = null;
     this.onClose();
   }
 
-  private frame(title: string, body: string, wide = false): void {
+  render(): void {
+    const id = this.current;
+    if (!id) return;
+    if (id === 'help') return this.renderHelp();
+    if (id === 'pause') return this.renderPause();
+    this.renderWindow(id);
+  }
+
+  // -------------------------------------------------------------------------
+  // Janela com abas
+  // -------------------------------------------------------------------------
+
+  private renderWindow(tab: TabId): void {
+    const c = this.sim.c;
+    const aff = AFFINITY_COLORS[c.affinity];
+    const body = tab === 'psyche' ? this.psycheTab() : tab === 'elos' ? this.elosTab() : this.masteryTab();
+    const prev = this.root.querySelector<HTMLElement>('.win:not(.small)');
+    const scroll = prev?.dataset.cur === tab ? (prev.querySelector('.win-body')?.scrollTop ?? 0) : 0;
     this.root.className = 'screen overlay';
     this.root.innerHTML = `
-      <div class="sheet ${wide ? 'wide' : ''}">
-        <header><h2>${title}</h2><button class="x" data-a="close" title="Fechar (Esc)">×</button></header>
-        <div class="sheet-body">${body}</div>
+      <div class="win ${prev ? '' : 'enter'}" data-cur="${tab}" style="--aff:${aff}">
+        <header class="win-head">
+          <div class="id">
+            <span class="sigil" style="color:${aff}">${icon('signature', 20)}</span>
+            <div><b>${escapeHtml(c.name)}</b><span>Nível ${c.level} · ${AFFINITY_NAMES[c.affinity]}</span></div>
+            <div class="xp" title="${c.xp} / ${xpToNext(c.level)} XP"><i style="width:${(c.xp / xpToNext(c.level)) * 100}%"></i></div>
+          </div>
+          <nav class="tabs">${TABS.map((t) => `<button class="tab ${t.id === tab ? 'on' : ''}" data-tab="${t.id}">${t.name}<kbd>${t.key}</kbd></button>`).join('')}</nav>
+          <button class="x" data-a="close" title="Fechar (Esc)">×</button>
+        </header>
+        <div class="win-body">${body}</div>
       </div>`;
-    this.root.querySelector('[data-a="close"]')!.addEventListener('click', () => this.close());
+    const wb = this.root.querySelector('.win-body');
+    if (wb) wb.scrollTop = scroll;
     this.root.onmousedown = (e) => {
       if (e.target === this.root) this.close();
     };
+    this.root.onclick = (e) => this.onClick(e);
   }
 
-  render(): void {
-    switch (this.current) {
-      case 'sheet':
-        return this.renderSheet();
-      case 'elos':
-        return this.renderElos();
-      case 'mastery':
-        return this.renderMastery();
-      case 'help':
-        return this.renderHelp();
-      case 'pause':
-        return this.renderPause();
-      default:
-        return;
+  private onClick(e: MouseEvent): void {
+    const t = (e.target as HTMLElement).closest<HTMLElement>('[data-tab],[data-a],[data-elo],[data-tech],[data-pact],[data-mod],[data-node]');
+    if (!t) return;
+    const c = this.sim.c;
+    if (t.dataset.a === 'close') return this.close();
+    if (t.dataset.tab) return this.open(t.dataset.tab as TabId);
+    if (t.dataset.node) {
+      this.selectedNode = t.dataset.node as MasteryId;
+      return this.render();
+    }
+    if (t.dataset.elo) {
+      this.selectedElo = +t.dataset.elo;
+      return this.render();
+    }
+    if (!this.editable() || (t as HTMLButtonElement).disabled) return;
+    const slot = c.elos[this.selectedElo - 1]!;
+    if (t.dataset.tech !== undefined) {
+      const val = (t.dataset.tech || null) as TechniqueId | null;
+      if (val === slot.technique) return;
+      // Cada técnica ocupa um Elo só: troca de lugar se já estiver em outro.
+      const other = c.elos.find((s) => s !== slot && s.technique === val && val);
+      if (other) {
+        other.technique = slot.technique;
+        other.mods = {};
+        sanitizeSlot(other);
+      }
+      slot.technique = val;
+      slot.mods = {};
+      sanitizeSlot(slot);
+      return this.render();
+    }
+    if (t.dataset.pact) {
+      const id = t.dataset.pact as PactId;
+      if (slot.restrictions.includes(id)) slot.restrictions = slot.restrictions.filter((x) => x !== id);
+      else if (!canAddRestriction(slot, id)) slot.restrictions.push(id);
+      else return;
+      const info = this.sim.slotInfo(slot);
+      if (info && slot.technique) trimMods(slot, info, modifierDiscount(c.mastery[slot.technique as MasteryId]));
+      return this.render();
+    }
+    if (t.dataset.mod) {
+      const id = t.dataset.mod as ModId;
+      let n = +t.dataset.n!;
+      if (n === (slot.mods[id] ?? 0)) n -= 1; // clicar no ponto mais alto aceso apaga ele
+      if (n <= 0) delete slot.mods[id];
+      else slot.mods[id] = n;
+      return this.render();
     }
   }
 
-  private renderSheet(): void {
+  private editable(): boolean {
+    return this.sim.inSanctuary() && !this.sim.inCombat();
+  }
+
+  // -------------------------------------------------------------------------
+  // Psique
+  // -------------------------------------------------------------------------
+
+  private psycheTab(): string {
     const c = this.sim.c;
     const p = c.psyche;
+    const active = (Object.values(p.emotions) as Emotion[]).sort((a, b) => b.intensity - a.intensity);
+    const crisis =
+      p.crisis.phase === 'active'
+        ? `<div class="alert bad"><b>${CRISIS_NAMES[p.crisis.id]}</b> ${CRISIS_DESC[p.crisis.id]}</div>`
+        : p.crisis.phase === 'warning'
+          ? `<div class="alert warn"><b>${CRISIS_NAMES[p.crisis.id]}</b> se aproxima.</div>`
+          : '';
     const groups = Object.entries(TRAIT_GROUPS)
-      .map(([g, ids]) => {
-        const lines = ids.map((id) => traitPhrase(id, p.traits[id])).filter(Boolean) as string[];
-        return `<div class="trait-group"><h4>${g}</h4>${lines.length ? `<ul>${lines.map((l) => `<li>${capitalize(l)}</li>`).join('')}</ul>` : '<p class="muted">Nada que chame atenção.</p>'}</div>`;
-      })
-      .join('');
-    const values = VALUE_IDS.map((id) => valuePhrase(id, p.values[id])).filter(Boolean) as string[];
-    const emotions = (Object.values(p.emotions) as Emotion[])
-      .sort((a, b) => b.intensity - a.intensity)
       .map(
-        (e) =>
-          `<span class="chip" style="--c:${EMOTION_COLORS[e.id]}">${EMOTION_NAMES[e.id]} <i style="width:${Math.round(e.intensity * 100)}%"></i></span>`,
+        ([g, ids]) => `<div class="tgroup" style="--g:${GROUP_COLORS[g]}"><h5>${g}</h5>${traitSliders(p.traits, ids, GROUP_COLORS[g]!)}</div>`,
       )
       .join('');
-    const mem = (list: typeof p.shortMemory) =>
+    const memList = (list: typeof p.shortMemory, long: boolean) =>
       list.length
-        ? `<ul class="mem">${list.map((m) => `<li><span class="dot" style="background:${EMOTION_COLORS[m.emotion]}"></span>${m.text}${m.count > 1 ? ` <span class="muted">×${m.count}</span>` : ''}</li>`).join('')}</ul>`
-        : '<p class="muted">Nenhuma ainda.</p>';
-    this.frame(
-      `${escapeHtml(c.name)} <small>Afinidade ${AFFINITY_NAMES[c.affinity]}</small>`,
-      `<div class="cols">
-        <section>${groups}
-          <div class="trait-group"><h4>Valores</h4>${values.length ? `<ul>${values.map((l) => `<li>${capitalize(l)}</li>`).join('')}</ul>` : '<p class="muted">Ainda não sabe bem no que acredita.</p>'}</div>
-        </section>
-        <section>
-          <h4>Agora</h4>
-          <p>Estado: <b>${STRESS_BAND_NAMES[stressBand(p.stress)]}</b></p>
-          <div class="chips">${emotions || '<span class="muted">Sereno</span>'}</div>
-          <h4>Memórias recentes</h4>${mem(p.shortMemory)}
-          <h4>Memórias marcantes</h4>${mem(p.longMemory)}
-          <p class="muted small">Memórias marcantes mudam quem você é, devagar.</p>
-        </section>
-      </div>`,
-      true,
-    );
+        ? `<ol class="timeline ${long ? 'long' : ''}">${list
+            .map(
+              (m) =>
+                `<li style="--c:${EMOTION_COLORS[m.emotion]}"><span class="tl-dot"></span><span class="tl-text">${m.text}</span><span class="tl-meta">${EMOTION_NAMES[m.emotion]}${m.count > 1 ? ` · ×${m.count}` : ''}</span></li>`,
+            )
+            .join('')}</ol>`
+        : `<p class="empty-note">${long ? 'Eventos fortes ou repetidos viram memórias marcantes — e mudam quem você é.' : 'Nada marcante ainda.'}</p>`;
+    return `<div class="grid psy">
+      <section class="card wheel-card">
+        <h4>Agora</h4>
+        ${emotionWheel(p.emotions, p.stress)}
+        ${crisis}
+        <div class="emo-legend">${
+          active.length
+            ? active
+                .slice(0, 4)
+                .map((e) => `<span style="--c:${EMOTION_COLORS[e.id]}"><i></i>${EMOTION_NAMES[e.id]}</span>`)
+                .join('')
+            : '<span class="muted">Sereno — nenhuma emoção forte.</span>'
+        }</div>
+      </section>
+      <section class="card radar-card">
+        <h4>Afinidade <em>${AFFINITY_NAMES[c.affinity]}</em></h4>
+        <p class="card-sub">${AFFINITY_DESC[c.affinity]} Técnicas de outras afinidades perdem nível pela distância no hexágono.</p>
+        ${affinityRadar(c)}
+      </section>
+      <section class="card traits-card">
+        <h4>Personalidade <span class="hint-i" title="Passe o mouse em cada linha para ler a frase. Memórias marcantes deslocam os traços aos poucos.">?</span></h4>
+        <div class="tgrid">${groups}</div>
+      </section>
+      <section class="card values-card">
+        <h4>Valores</h4>
+        <p class="card-sub">Agir a favor de um valor traz emoção boa; contra, culpa ou raiva. Valores fortes reforçam Pactos alinhados.</p>
+        ${valuesEqualizer(p.values)}
+      </section>
+      <section class="card mem-card">
+        <h4>Memórias</h4>
+        <div class="mem-cols"><div><h6>Recentes</h6>${memList(p.shortMemory, false)}</div><div><h6>Marcantes</h6>${memList(p.longMemory, true)}</div></div>
+      </section>
+    </div>`;
   }
 
-  private renderMastery(): void {
-    const c = this.sim.c;
-    const rows = MASTERY_IDS.map((id) => {
-      const r = c.mastery[id];
-      const lvl = displayLevel(r);
-      const frac = r.level - lvl;
-      return `<tr>
-        <td>${MASTERY_NAMES[id]}</td>
-        <td class="num">${lvl}${r.peak > r.level + 0.99 ? ` <span class="muted">(pico ${Math.floor(r.peak)})</span>` : ''}</td>
-        <td><div class="mini"><i style="width:${frac * 100}%"></i></div></td>
-        <td class="num">${Math.round(r.sharpness * 100)}%</td>
-      </tr>`;
-    }).join('');
-    const sig = TECHNIQUES.signature;
-    const res = resonance(sig.tags, c.psyche.traits);
-    this.frame(
-      'Maestria',
-      `<p class="muted">Você fica bom no que faz. A Maestria sobe com uso real (mais rápido sob risco) e a Afiação cai depois de ~5 h jogadas sem uso. Nunca abaixo de 50% do pico.</p>
-      <table class="table"><thead><tr><th>Técnica</th><th>Nível</th><th>Progresso</th><th>Afiação</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="small">Ressonância da Assinatura (${sig.tags.map((t) => NATURE_NAMES[t]).join(', ')}): <b>${res > 1 ? 'ressoa — custa menos e aprende mais rápido' : res < 1 ? 'dissonante — aprende pela metade' : 'neutra'}</b></p>`,
-    );
-  }
+  // -------------------------------------------------------------------------
+  // Grade de Elos
+  // -------------------------------------------------------------------------
 
-  private renderElos(): void {
+  private elosTab(): string {
     const sim = this.sim;
     const c = sim.c;
-    const editable = sim.inSanctuary() && !sim.inCombat();
-    const techOptions: Array<TechniqueId | ''> = ['', 'signature', 'point'];
-    const slots = c.elos
+    if (!c.elos[this.selectedElo - 1]?.unlocked) this.selectedElo = c.elos.find((e) => e.unlocked)?.level ?? 1;
+    const cards = c.elos
       .map((slot) => {
-        if (!slot.unlocked) return `<div class="elo locked"><div class="elo-head"><b>Elo ${slot.level}</b><span class="muted">bloqueado</span></div></div>`;
-        const info = sim.slotInfo(slot);
-        const techId = slot.technique as TechniqueId | null;
-        const tech = techId ? TECHNIQUES[techId] : null;
-        const discount = techId ? modifierDiscount(c.mastery[techId as MasteryId]) : 0;
-        const select = `<select data-slot="${slot.level}" ${editable ? '' : 'disabled'}>${techOptions
-          .map((t) => `<option value="${t}" ${t === (techId ?? '') ? 'selected' : ''}>${t ? TECHNIQUES[t].name : '— vazio —'}</option>`)
-          .join('')}</select>`;
-        if (!tech || !info) return `<div class="elo"><div class="elo-head"><b>Elo ${slot.level}</b>${select}</div></div>`;
-        const pen = tech.affinity ? affinityPenalty(c.affinity, tech.affinity) : 0;
-        const capped = slot.level + info.restrictionBonus + info.alignedBonus > slot.level + 4;
-        const breakdown = [
-          `Elo ${slot.level}`,
-          info.restrictionBonus ? `+${info.restrictionBonus} Restrições` : '',
-          info.alignedBonus ? `+1 valor forte (${VALUE_NAMES[PACTS[info.alignedPact!].value!]})` : '',
-          capped ? `(teto Elo + 4)` : '',
-          pen ? `−${pen} afinidade (${AFFINITY_NAMES[tech.affinity!]})` : '',
-        ]
-          .filter(Boolean)
-          .join(' ');
-        // Só aparecem as Restrições que fazem sentido para esta técnica.
-        const pacts = PACT_IDS.filter((id) => tech.pacts.includes(id)).map((id) => {
-          const on = slot.restrictions.includes(id);
-          const why = on ? null : canAddRestriction(slot, id);
-          const d = PACTS[id];
-          const aligned = d.value && c.psyche.values[d.value] >= 25;
-          const contrary = d.value && c.psyche.values[d.value] <= -25;
-          return `<label class="pact ${on ? 'on' : ''} ${why ? 'off' : ''}" title="${escapeHtml(why ?? '')}">
-            <input type="checkbox" data-pact="${id}" data-slot="${slot.level}" ${on ? 'checked' : ''} ${!editable || (why && !on) ? 'disabled' : ''}/>
-            <span class="lv">+${d.level}</span>
-            <span class="pact-text"><span class="pact-name">${d.name}</span><span class="pact-desc">${d.desc}</span></span>
-            ${d.value ? `<span class="val ${aligned ? 'good' : contrary ? 'bad' : ''}" title="${aligned ? 'Valor forte: a primeira Restrição alinhada conta +1 nível' : contrary ? 'Contra os seus valores: cada uso soma estresse' : ''}">${VALUE_NAMES[d.value]}</span>` : ''}
-          </label>`;
-        }).join('');
-        const mods = MOD_IDS.filter((id) => tech.mods.includes(id)).map((id) => {
-          const n = slot.mods[id] ?? 0;
-          const why = canAddMod(slot, info, id, discount);
-          return `<div class="mod" title="${MODS[id].desc}">
-            <span>${MODS[id].name} <span class="muted">(${modCost(id, discount)})</span></span>
-            <span class="ctl"><button data-mod="${id}" data-d="-1" data-slot="${slot.level}" ${!editable || !n ? 'disabled' : ''}>−</button><b>${n}</b><button data-mod="${id}" data-d="1" data-slot="${slot.level}" ${!editable || why ? 'disabled' : ''}>+</button></span>
-          </div>`;
-        }).join('');
-        return `<div class="elo ${info.beyondLimit ? 'beyond' : ''} ${slot.sealed ? 'sealed' : ''}">
-          <div class="elo-head"><b>Elo ${slot.level}</b>${select}
-            <span class="eff">nível efetivo <b>${info.effective}</b>${info.beyondLimit ? ' · Além-limite' : ''}</span></div>
-          <p class="small muted">${breakdown} · custo ${info.costPct}% · recarga ${sim.slotCooldown(slot, info).toFixed(1)} s · potência ×${info.power.toFixed(2)}${slot.sealed ? ' · <b class="bad">SELADO</b>' : ''}</p>
-          <div class="elo-cols">
-            <div><h5>Restrições (${slot.restrictions.length}/${info.maxRestrictions})</h5>${pacts}</div>
-            <div><h5>Forja (${info.pointsUsed}/${info.points} pontos)</h5>${mods}</div>
-          </div>
-        </div>`;
+        const tech = slot.technique ? TECHNIQUES[slot.technique as TechniqueId] : null;
+        const info = slot.unlocked && tech ? sim.slotInfo(slot) : null;
+        const sel = slot.level === this.selectedElo;
+        const art = !slot.unlocked ? 'lock' : slot.sealed ? 'seal' : tech ? TECH_ICON[tech.id] : 'empty';
+        const unlockHint = { 3: 'nível 3', 4: 'nível 5', 5: 'vencer o Guardião' }[slot.level] ?? 'mais adiante';
+        return `<button class="ecard ${sel ? 'sel' : ''} ${slot.unlocked ? '' : 'locked'} ${info?.beyondLimit ? 'beyond' : ''} ${slot.sealed ? 'sealed' : ''}" data-elo="${slot.level}" ${slot.unlocked ? '' : 'disabled'}>
+          <span class="e-num">Elo ${slot.level}</span>
+          ${info ? `<span class="e-eff ${info.effective > slot.level ? 'up' : info.effective < slot.level ? 'down' : ''}">${info.effective}</span>` : ''}
+          <span class="e-name">${!slot.unlocked ? 'Bloqueado' : slot.sealed ? 'Selado' : tech ? tech.name : 'Vazio'}</span>
+          <span class="e-art">${icon(art, 64)}</span>
+          <span class="e-foot">${
+            !slot.unlocked
+              ? `Libera: ${unlockHint}`
+              : info
+                ? `${slot.restrictions.length ? `${slot.restrictions.length} Restr.` : 'sem Restrições'} · ${info.pointsUsed}/${info.points} pts`
+                : 'escolha uma técnica'
+          }</span>
+        </button>`;
       })
       .join('');
-    this.frame(
-      'Grade de Elos',
-      `${editable ? '' : '<p class="warnline">Só é possível reconfigurar os Elos no santuário, fora de combate.</p>'}
-      <p class="muted small">Restrições elevam o nível efetivo (até Elo + 4; acima de 8 é Além-limite). A técnica ganha pontos e potência do nível efetivo, mas paga custo e recarga do Elo real. A primeira Restrição alinhada a um valor forte conta +1.</p>
-      <div class="elos">${slots}</div>`,
-      true,
-    );
-    if (!editable) return;
+    return `<div class="grid elos">
+      <section class="ecards">${cards}</section>
+      <section class="card edetail">${this.eloDetail()}</section>
+    </div>`;
+  }
 
-    this.root.querySelectorAll<HTMLSelectElement>('select[data-slot]').forEach((sel) =>
-      sel.addEventListener('change', () => {
-        const slot = c.elos[+sel.dataset.slot! - 1]!;
-        const val = (sel.value || null) as TechniqueId | null;
-        // Cada técnica ocupa um Elo só: troca de lugar se já estiver em outro.
-        const other = c.elos.find((s) => s !== slot && s.technique === val && val);
-        if (other) {
-          other.technique = slot.technique;
-          other.mods = {};
-        }
-        slot.technique = val;
-        slot.mods = {};
-        sanitizeSlot(slot);
-        if (other) sanitizeSlot(other);
-        this.render();
-      }),
-    );
-    this.root.querySelectorAll<HTMLInputElement>('input[data-pact]').forEach((cb) =>
-      cb.addEventListener('change', () => {
-        const slot = c.elos[+cb.dataset.slot! - 1]!;
-        const id = cb.dataset.pact as PactId;
-        if (cb.checked) slot.restrictions.push(id);
-        else slot.restrictions = slot.restrictions.filter((x) => x !== id);
-        const info = sim.slotInfo(slot);
-        if (info && slot.technique) trimMods(slot, info, modifierDiscount(c.mastery[slot.technique as MasteryId]));
-        this.render();
-      }),
-    );
-    this.root.querySelectorAll<HTMLButtonElement>('button[data-mod]').forEach((b) =>
-      b.addEventListener('click', () => {
-        const slot = c.elos[+b.dataset.slot! - 1]!;
-        const id = b.dataset.mod as ModId;
-        const n = (slot.mods[id] ?? 0) + +b.dataset.d!;
-        if (n <= 0) delete slot.mods[id];
-        else slot.mods[id] = n;
-        this.render();
-      }),
-    );
+  private eloDetail(): string {
+    const sim = this.sim;
+    const c = sim.c;
+    const slot = c.elos[this.selectedElo - 1]!;
+    const editable = this.editable();
+    const tech = slot.technique ? TECHNIQUES[slot.technique as TechniqueId] : null;
+    const techPick = (['', 'signature', 'point'] as const)
+      .map((t) => {
+        const on = (slot.technique ?? '') === t;
+        const where = t ? c.elos.find((s) => s !== slot && s.technique === t) : null;
+        return `<button class="seg ${on ? 'on' : ''}" data-tech="${t}" ${editable ? '' : 'disabled'} title="${where ? `Está no Elo ${where.level}: troca de lugar` : ''}">
+          ${t ? icon(TECH_ICON[t], 16) : icon('empty', 16)}<span>${t ? TECHNIQUES[t].name : 'Vazio'}</span>${where ? `<small>Elo ${where.level}</small>` : ''}</button>`;
+      })
+      .join('');
+    const lockNote = editable ? '' : `<div class="alert warn">Só dá para reconfigurar no santuário, fora de combate.</div>`;
+    if (!tech) {
+      return `<div class="ed-head"><h3>Elo ${slot.level}</h3></div>${lockNote}<div class="segs">${techPick}</div>
+        <p class="empty-note">Escolha uma técnica para este Elo.</p>`;
+    }
+    const info = sim.slotInfo(slot)!;
+    const discount = modifierDiscount(c.mastery[tech.id]);
+    const cost = Math.round(sim.slotCost(slot, info));
+    const stats = [
+      ['Potência', `×${info.power.toFixed(2)}`, 'pelo nível efetivo'],
+      ['Pontos', `${info.points}`, 'de forja'],
+      ['Custo', `${cost}`, `Fluxo · ${info.costPct}% do Elo ${slot.level}`],
+      ['Recarga', `${sim.slotCooldown(slot, info).toFixed(1)} s`, `do Elo ${slot.level}`],
+    ]
+      .map(([k, v, s]) => `<div class="stat"><span>${k}</span><b>${v}</b><small>${s}</small></div>`)
+      .join('');
+    const pacts = PACT_IDS.filter((id) => tech.pacts.includes(id))
+      .map((id) => {
+        const d = PACTS[id];
+        const on = slot.restrictions.includes(id);
+        const why = on ? null : canAddRestriction(slot, id);
+        const aligned = d.value && c.psyche.values[d.value] >= 25;
+        const contrary = d.value && c.psyche.values[d.value] <= -25;
+        return `<button class="pact-card ${on ? 'on' : ''} ${d.oath ? 'oath' : ''}" data-pact="${id}" ${!editable || (why && !on) ? 'disabled' : ''} title="${escapeHtml(why ?? '')}">
+          <span class="pc-top">${pactPips(d.level)}<b>+${d.level}</b>${d.oath ? '<em>juramento</em>' : ''}${
+            d.value
+              ? `<span class="val ${aligned ? 'good' : contrary ? 'bad' : ''}" title="${aligned ? 'Valor forte: a primeira Restrição alinhada conta +1 nível' : contrary ? 'Contra os seus valores: cada uso soma estresse' : 'Valor ligado a esta cláusula'}">${VALUE_NAMES[d.value]}</span>`
+              : ''
+          }</span>
+          <span class="pc-name">${d.name}</span>
+          <span class="pc-desc">${d.desc}</span>
+        </button>`;
+      })
+      .join('');
+    const slotsDots = Array.from({ length: info.maxRestrictions }, (_, i) => `<i class="${i < slot.restrictions.length ? 'on' : ''}"></i>`).join('');
+    return `<div class="ed-head">
+        <h3>Elo ${slot.level}</h3>
+        <div class="eff-big ${info.beyondLimit ? 'beyond' : ''}"><span>nível efetivo</span><b>${info.effective}</b>${info.beyondLimit ? '<em>Além-limite</em>' : ''}</div>
+      </div>
+      ${lockNote}
+      ${slot.sealed ? '<div class="alert bad">Elo selado por juramento quebrado. Medite em Silêncio no santuário para cumprir a penitência.</div>' : ''}
+      <div class="segs">${techPick}</div>
+      <p class="card-sub">${tech.desc}</p>
+      ${levelLadder(info)}
+      <div class="stats">${stats}</div>
+      <div class="ed-sec"><h5>Restrições <span class="slots">${slotsDots}</span><small>${slot.restrictions.length}/${info.maxRestrictions} · cada nível = +1 nível efetivo</small></h5>
+        <div class="pacts">${pacts}</div></div>
+      <div class="ed-sec"><h5>Forja <small>${discount ? `Maestria: −${discount} no custo de cada modificador` : 'clique nos pontos para distribuir'}</small></h5>
+        ${forgeEqualizer(slot, info, tech, discount, editable)}</div>`;
+  }
+
+  // -------------------------------------------------------------------------
+  // Maestria
+  // -------------------------------------------------------------------------
+
+  private masteryTab(): string {
+    const c = this.sim.c;
+    const aff = AFFINITY_COLORS[c.affinity];
+    const id = this.selectedNode;
+    const r = c.mastery[id];
+    const lvl = displayLevel(r);
+    const idle = this.sim.playTime - r.lastUsedAt;
+    const graceLeft = Math.max(0, GRACE_PLAYED_S - idle);
+    const node = CONSTELLATION.find((n) => n.id === id)!;
+    const sig = TECHNIQUES.signature;
+    const res = resonance(sig.tags, c.psyche.traits);
+    const techRow =
+      id === 'signature' || id === 'point'
+        ? `<div class="kv"><span>Custo de Fluxo</span><b>${Math.round((1 - masteryCostMult(r)) * 100)}% mais barato</b></div>
+           <div class="kv"><span>Modificadores</span><b>${modifierDiscount(r) ? `−${modifierDiscount(r)} ponto` : 'sem desconto (nível 5)'}</b></div>`
+        : '';
+    return `<div class="grid mastery">
+      <section class="card const-card">
+        <h4>Maestria <span class="hint-i" title="Você fica bom no que faz. Anel dourado: progresso do nível. Anel externo: Afiação.">?</span></h4>
+        ${constellation(c.mastery, id, aff)}
+        <div class="legend"><span><i class="lg prog" style="background:${aff}"></i>progresso do nível</span><span><i class="lg sharp"></i>Afiação</span><span class="muted">clique num nó para ver detalhes</span></div>
+      </section>
+      <section class="card mdetail">
+        <div class="md-head"><span class="md-ic" style="color:${aff}">${icon(node.icon, 30)}</span><div><h3>${MASTERY_NAMES[id]}</h3><span class="muted">Nível ${lvl} de 20${r.peak >= lvl + 1 ? ` · pico ${Math.floor(r.peak)}` : ''}</span></div></div>
+        <div class="bigbar"><i style="width:${(r.level - lvl) * 100}%;background:${aff}"></i></div>
+        <p class="card-sub">${MASTERY_EFFECT[id]}</p>
+        <div class="kv"><span>Afiação</span><b>${Math.round(r.sharpness * 100)}% · eficácia ×${sharpnessMult(r.sharpness).toFixed(2)}</b></div>
+        ${techRow}
+        <div class="kv"><span>Desuso</span><b>${graceLeft > 0 ? `protegido por mais ${Math.ceil(graceLeft / 3600)} h jogadas` : 'perdendo Afiação'}</b></div>
+        <div class="kv"><span>Piso</span><b>nunca abaixo do nível ${Math.max(1, Math.floor(r.peak * 0.5))}</b></div>
+        <div class="note">
+          <b>Ressonância da Assinatura</b>
+          <p>${sig.tags.map((t) => NATURE_NAMES[t]).join(' e ')} — ${res > 1 ? 'ressoa com você: custa menos e aprende mais rápido.' : res < 1 ? 'dissonante: aprende pela metade.' : 'neutra com a sua personalidade.'}</p>
+        </div>
+        <p class="tip">A Maestria sobe mais rápido sob risco real: inimigos mais fortes, vida baixa, elites por perto.</p>
+      </section>
+    </div>`;
+  }
+
+  // -------------------------------------------------------------------------
+  // Ajuda e pausa
+  // -------------------------------------------------------------------------
+
+  private small(title: string, body: string): void {
+    this.root.className = 'screen overlay';
+    this.root.innerHTML = `<div class="win small"><header class="win-head"><h2>${title}</h2><button class="x" data-a="close" title="Fechar (Esc)">×</button></header><div class="win-body">${body}</div></div>`;
+    this.root.onmousedown = (e) => {
+      if (e.target === this.root) this.close();
+    };
+    this.root.onclick = (e) => {
+      const a = (e.target as HTMLElement).closest<HTMLElement>('[data-a]')?.dataset.a;
+      if (a === 'close' || a === 'resume') this.close();
+      if (a === 'help') this.open('help');
+      if (a === 'quit') this.onQuit();
+    };
   }
 
   private renderHelp(): void {
-    this.frame(
+    const rows: Array<[string, string]> = [
+      ['WASD', 'Mover'],
+      ['Mouse', 'Mirar'],
+      ['Botão esquerdo · Espaço', 'Golpe básico'],
+      ['Botão direito', 'Assinatura (Punho do Voto)'],
+      ['Q E R F T', 'Técnicas nos Elos 1 a 5'],
+      ['1 2 3 4', 'Posturas: Véu, Silêncio, Ímpeto, Olhar'],
+      ['Roda do mouse · Z / X', 'Maré: mais defesa / mais ataque'],
+      ['C · K · M', 'Psique · Grade de Elos · Maestria'],
+      ['H · Esc', 'Ajuda · Pausa'],
+    ];
+    this.small(
       'Como jogar',
-      `<table class="table keys">
-        <tr><td>WASD</td><td>Mover</td></tr>
-        <tr><td>Mouse</td><td>Mirar</td></tr>
-        <tr><td>Botão esquerdo / Espaço</td><td>Golpe básico</td></tr>
-        <tr><td>Botão direito</td><td>Assinatura (Punho do Voto)</td></tr>
-        <tr><td>Q E R F T</td><td>Técnicas nos Elos 1 a 5</td></tr>
-        <tr><td>1 2 3 4</td><td>Posturas: Véu, Silêncio, Ímpeto, Olhar</td></tr>
-        <tr><td>Roda do mouse · Z / X</td><td>Maré: mais defesa / mais ataque</td></tr>
-        <tr><td>C · K · M</td><td>Ficha · Grade de Elos · Maestria</td></tr>
-        <tr><td>H · Esc</td><td>Ajuda · Pausa</td></tr>
-      </table>
-      <h4>Dicas</h4>
-      <ul>
-        <li>Quando o chão ficar vermelho sob você, gire a Maré para a defesa <b>no instante</b> do golpe: Maré perfeita.</li>
-        <li>O Olhar (4) revela Espreitadores em Sombra e armadilhas.</li>
-        <li>Medite no santuário em Silêncio (2) para baixar o estresse antes que ele vire Crise.</li>
-        <li>A cada 3 acertos do Punho do Voto no mesmo alvo, o golpe ignora a armadura.</li>
-      </ul>`,
+      `<div class="keys">${rows.map(([k, v]) => `<div><kbd>${k}</kbd><span>${v}</span></div>`).join('')}</div>
+      <div class="tips">
+        <div class="tipc">${icon('tide', 22)}<p>Quando o chão ficar vermelho sob você, gire a Maré para a defesa <b>no instante</b> do golpe: Maré perfeita.</p></div>
+        <div class="tipc">${icon('gaze', 22)}<p>O Olhar revela Espreitadores em Sombra e armadilhas.</p></div>
+        <div class="tipc">${icon('silence', 22)}<p>Medite no santuário em Silêncio para baixar o estresse antes que vire Crise.</p></div>
+        <div class="tipc">${icon('signature', 22)}<p>A cada 3 acertos do Punho do Voto no mesmo alvo, o golpe ignora a armadura.</p></div>
+      </div>`,
     );
   }
 
   private renderPause(): void {
-    this.frame(
+    this.small(
       'Pausa',
       `<div class="actions col">
         <button class="btn primary" data-a="resume">Continuar</button>
@@ -283,8 +443,5 @@ export class Panels {
         <button class="btn" data-a="quit">Salvar e sair para o título</button>
       </div>`,
     );
-    this.root.querySelector('[data-a="resume"]')!.addEventListener('click', () => this.close());
-    this.root.querySelector('[data-a="help"]')!.addEventListener('click', () => this.open('help'));
-    this.root.querySelector('[data-a="quit"]')!.addEventListener('click', () => this.onQuit());
   }
 }

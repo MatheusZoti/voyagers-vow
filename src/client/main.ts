@@ -1,4 +1,5 @@
 import './style.css';
+import './ui/panels.css';
 import { createCharacter, type Character } from '../sim/character';
 import { Simulation, TICK } from '../sim/sim';
 import { Hud } from './hud';
@@ -55,7 +56,7 @@ function startGame(c: Character): void {
     showTitle();
   };
   input.onKey = (code) => {
-    const map: Record<string, 'sheet' | 'elos' | 'mastery' | 'help'> = { KeyC: 'sheet', KeyK: 'elos', KeyM: 'mastery', KeyH: 'help' };
+    const map: Record<string, 'psyche' | 'elos' | 'mastery' | 'help'> = { KeyC: 'psyche', KeyK: 'elos', KeyM: 'mastery', KeyH: 'help' };
     if (code === 'Escape') {
       if (panels.current) panels.close();
       else {

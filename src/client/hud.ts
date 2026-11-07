@@ -6,7 +6,13 @@ import { CRISIS_NAMES, dominant, STRESS_BAND_NAMES, stressBand } from '../sim/ps
 import type { NoticeTone, SimEvent, Simulation } from '../sim/sim';
 import { TECHNIQUES, type TechniqueId } from '../sim/techniques';
 
-const SLOT_KEYS = ['Q', 'E', 'R', 'F', 'T', 'G', 'V', 'B'];
+import { emotionWheel } from './ui/charts';
+import { escapeHtml } from './util';
+
+export { escapeHtml };
+import { icon } from './ui/icons';
+
+const SLOT_KEYS =['Q', 'E', 'R', 'F', 'T', 'G', 'V', 'B'];
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] => {
   const el = document.createElement(tag);
@@ -38,6 +44,8 @@ export class Hud {
   private status = h('div', 'status');
   private hint = h('div', 'hint');
   private level = h('div', 'level');
+  private miniWheel = h('div', 'mini-wheel');
+  private lastWheel = '';
   private lastStatic = '';
 
   constructor(
@@ -51,7 +59,10 @@ export class Hud {
     const psy = h('div', 'panel psyche');
     const stressBar = h('div', 'stress-bar');
     stressBar.append(this.stress);
-    psy.append(this.emotion, stressBar, this.stressLabel, this.crisis);
+    const txt = h('div', 'psy-text');
+    txt.append(this.emotion, stressBar, this.stressLabel, this.crisis);
+    psy.append(this.miniWheel, txt);
+    psy.title = 'Psique (C)';
     root.append(psy);
 
     // Topo direito: personagem.
@@ -83,7 +94,7 @@ export class Hud {
     const postureGroup = h('div', 'group');
     for (const id of POSTURE_IDS) {
       const d = POSTURES[id];
-      const b = h('div', 'key posture', `<span class="k">${d.key}</span><span class="n">${d.name}</span>`);
+      const b = h('div', 'key posture', `<span class="k">${d.key}</span><span class="pi">${icon(id, 22)}</span><span class="n">${d.name}</span>`);
       b.style.setProperty('--c', d.color);
       b.title = d.desc;
       postureGroup.append(b);
@@ -92,7 +103,7 @@ export class Hud {
     const tide = h('div', 'tide');
     const track = h('div', 'tide-track');
     track.append(this.tideFill, this.tideMarker);
-    tide.append(h('span', 'tide-label', 'Maré'), track, this.tideText);
+    tide.append(h('span', 'tide-label', `${icon('tide', 14)} Maré`), track, this.tideText);
     tide.title = 'Roda do mouse (ou Z/X): distribui o Fluxo entre ataque e defesa.';
 
     const slotGroup = h('div', 'group');
@@ -152,6 +163,14 @@ export class Hud {
       this.emotion.style.color = '#cfd8e3';
       this.emotion.style.opacity = '0.7';
     }
+    // Mini roda de emoções: só redesenha quando algo muda de forma visível.
+    const wheelKey = `${Math.round(psy.stress / 4)}|${Object.values(psy.emotions)
+      .map((e) => `${e!.id}${Math.round(e!.intensity * 20)}`)
+      .join(',')}`;
+    if (wheelKey !== this.lastWheel) {
+      this.lastWheel = wheelKey;
+      this.miniWheel.innerHTML = emotionWheel(psy.emotions, psy.stress, { size: 64, labels: false });
+    }
     const band = stressBand(psy.stress);
     this.stress.style.width = `${psy.stress}%`;
     this.stress.dataset.band = band;
@@ -181,9 +200,10 @@ export class Hud {
       el.dataset.key = key;
       el.className = `key slot ${state} ${info?.beyondLimit ? 'beyond' : ''} ${info && p.flow < sim.slotCost(slot, info) ? 'nocost' : ''}`;
       const label = !slot.unlocked ? '—' : slot.sealed ? 'Selado' : tech ? tech.name : 'Vazio';
+      const art = !slot.unlocked ? 'lock' : slot.sealed ? 'seal' : tech ? tech.id : 'empty';
       el.innerHTML =
         `<span class="k">${SLOT_KEYS[i]}</span><span class="lvl">Elo ${slot.level}${info && info.effective !== slot.level ? ` → ${info.effective}` : ''}</span>` +
-        `<span class="n">${label}</span>` +
+        `<span class="si">${icon(art, 22)}</span><span class="n">${label}</span>` +
         (info ? `<span class="cost">${Math.round(sim.slotCost(slot, info))}</span>` : '') +
         (cd > 0 ? `<span class="cd">${cd.toFixed(1)}</span>` : '');
     });
@@ -211,8 +231,4 @@ export class Hud {
       this.hint.classList.toggle('show', !!hint);
     }
   }
-}
-
-export function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 }

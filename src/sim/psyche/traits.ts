@@ -71,6 +71,26 @@ export const VALUE_NAMES: Record<ValueId, string> = {
   mercy: 'Misericórdia',
 };
 
+/** Polos curtos de cada eixo, para os sliders da ficha: [baixo, alto]. */
+export const TRAIT_POLES: Record<TraitId, [string, string]> = {
+  courage: ['Medroso', 'Destemido'],
+  wrath: ['Plácido', 'Colérico'],
+  anxiety: ['Tranquilo', 'Ansioso'],
+  impulsivity: ['Cauteloso', 'Impulsivo'],
+  curiosity: ['Indiferente', 'Curioso'],
+  discipline: ['Disperso', 'Disciplinado'],
+  imagination: ['Literal', 'Sonhador'],
+  stubbornness: ['Flexível', 'Teimoso'],
+  empathy: ['Frio', 'Empático'],
+  pride: ['Humilde', 'Orgulhoso'],
+  trust: ['Desconfiado', 'Confiante'],
+  sincerity: ['Dissimulado', 'Sincero'],
+  greed: ['Desprendido', 'Ganancioso'],
+  perseverance: ['Inconstante', 'Perseverante'],
+  competitiveness: ['Cooperativo', 'Competitivo'],
+  detachment: ['Apegado', 'Desapegado'],
+};
+
 /** [muito baixo, baixo, alto, muito alto] */
 const TRAIT_PHRASES: Record<TraitId, [string, string, string, string]> = {
   courage: ['entra em pânico diante do perigo', 'assusta-se com facilidade', 'raramente sente medo', 'parece não conhecer o medo'],

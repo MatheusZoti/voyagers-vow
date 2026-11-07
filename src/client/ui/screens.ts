@@ -2,7 +2,7 @@ import { AFFINITY_COLORS, AFFINITY_DESC, AFFINITY_NAMES } from '../../sim/flow/a
 import type { Character } from '../../sim/character';
 import { RITE_QUESTIONS } from '../../sim/psyche/rite';
 import { TRAIT_IDS, traitPhrase, VALUE_IDS, valuePhrase } from '../../sim/psyche/traits';
-import { escapeHtml } from '../hud';
+import { escapeHtml } from '../util';
 
 /** Telas fora do jogo: título, perguntas do Rito e a revelação no Cálice. */
 
