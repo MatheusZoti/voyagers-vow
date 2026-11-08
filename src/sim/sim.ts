@@ -13,7 +13,6 @@ import { AFFINITY_COLORS, AFFINITY_NAMES } from './flow/affinity';
 import {
   BASE_FLOW_MAX,
   BASE_FLOW_REGEN,
-  BASE_GUARD,
   computeFlowMods,
   createTide,
   POSTURES,
@@ -1167,7 +1166,7 @@ export class Simulation {
       // Defesa zero: sem o Véu e sem a Maré (o Ponto pôs todo o Fluxo no golpe).
     } else {
       const veilBonus = tideLevel(p.tide.value) < 0 ? 0.005 * (displayLevel(this.c.mastery.veil) - 1) : 0;
-      mult *= 1 - BASE_GUARD - veilBonus;
+      mult *= 1 - veilBonus;
       mult *= tideIncoming(p.tide.value);
       if (opts.heavy && p.tide.value <= 0.3 && this.time - p.tide.lastDefenseShiftAt <= 1.0) {
         perfect = true;

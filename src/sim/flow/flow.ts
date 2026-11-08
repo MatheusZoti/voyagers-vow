@@ -61,8 +61,6 @@ export const POSTURES: Record<Posture, PostureDef> = {
 
 export const BASE_FLOW_MAX = 100;
 export const BASE_FLOW_REGEN = 4; // por segundo
-/** guarda base do Viajante: a redução de 25% que o antigo Véu dava sempre (some na defesa zero) */
-export const BASE_GUARD = 0.25;
 
 // ---------------------------------------------------------------------------
 // Maré: distribui o Fluxo entre ataque e defesa em 5 degraus.

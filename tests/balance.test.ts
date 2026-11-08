@@ -19,14 +19,12 @@ describe('Balanceamento (bot)', () => {
     for (const r of byScenario.get('Carniçais x2 (nv 1)')!) expect(r.won, r.affinity).toBe(true);
   });
 
-  it('o Guardião é vencível no nível 4 por quem usa a Maré, por toda afinidade', () => {
-    for (const r of byScenario.get('Guardião (nv 4, hábil)')!) expect(r.won, r.affinity).toBe(true);
-  });
-
+  // Sem equipamentos nem atributos, o Guardião no nível 4 é difícil de propósito:
+  // o que se exige aqui é que a Maré faça diferença clara, não que ele caia.
   it('usar a Maré e desviar faz diferença contra o Guardião', () => {
     const good = byScenario.get('Guardião (nv 4, hábil)')!;
     const bad = byScenario.get('Guardião (nv 4, sem Maré)')!;
-    const avg = (rs: typeof rows) => rs.reduce((s, r) => s + r.hpLostPct + (r.won ? 0 : 100), 0) / rs.length;
-    expect(avg(good)).toBeLessThan(avg(bad));
+    const score = (rs: typeof rows) => rs.reduce((s, r) => s + (r.won ? 1000 - r.hpLostPct : r.seconds), 0) / rs.length;
+    expect(score(good)).toBeGreaterThan(score(bad) * 1.5);
   });
 });
