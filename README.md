@@ -40,7 +40,7 @@ npm run build
 | Conversar | Clique no NPC |
 | Posturas | 1 Véu · 2 Silêncio · 3 Ímpeto · 4 Olhar |
 | Maré (ataque ↔ defesa) | Roda do mouse (ou Z / X) |
-| Psique · Grade de Elos · Maestria | C · K · M |
+| Psique · Grade de Elos · Maestria · Mapa | C · K · M · N |
 | Ajuda · Pausa (volume) | H · Esc |
 | Painel de playtest | ` (crase) ou F2 |
 

@@ -21,6 +21,7 @@ import {
   setOpacity,
   type Rig,
 } from './models';
+import { FogOfWar } from './fog';
 import { buildWorld, type WorldView } from './world';
 
 const CAM_OFFSET = new THREE.Vector3(0, 17, 12.5);
@@ -71,6 +72,7 @@ export class GameView {
   private time = 0;
   private shake = 0;
   private camTarget = new THREE.Vector3();
+  private fog: FogOfWar;
   private npcs: Array<{ id: NpcId; rig: Rig; label: HTMLDivElement }> = [];
   private books: Array<{ id: string; group: THREE.Group; glow: THREE.Object3D }> = [];
   private dropMeshes = new Map<number, THREE.Group>();
@@ -112,6 +114,8 @@ export class GameView {
 
     this.world = buildWorld(sim.map);
     this.scene.add(this.world.group);
+    this.fog = new FogOfWar(sim);
+    this.fog.patch(this.world.group);
     this.fx = new Effects(this.scene, (x, y) => floorAt(sim.map, x, y));
 
     this.player = buildPlayer(AFFINITY_COLORS[sim.c.affinity]);
@@ -463,6 +467,7 @@ export class GameView {
     const p = sim.player;
     this.time += dt;
     this.world.update(this.time);
+    this.fog.update(dt);
 
     // Jogador.
     const target = new THREE.Vector3(p.pos.x, this.gh(p.pos.x, p.pos.y), p.pos.y);
@@ -533,6 +538,8 @@ export class GameView {
       v.rig.body.scale.set(1 + sq, 1 - sq, 1 + sq);
       let opacity = dead ? Math.max(0, 1 - Math.max(0, v.dead - 1.2) / 0.8) : 1;
       if (e.def.shadowed && !dead) opacity = e.revealed ? 0.8 : 0;
+      // Névoa de guerra: fora da vista, o inimigo some.
+      if (!sim.isVisible(e.pos)) opacity = 0;
       setOpacity(v.rig, opacity);
       v.hurt = Math.max(0, v.hurt - dt);
       flash(v.rig, v.hurt > 0 ? 1 : 0);
@@ -555,7 +562,7 @@ export class GameView {
     // Armadilhas e Eco.
     sim.traps.forEach((t, i) => {
       const m = this.trapMeshes[i]!;
-      m.visible = t.armed && t.revealed;
+      m.visible = t.armed && t.revealed && sim.isVisible(t.pos);
       m.rotation.y += dt * 0.5;
     });
     if (sim.echo) {
@@ -569,7 +576,9 @@ export class GameView {
       const fresh = !!sim.dialogueFor(n.id);
       const pr = this.project({ x: n.rig.root.position.x, y: n.rig.root.position.z }, 2.35);
       const near = sim.npcDistance(n.id) < 14;
-      n.label.style.display = pr.visible && near ? '' : 'none';
+      const known = sim.isExplored(n.rig.root.position.x, n.rig.root.position.z);
+      n.rig.root.visible = known;
+      n.label.style.display = pr.visible && near && known ? '' : 'none';
       n.label.style.transform = `translate(${pr.x}px, ${pr.y}px) translate(-50%, -100%)`;
       const html = `${fresh ? '<b class="bang">!</b>' : ''}<span>${NPCS[n.id].name}</span>`;
       if (n.label.dataset.h !== html) {
@@ -582,6 +591,7 @@ export class GameView {
     // Livros: brilham até serem lidos.
     for (const b of this.books) {
       const read = sim.c.booksRead.includes(b.id);
+      b.group.visible = sim.isExplored(b.group.position.x, b.group.position.z);
       b.glow.visible = !read;
       b.glow.position.y = Math.sin(this.time * 2) * 0.06;
       b.glow.rotation.y += dt * 0.6;
@@ -606,6 +616,7 @@ export class GameView {
         this.dropMeshes.set(d.id, g);
       }
       g.position.y = this.gh(d.pos.x, d.pos.y) + 0.9 + Math.sin(this.time * 3 + d.id) * 0.12;
+      g.visible = sim.isExplored(d.pos.x, d.pos.y);
       g.children[0]!.rotation.y += dt * 2;
     }
     for (const [id, g] of this.dropMeshes) {

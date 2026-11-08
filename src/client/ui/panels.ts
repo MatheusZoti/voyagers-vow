@@ -33,7 +33,7 @@ import {
   valuesEqualizer,
 } from './charts';
 import { icon } from './icons';
-import { drawBase, drawMarkers } from './minimap';
+import { drawBase, drawFog, drawMarkers } from './worldmap';
 
 export type TabId = 'psyche' | 'elos' | 'mastery' | 'map';
 export type PanelId = TabId | 'help' | 'pause';
@@ -159,7 +159,7 @@ export class Panels {
       <section class="card map-card"><canvas class="bigmap"></canvas></section>
       <section class="card map-side">
         <h4>Vale da Ponte</h4>
-        <p class="card-sub">Região de tier 1, Santuário: sem PvP. Cada linha clara é um degrau de 0,5 m de relevo.</p>
+        <p class="card-sub">Região de tier 1, Santuário: sem PvP. O que você ainda não viu fica sob a névoa; inimigos só aparecem quando estão à vista.</p>
         <ul class="map-legend">${legend.map(([k, t]) => `<li><i class="lg-${k}"></i>${t}</li>`).join('')}</ul>
       </section>
     </div>`;
@@ -174,7 +174,8 @@ export class Panels {
     cv.height = map.h * scale;
     const g = cv.getContext('2d')!;
     g.drawImage(drawBase(map, scale), 0, 0);
-    drawMarkers(g, this.sim, scale, true);
+    drawFog(g, this.sim, scale);
+    drawMarkers(g, this.sim, scale);
   }
 
   private onClick(e: MouseEvent): void {

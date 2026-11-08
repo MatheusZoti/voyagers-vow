@@ -25,6 +25,8 @@ export interface Character {
   dialogues: DialogueId[];
   /** livros do mundo já lidos */
   booksRead: string[];
+  /** névoa de guerra: tiles já vistos por região ('1' = explorado), como texto compacto */
+  explored: Record<string, string>;
   deaths: number;
   /** penalidade de morte: 0–3 (estilo Tibia) */
   penaltyLevel: number;
@@ -78,6 +80,7 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
     knownSpells: [first, second],
     dialogues: [],
     booksRead: [],
+    explored: {},
     deaths: 0,
     penaltyLevel: 0,
     lastDeathAt: -1e9,
@@ -100,6 +103,7 @@ export function migrateCharacter(raw: unknown): Character | null {
   if (!raw || typeof raw !== 'object') return null;
   const c = raw as Record<string, unknown> & Partial<Character>;
   if (c.version === 2) {
+    if (!c.explored) c.explored = {};
     ensureMastery(c as Character);
     return c as Character;
   }
@@ -131,6 +135,7 @@ export function migrateCharacter(raw: unknown): Character | null {
     knownSpells: [...known],
     dialogues: [],
     booksRead: [],
+    explored: {},
     deaths: 0,
   };
   delete (migrated as unknown as { answers?: unknown }).answers;

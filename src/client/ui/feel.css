@@ -183,40 +183,6 @@
 /* =========================================================================
    Minimapa e mapa da região
    ========================================================================= */
-.minimap {
-  position: absolute;
-  top: 92px;
-  right: 14px;
-  width: 216px;
-  border-radius: 14px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: #121418;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-  pointer-events: auto;
-  cursor: pointer;
-}
-.minimap canvas {
-  display: block;
-  width: 216px;
-  height: 144px;
-}
-.minimap .mm-label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 9px;
-  font: 600 11px Inter, sans-serif;
-  color: #c9cfdd;
-  background: rgba(16, 18, 26, 0.92);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-.minimap:hover {
-  border-color: rgba(226, 182, 90, 0.6);
-}
-.notices {
-  top: 280px;
-}
 .grid.mapg {
   grid-template-columns: 1fr 240px;
   align-items: start;
@@ -281,14 +247,5 @@
 @media (max-width: 1000px) {
   .grid.mapg {
     grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 760px) {
-  .minimap {
-    width: 150px;
-  }
-  .minimap canvas {
-    width: 150px;
-    height: 100px;
   }
 }

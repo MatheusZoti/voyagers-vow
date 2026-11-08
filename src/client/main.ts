@@ -11,7 +11,6 @@ import { Sfx } from './sfx';
 import { GameView } from './three/view';
 import { DebugPanel, loadTuning } from './ui/debug';
 import { DialogueBox } from './ui/dialogue';
-import { Minimap } from './ui/minimap';
 import { Panels } from './ui/panels';
 import { creationScreen, titleScreen } from './ui/screens';
 
@@ -76,8 +75,6 @@ function startGame(c: Character): void {
   const input = new InputController(view.renderer.domElement);
   const dialogue = new DialogueBox(dialogEl, sim);
   const debug = new DebugPanel(debugEl, sim);
-  const minimap = new Minimap(sim);
-  hudEl.append(minimap.el);
   // Botão direito: a magia do Elo 1.
   input.rightClickSlot = () => (c.elos[0]?.technique ? 1 : null);
 
@@ -138,13 +135,6 @@ function startGame(c: Character): void {
     }
   };
 
-  minimap.onOpen = () => {
-    if (dialogue.open) return;
-    panels.open('map');
-    setPaused(true);
-    sfx.ui();
-  };
-
   hud.pushNotice('Bem-vindo ao Vale da Ponte. H mostra os controles.', 'info');
   if (!c.dialogues.length) hud.pushNotice('Mestre Oren quer falar com você. Clique nele para conversar.', 'info');
 
@@ -190,7 +180,6 @@ function startGame(c: Character): void {
       view.render(paused ? 0 : dt);
     }
     hud.update();
-    if (!paused) minimap.update(dt);
     raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);

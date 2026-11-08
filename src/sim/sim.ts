@@ -59,6 +59,8 @@ import { buildMap, inCircle, isBlocked, moveWithCollision, type GameMap } from '
 import { TUNING } from './tuning';
 
 export const TICK = 1 / 30;
+/** Chave da região atual (para salvar a exploração). */
+export const REGION = 'vale';
 
 export interface PlayerInput {
   /** direção de movimento no plano do mundo (não precisa ser normalizada) */
@@ -168,6 +170,10 @@ export class Simulation {
   /** último ponto mirado (para magias que miram no chão) */
   lastAim: Vec2 = { x: 0, y: 0 };
   private wasInSanctuary = true;
+  /** névoa de guerra desta região: 1 = já visto */
+  readonly explored: Uint8Array;
+  private exploredTile = -1;
+  private exploredPosture: Posture | null = null;
   private bridgePrompted = false;
 
   constructor(character: Character, seed = 99) {
@@ -206,6 +212,10 @@ export class Simulation {
     this.spawn('boss', { ...this.map.bossSpawn });
     this.traps = this.map.traps.map((p) => ({ pos: { ...p }, armed: true, revealed: false, rearmIn: 0 }));
     this.mods = computeFlowMods(character.psyche, 'veil');
+    this.explored = new Uint8Array(this.map.w * this.map.h);
+    const saved = character.explored?.[REGION] ?? '';
+    for (let i = 0; i < saved.length && i < this.explored.length; i++) this.explored[i] = saved.charCodeAt(i) === 49 ? 1 : 0;
+    this.explore();
     for (const m of Object.values(character.mastery)) m.sessionUses = 0;
     for (const slot of character.elos) {
       sanitizeSlot(slot);
@@ -214,6 +224,52 @@ export class Simulation {
         slot.technique = null;
         sanitizeSlot(slot);
       }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Névoa de guerra
+  // -------------------------------------------------------------------------
+
+  /** Raio de visão: o Olhar enxerga mais longe. */
+  visionRadius(): number {
+    return this.player.posture === 'gaze' ? 14 : 10;
+  }
+
+  /** Está à vista agora? */
+  isVisible(p: Vec2): boolean {
+    return !this.player.dead && dist(p, this.player.pos) <= this.visionRadius();
+  }
+
+  isExplored(x: number, y: number): boolean {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    return ix >= 0 && iy >= 0 && ix < this.map.w && iy < this.map.h && this.explored[iy * this.map.w + ix] === 1;
+  }
+
+  /** Marca como explorado tudo que está no raio de visão (salvo no personagem). */
+  private explore(): void {
+    const p = this.player;
+    const m = this.map;
+    const tileIdx = Math.floor(p.pos.y) * m.w + Math.floor(p.pos.x);
+    if (tileIdx === this.exploredTile && p.posture === this.exploredPosture) return;
+    this.exploredTile = tileIdx;
+    this.exploredPosture = p.posture;
+    const r = this.visionRadius();
+    let changed = false;
+    for (let y = Math.max(0, Math.floor(p.pos.y - r)); y <= Math.min(m.h - 1, p.pos.y + r); y++)
+      for (let x = Math.max(0, Math.floor(p.pos.x - r)); x <= Math.min(m.w - 1, p.pos.x + r); x++) {
+        if (Math.hypot(x + 0.5 - p.pos.x, y + 0.5 - p.pos.y) > r) continue;
+        const i = y * m.w + x;
+        if (!this.explored[i]) {
+          this.explored[i] = 1;
+          changed = true;
+        }
+      }
+    if (changed) {
+      let s = '';
+      for (let i = 0; i < this.explored.length; i++) s += this.explored[i] ? '1' : '0';
+      this.c.explored[REGION] = s;
     }
   }
 
@@ -534,6 +590,8 @@ export class Simulation {
       p.nearDeathCd = 25;
       this.feel('nearDeath');
     }
+
+    if (!p.dead) this.explore();
 
     // Grimórios no chão e livros antigos.
     for (const d of [...this.drops]) {
