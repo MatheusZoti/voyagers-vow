@@ -21,7 +21,7 @@ import {
 } from '../../sim/techniques';
 import { SLOT_KEYS } from '../keys';
 import type { Sfx } from '../sfx';
-import { escapeHtml } from '../util';
+import { escapeHtml, hintTip } from '../util';
 import {
   affinityRadar,
   buildConstellation,
@@ -70,7 +70,7 @@ const MASTERY_EFFECT: Record<MasteryId, string> = {
 };
 
 /** "?" no título de um card: explicação no hover (ou foco pelo teclado). */
-const tip = (text: string) => `<span class="hint-i" tabindex="0" role="note" aria-label="${escapeHtml(text)}">?<span class="tip">${escapeHtml(text)}</span></span>`;
+const tip = hintTip;
 
 /** Janela do personagem (abas) e menus de ajuda e pausa. O jogo pausa enquanto ela está aberta. */
 export class Panels {
@@ -112,7 +112,8 @@ export class Panels {
     const th = tipEl.offsetHeight;
     tipEl.style.display = '';
     const h = hint.getBoundingClientRect();
-    const w = win.getBoundingClientRect();
+    // Respeita a borda do painel que rola (a ficha do Grimório corta o que passar dela).
+    const w = (hint.closest<HTMLElement>('.cat-detail, .edetail') ?? win).getBoundingClientRect();
     if (h.left + tw > w.right - 12) tipEl.classList.add('left');
     if (h.bottom + 8 + th > w.bottom - 12) tipEl.classList.add('up');
   }

@@ -1,10 +1,10 @@
-import { AFFINITY_COLORS, AFFINITY_NAMES, AFFINITY_RING, affinityPenalty, minSlotFor, type Affinity } from '../../sim/flow/affinity';
+import { AFFINITY_COLORS, AFFINITY_NAMES, AFFINITY_RING, minSlotFor, type Affinity } from '../../sim/flow/affinity';
 import { canAddRestriction, ELO_TABLE, MOD_IDS, MODS, PACT_IDS, PACTS, type EloSlot, type ModId, type PactId } from '../../sim/elos';
-import { displayLevel, masteryCostMult, modifierDiscount } from '../../sim/mastery';
+import { displayLevel } from '../../sim/mastery';
 import { STRONG_VALUE, VALUE_IDS, VALUE_NAMES, type ValueId } from '../../sim/psyche/traits';
 import type { Simulation } from '../../sim/sim';
 import { NATURE_NAMES, resonance, SPELL_RULES, SPELLS, type SpellDef, type SpellId } from '../../sim/techniques';
-import { escapeHtml } from '../util';
+import { escapeHtml, hintTip } from '../util';
 import { pactPips } from './charts';
 import { icon } from './icons';
 
@@ -427,21 +427,14 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
   const s = SPELLS[id];
   const color = AFFINITY_COLORS[s.affinity];
   const need = spellNeed(sim, id);
-  const pen = affinityPenalty(c.affinity, s.affinity);
   const where = whereEquipped(sim, id);
   const res = resonance(s.tags, c.psyche.traits);
   const resText =
     res > 1
-      ? `<span class="good">Forte</span>: combina com quem você é. Custa ${pct(1 - 1 / res)} menos Fluxo e a Maestria sobe ${pct(res - 1)} mais rápido.`
+      ? `<span class="good">Forte</span>: −${pct(1 - 1 / res)} de custo e Maestria ${pct(res - 1)} mais rápida.`
       : res < 1
-        ? `<span class="bad">Fraca</span>: vai contra quem você é. Custa ${pct(1 / Math.max(0.5, res) - 1)} mais Fluxo e a Maestria sobe ${pct(1 - res)} mais devagar.`
-        : 'Neutra: sem efeito no custo nem na Maestria.';
-  const rec = c.mastery[id];
-  const lvl = displayLevel(rec);
-  const masteryText =
-    s.fx.shape === 'charge'
-      ? `Nível ${lvl}: crítico +${num(s.fx.critPerMastery! * lvl)}, custo −${pct(1 - masteryCostMult(rec))}${modifierDiscount(rec) ? `, forja −${modifierDiscount(rec)} por modificador` : ''}.`
-      : `Nível ${lvl}: +${pct(SPELL_RULES.masteryPerLevel * (lvl - 1))} de dano, custo −${pct(1 - masteryCostMult(rec))}${modifierDiscount(rec) ? `, forja −${modifierDiscount(rec)} por modificador` : ''}. Sobe usando a magia em lutas de verdade.`;
+        ? `<span class="bad">Fraca</span>: +${pct(1 / Math.max(0.5, res) - 1)} de custo e Maestria ${pct(1 - res)} mais lenta.`
+        : 'Neutra.';
 
   let preview = '';
   let action = '';
@@ -475,7 +468,6 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
         : `<button class="mchip link ${d.oath ? 'oath' : ''}" data-goto-pact="${p}">+${d.level} ${d.name}</button>`;
     })
     .join('');
-  const missing = PACT_IDS.filter((p) => !s.pacts.includes(p));
   const mods = s.mods
     .map(
       (m) => `<li><span class="md-ic">${icon(m, 15)}</span><span class="md-txt"><b>${MODS[m].name}</b><small>${modEffect(s, m)}</small></span>
@@ -496,14 +488,12 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
     <h6 class="cd-sub">Forja nesta magia <small>${s.mods.length} de ${MOD_IDS.length} modificadores</small></h6>
     <ul class="cd-mods">${mods}</ul>
     <dl class="cd-facts">
-      <div><dt>Afinidade</dt><dd>${pen ? `Fora da sua: −${pen} no nível efetivo e pede Elo ${need}+.` : 'A sua: sem penalidade, entra no Elo 1.'}</dd></div>
+      <div><dt>Afinidade</dt><dd><b style="color:${color}">${AFFINITY_NAMES[s.affinity]}</b></dd></div>
       ${ctx ? `<div><dt>Equipada</dt><dd>${where ? `Elo ${where.level}` : 'Não'}</dd></div>` : ''}
-      <div><dt>Maestria</dt><dd>${masteryText}</dd></div>
-      <div><dt>Ressonância</dt><dd>${resText}</dd></div>
+      <div><dt>Ressonância ${hintTip('O quanto a natureza da magia combina com a sua personalidade. Muda o custo de Fluxo e a velocidade com que a Maestria sobe.')}</dt><dd>${resText}</dd></div>
     </dl>
     <h6 class="cd-sub">Restrições compatíveis <small>${s.pacts.length} de ${PACT_IDS.length}</small></h6>
     <div class="cd-chips">${pacts}</div>
-    ${missing.length ? `<p class="cd-note">Não aceita: ${missing.map((p) => PACTS[p].name).join(', ')}.</p>` : ''}
     ${commonRules()}
     <div class="cd-spacer"></div>
     ${action ? `<div class="cd-actions">${action}</div>` : ''}`;
