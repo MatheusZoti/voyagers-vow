@@ -1,6 +1,7 @@
 import type { Posture } from '../sim/flow/flow';
 import type { Vec2 } from '../sim/math';
 import { emptyInput, type PlayerInput } from '../sim/sim';
+import { SLOT_CODES } from './keys';
 
 /** Coleta teclado e mouse e entrega um PlayerInput por tick. */
 export class InputController {
@@ -27,9 +28,7 @@ export class InputController {
       if (e.repeat) return;
       this.onKey(e.code);
       if (!this.enabled) return;
-      // Elos 1–4 nas teclas 1–4; Elos 5–8 em Q E R F.
-      const slotKeys: Record<string, number> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, KeyQ: 5, KeyE: 6, KeyR: 7, KeyF: 8 };
-      if (e.code in slotKeys) this.pendingSlot = slotKeys[e.code]!;
+      if (e.code in SLOT_CODES) this.pendingSlot = SLOT_CODES[e.code]!;
       // Shift alterna o Silêncio; Tab, o Olhar. 1 a 4 estão livres (Véu e Ímpeto viraram a Maré).
       if (e.key === 'Shift') this.pendingPosture = 'silence';
       if (e.code === 'Tab') this.pendingPosture = 'gaze';

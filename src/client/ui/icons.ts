@@ -28,6 +28,10 @@ const P: Record<string, string> = {
   tide: '<path d="M2.5 9c2 0 2-1.6 4-1.6S8.5 9 10.5 9s2-1.6 4-1.6 2 1.6 4 1.6 2-1.6 3-1.6"/><path d="M2.5 14c2 0 2-1.6 4-1.6s2 1.6 4 1.6 2-1.6 4-1.6 2 1.6 4 1.6 2-1.6 3-1.6"/><path d="M2.5 19c2 0 2-1.6 4-1.6s2 1.6 4 1.6 2-1.6 4-1.6 2 1.6 4 1.6" opacity=".55"/>',
   capacity: '<path d="M12 2.8c3.4 4.4 6.2 8 6.2 11.4a6.2 6.2 0 01-12.4 0C5.8 10.8 8.6 7.2 12 2.8z"/><path d="M8.6 15.2a3.4 3.4 0 003.4 3.1" opacity=".6"/>',
   // Estado
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5l5 5"/>',
+  back: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/><circle cx="12" cy="15.5" r="1.3"/>',
   empty: '<circle cx="12" cy="12" r="8" stroke-dasharray="2.5 3"/><path d="M12 9v6M9 12h6" opacity=".6"/>',
   seal: '<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/><path d="M12 7v5l3 2" opacity=".5"/>',

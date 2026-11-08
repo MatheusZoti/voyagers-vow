@@ -40,13 +40,13 @@ npm run build
 | Conversar | Clique no NPC |
 | Posturas (toque de novo para sair) | Shift Silêncio · Tab Olhar |
 | Maré: «« « • » »» (±15% por degrau, −1% de Fluxo/s por degrau) | Roda do mouse (ou Z / X) |
-| Psique · Grade de Elos · Maestria · Mapa | C · K · M · N |
+| Psique · Grade de Elos · Grimório · Maestria · Mapa | C · K · G · M · N |
 | Ajuda · Pausa (volume) | H · Esc |
 | Painel de playtest | ` (crase) ou F2 |
 
 ## Balanceamento
 
-`npm test` roda um bot que joga cenários fixos (Carniçais, matilha, Bruto, Guardião) com as cinco afinidades e imprime tempo de luta e vida perdida. O teste falha se o Guardião ficar impossível para quem usa a Maré, ou fácil para quem a ignora. Para ver a tabela:
+`npm test` roda um bot que joga cenários fixos (Carniçais, matilha, Bruto, Guardião) com as cinco afinidades e imprime tempo de luta e vida perdida. Por enquanto o Guardião no nível 4 é difícil de propósito (o balanceamento virá com equipamentos, níveis e atributos); o teste falha se usar a Maré deixar de fazer diferença clara contra ele. Para ver a tabela:
 
 ```bash
 npx vitest run tests/balance.test.ts --silent=false

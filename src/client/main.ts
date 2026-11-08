@@ -122,9 +122,11 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
   input.onKey = (code) => {
     if (dialogue.open) return;
     if (code === 'Backquote' || code === 'F2') return debug.toggle();
-    const map: Record<string, 'psyche' | 'elos' | 'mastery' | 'map' | 'help'> = {
+    if (panels.handleKey(code)) return;
+    const map: Record<string, 'psyche' | 'elos' | 'codex' | 'mastery' | 'map' | 'help'> = {
       KeyC: 'psyche',
       KeyK: 'elos',
+      KeyG: 'codex',
       KeyM: 'mastery',
       KeyN: 'map',
       KeyH: 'help',

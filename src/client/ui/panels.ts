@@ -1,10 +1,10 @@
 import { AFFINITY_COLORS, AFFINITY_DESC, AFFINITY_NAMES, minSlotFor } from '../../sim/flow/affinity';
-import { canAddRestriction, PACT_IDS, PACTS, trimMods, type ModId, type PactId } from '../../sim/elos';
+import { canAddRestriction, PACTS, trimMods, type EffectiveInfo, type ModId, type PactId } from '../../sim/elos';
 import { xpToNext } from '../../sim/character';
 import { displayLevel, GRACE_PLAYED_S, masteryCostMult, modifierDiscount, sharpnessMult } from '../../sim/mastery';
 import { EMOTION_COLORS, EMOTION_NAMES, type Emotion } from '../../sim/psyche/emotions';
 import { CRISIS_DESC, CRISIS_NAMES } from '../../sim/psyche/psyche';
-import { TRAIT_GROUPS, VALUE_NAMES } from '../../sim/psyche/traits';
+import { STRONG_VALUE, TRAIT_GROUPS, VALUE_NAMES } from '../../sim/psyche/traits';
 import type { Simulation } from '../../sim/sim';
 import {
   isSpell,
@@ -19,6 +19,7 @@ import {
   type SpellId,
   type TechniqueId,
 } from '../../sim/techniques';
+import { SLOT_KEYS } from '../keys';
 import type { Sfx } from '../sfx';
 import { escapeHtml } from '../util';
 import {
@@ -32,15 +33,17 @@ import {
   traitSliders,
   valuesEqualizer,
 } from './charts';
+import { CatalogState, catalogHtml, spellNeed, visibleEntries, type CatalogKind, type PickContext } from './catalog';
 import { icon } from './icons';
 import { drawBase, drawFog, drawMarkers } from './worldmap';
 
-export type TabId = 'psyche' | 'elos' | 'mastery' | 'map';
+export type TabId = 'psyche' | 'elos' | 'codex' | 'mastery' | 'map';
 export type PanelId = TabId | 'help' | 'pause';
 
 const TABS: Array<{ id: TabId; name: string; key: string }> = [
   { id: 'psyche', name: 'Psique', key: 'C' },
   { id: 'elos', name: 'Grade de Elos', key: 'K' },
+  { id: 'codex', name: 'Grimório', key: 'G' },
   { id: 'mastery', name: 'Maestria', key: 'M' },
   { id: 'map', name: 'Mapa', key: 'N' },
 ];
@@ -74,6 +77,15 @@ export class Panels {
   sfx: Sfx | null = null;
   private selectedElo = 2;
   private selectedNode: MasteryId = 'basic';
+  /** Grade de Elos: o Elo, ou o catálogo para escolher a magia / uma Restrição */
+  private eloView: 'elo' | CatalogKind = 'elo';
+  private codexKind: CatalogKind = 'spells';
+  /** estado próprio de cada catálogo: a busca do Elo não vaza para o Grimório */
+  private pickCat = new CatalogState();
+  private codexCat = new CatalogState();
+  private get cat(): CatalogState {
+    return this.current === 'codex' ? this.codexCat : this.pickCat;
+  }
 
   constructor(
     private root: HTMLElement,
@@ -96,6 +108,11 @@ export class Panels {
     this.root.innerHTML = '';
     this.root.onclick = null;
     this.root.onmousedown = null;
+    this.root.oninput = null;
+    this.root.onchange = null;
+    this.root.onkeydown = null;
+    this.eloView = 'elo';
+    this.cat.showAll = false;
     this.onClose();
   }
 
@@ -115,9 +132,22 @@ export class Panels {
     const c = this.sim.c;
     const aff = AFFINITY_COLORS[c.affinity];
     const body =
-      tab === 'psyche' ? this.psycheTab() : tab === 'elos' ? this.elosTab() : tab === 'mastery' ? this.masteryTab() : this.mapTab();
+      tab === 'psyche'
+        ? this.psycheTab()
+        : tab === 'elos'
+          ? this.elosTab()
+          : tab === 'codex'
+            ? this.codexTab()
+            : tab === 'mastery'
+              ? this.masteryTab()
+              : this.mapTab();
     const prev = this.root.querySelector<HTMLElement>('.win:not(.small)');
     const scroll = prev?.dataset.cur === tab ? (prev.querySelector('.win-body')?.scrollTop ?? 0) : 0;
+    // Listas com rolagem própria mantêm a posição entre renders.
+    const kept = new Map<string, number>();
+    if (prev?.dataset.cur === tab) prev.querySelectorAll<HTMLElement>('[data-keep-scroll]').forEach((el) => kept.set(el.dataset.keepScroll!, el.scrollTop));
+    const searching = (document.activeElement as HTMLElement | null)?.matches?.('[data-search]') ?? false;
+    const fill = tab === 'elos' || tab === 'codex';
     this.root.className = 'screen overlay';
     this.root.innerHTML = `
       <div class="win ${prev ? '' : 'enter'}" data-cur="${tab}" style="--aff:${aff}">
@@ -130,10 +160,21 @@ export class Panels {
           <nav class="tabs">${TABS.map((t) => `<button class="tab ${t.id === tab ? 'on' : ''}" data-tab="${t.id}">${t.name}<kbd>${t.key}</kbd></button>`).join('')}</nav>
           <button class="x" data-a="close" title="Fechar (Esc)">×</button>
         </header>
-        <div class="win-body">${body}</div>
+        <div class="win-body ${fill ? 'fill' : ''}">${body}</div>
       </div>`;
     const wb = this.root.querySelector('.win-body');
     if (wb) wb.scrollTop = scroll;
+    this.root.querySelectorAll<HTMLElement>('[data-keep-scroll]').forEach((el) => {
+      const v = kept.get(el.dataset.keepScroll!);
+      if (v) el.scrollTop = v;
+    });
+    if (searching) this.focusSearch();
+    this.root.oninput = (e) => {
+      const el = e.target as HTMLInputElement;
+      if (el.matches('[data-search]')) this.setQuery(el.value);
+    };
+    this.root.onchange = (e) => this.onFilterChange(e);
+    this.root.onkeydown = (e) => this.onSearchKey(e);
     this.root.onmousedown = (e) => {
       if (e.target === this.root) this.close();
     };
@@ -179,7 +220,9 @@ export class Panels {
   }
 
   private onClick(e: MouseEvent): void {
-    const t = (e.target as HTMLElement).closest<HTMLElement>('[data-tab],[data-a],[data-elo],[data-tech],[data-pact],[data-mod],[data-node]');
+    const t = (e.target as HTMLElement).closest<HTMLElement>(
+      '[data-tab],[data-a],[data-elo],[data-mod],[data-node],[data-open],[data-open-pact],[data-rm-pact],[data-codex],[data-pick],[data-cat-act],[data-f-aff],[data-f-level],[data-f-kind],[data-goto-pact],[data-goto-spell]',
+    );
     if (!t) return;
     const c = this.sim.c;
     if (t.dataset.a === 'close') return this.close();
@@ -190,32 +233,90 @@ export class Panels {
     }
     if (t.dataset.elo) {
       this.selectedElo = +t.dataset.elo;
+      this.eloView = 'elo';
       return this.render();
     }
-    if (!this.editable() || (t as HTMLButtonElement).disabled) return;
+    // Navegação do catálogo: sempre permitida, até fora do santuário.
+    const cat = this.cat;
     const slot = c.elos[this.selectedElo - 1]!;
-    if (t.dataset.tech !== undefined) {
-      const val = (t.dataset.tech || null) as TechniqueId | null;
-      if (val === slot.technique) return;
-      // Cada técnica ocupa um Elo só: troca de lugar se já estiver em outro.
-      const other = c.elos.find((s) => s !== slot && s.technique === val && val);
-      if (other) {
-        other.technique = slot.technique;
-        other.mods = {};
-        sanitizeSlot(other);
-      }
-      slot.technique = val;
-      slot.mods = {};
-      sanitizeSlot(slot);
+    if (t.dataset.open) {
+      this.eloView = t.dataset.open as CatalogKind;
+      cat.showAll = false;
+      cat.spellQuery = cat.pactQuery = '';
+      if (this.eloView === 'spells' && slot.technique) cat.selSpell = slot.technique as SpellId;
       return this.render();
     }
-    if (t.dataset.pact) {
-      const id = t.dataset.pact as PactId;
-      if (slot.restrictions.includes(id)) slot.restrictions = slot.restrictions.filter((x) => x !== id);
-      else if (!canAddRestriction(slot, id)) slot.restrictions.push(id);
-      else return;
-      const info = this.sim.slotInfo(slot);
-      if (info && slot.technique) trimMods(slot, info, modifierDiscount(c.mastery[slot.technique as MasteryId]));
+    if (t.dataset.openPact) {
+      this.eloView = 'pacts';
+      cat.showAll = false;
+      cat.pactQuery = '';
+      cat.selPact = t.dataset.openPact as PactId;
+      return this.render();
+    }
+    if (t.dataset.codex) {
+      this.codexKind = t.dataset.codex as CatalogKind;
+      return this.render();
+    }
+    if (t.dataset.gotoPact) {
+      this.codexKind = 'pacts';
+      cat.selPact = t.dataset.gotoPact as PactId;
+      cat.resetFilters('pacts');
+      return this.render();
+    }
+    if (t.dataset.gotoSpell) {
+      this.codexKind = 'spells';
+      cat.selSpell = t.dataset.gotoSpell as SpellId;
+      cat.resetFilters('spells');
+      return this.render();
+    }
+    if (t.dataset.pick) {
+      const kind = this.catalogNow()?.kind;
+      if (kind === 'spells') cat.selSpell = t.dataset.pick as SpellId;
+      else cat.selPact = t.dataset.pick as PactId;
+      return this.render();
+    }
+    if (t.dataset.fAff) {
+      cat.spellAffinity = t.dataset.fAff as CatalogState['spellAffinity'];
+      return this.render();
+    }
+    if (t.dataset.fLevel) {
+      cat.pactLevel = +t.dataset.fLevel;
+      return this.render();
+    }
+    if (t.dataset.fKind) {
+      cat.pactKind = t.dataset.fKind as CatalogState['pactKind'];
+      return this.render();
+    }
+    if (t.dataset.a === 'back') {
+      this.eloView = 'elo';
+      return this.render();
+    }
+    if (t.dataset.a === 'show-all') {
+      cat.showAll = !cat.showAll;
+      return this.render();
+    }
+    if (t.dataset.a === 'reset-filters') {
+      const kind = this.catalogNow()?.kind;
+      if (kind) cat.resetFilters(kind);
+      return this.render();
+    }
+    // Daqui para baixo, só no santuário.
+    if (!this.editable() || (t as HTMLButtonElement).disabled) return;
+    if (t.dataset.catAct) {
+      const act = t.dataset.catAct;
+      if (act === 'equip' && cat.selSpell) this.equipSpell(cat.selSpell);
+      else if (act === 'clear') this.equipSpell(null);
+      else if (act === 'add' && cat.selPact) this.setPact(cat.selPact, true);
+      else if (act === 'remove' && cat.selPact) this.setPact(cat.selPact, false);
+      this.eloView = 'elo';
+      return this.render();
+    }
+    if (t.dataset.a === 'clear-spell') {
+      this.equipSpell(null);
+      return this.render();
+    }
+    if (t.dataset.rmPact) {
+      this.setPact(t.dataset.rmPact as PactId, false);
       return this.render();
     }
     if (t.dataset.mod) {
@@ -303,31 +404,36 @@ export class Panels {
     const sim = this.sim;
     const c = sim.c;
     if (!c.elos[this.selectedElo - 1]?.unlocked) this.selectedElo = c.elos.find((e) => e.unlocked)?.level ?? 1;
-    const cards = c.elos
+    const rail = c.elos
       .map((slot) => {
         const tech = slot.technique ? TECHNIQUES[slot.technique as TechniqueId] : null;
         const info = slot.unlocked && tech ? sim.slotInfo(slot) : null;
         const sel = slot.level === this.selectedElo;
         const art = !slot.unlocked ? 'lock' : slot.sealed ? 'seal' : tech ? tech.icon : 'empty';
         const unlockHint = { 3: 'nível 3', 4: 'nível 5', 5: 'vencer o Guardião' }[slot.level] ?? 'mais adiante';
-        return `<button class="ecard ${sel ? 'sel' : ''} ${slot.unlocked ? '' : 'locked'} ${info?.beyondLimit ? 'beyond' : ''} ${slot.sealed ? 'sealed' : ''}" data-elo="${slot.level}" ${slot.unlocked ? '' : 'disabled'}>
-          <span class="e-num">Elo ${slot.level}</span>
-          ${info ? `<span class="e-eff ${info.effective > slot.level ? 'up' : info.effective < slot.level ? 'down' : ''}">${info.effective}</span>` : ''}
-          <span class="e-name">${!slot.unlocked ? 'Bloqueado' : slot.sealed ? 'Selado' : tech ? tech.name : 'Vazio'}</span>
-          <span class="e-art" ${tech ? `style="color:${AFFINITY_COLORS[tech.affinity]}"` : ''}>${icon(art, 64)}</span>
-          <span class="e-foot">${
-            !slot.unlocked
-              ? `Libera: ${unlockHint}`
-              : info
-                ? `${slot.restrictions.length ? `${slot.restrictions.length} Restr.` : 'sem Restrições'} · ${info.pointsUsed}/${info.points} pts`
-                : 'escolha uma magia'
-          }</span>
+        const sub = !slot.unlocked
+          ? `Libera: ${unlockHint}`
+          : slot.sealed
+            ? 'Selado'
+            : tech
+              ? `${tech.role} · ${slot.restrictions.length ? `${slot.restrictions.length} Restr.` : 'sem Restr.'}`
+              : 'escolha uma magia';
+        return `<button class="erow ${sel ? 'sel' : ''} ${slot.unlocked ? '' : 'locked'} ${info?.beyondLimit ? 'beyond' : ''} ${slot.sealed ? 'sealed' : ''}" data-elo="${slot.level}" ${slot.unlocked ? '' : 'disabled'}>
+          <kbd class="ek">${SLOT_KEYS[slot.level - 1]}</kbd>
+          <span class="er-ic" ${tech ? `style="color:${AFFINITY_COLORS[tech.affinity]}"` : ''}>${icon(art, 22)}</span>
+          <span class="er-txt"><small>Elo ${slot.level}</small><b>${!slot.unlocked ? 'Bloqueado' : tech ? tech.name : 'Vazio'}</b><small>${sub}</small></span>
+          ${info ? `<span class="e-eff ${info.effective > slot.level ? 'up' : info.effective < slot.level ? 'down' : ''}" title="Nível efetivo">${info.effective}</span>` : ''}
         </button>`;
       })
       .join('');
+    const slot = c.elos[this.selectedElo - 1]!;
+    const right =
+      this.eloView === 'elo'
+        ? `<section class="card edetail" data-keep-scroll="edetail">${this.eloDetail()}</section>`
+        : `<section class="card cat-host">${catalogHtml(sim, this.cat, this.eloView, { slot, editable: this.editable() })}</section>`;
     return `<div class="grid elos">
-      <section class="ecards">${cards}</section>
-      <section class="card edetail">${this.eloDetail()}</section>
+      <section class="erail">${rail}<p class="rail-note">Cada Elo é uma tecla. Restrições sobem o nível efetivo; custo e recarga continuam os do Elo.</p></section>
+      ${right}
     </div>`;
   }
 
@@ -337,30 +443,21 @@ export class Panels {
     const slot = c.elos[this.selectedElo - 1]!;
     const editable = this.editable();
     const tech = slot.technique ? TECHNIQUES[slot.technique as TechniqueId] : null;
-    // Grimório: magias conhecidas, com o Elo mínimo de cada uma (1 + distância no pentágono).
-    const techPick =
-      `<button class="gspell empty ${slot.technique ? '' : 'on'}" data-tech="" ${editable ? '' : 'disabled'}>${icon('empty', 18)}<span class="gs-name">Vazio</span></button>` +
-      c.knownSpells
-        .map((id) => {
-          const s = SPELLS[id];
-          const on = slot.technique === id;
-          const need = minSlotFor(c.affinity, s.affinity, s.minLevel);
-          const blocked = slot.level < need;
-          const where = c.elos.find((x) => x !== slot && x.technique === id);
-          const title = blocked ? `Precisa de Elo ${need}+ (${AFFINITY_NAMES[s.affinity]})` : where ? `Está no Elo ${where.level}: troca de lugar` : s.desc;
-          return `<button class="gspell ${on ? 'on' : ''} ${blocked ? 'blocked' : ''}" data-tech="${id}" ${!editable || blocked ? 'disabled' : ''} title="${escapeHtml(title)}" style="--c:${AFFINITY_COLORS[s.affinity]}">
-            <span class="gs-ic">${icon(s.icon, 18)}</span>
-            <span class="gs-name">${s.name}</span>
-            <span class="gs-meta">${s.role} · ${AFFINITY_NAMES[s.affinity]}</span>
-            <span class="gs-need ${need > 1 ? 'up' : ''}">${blocked ? icon('lock', 12) : ''}Elo ${need}+</span>
-            ${where ? `<small class="gs-where">no Elo ${where.level}</small>` : ''}
-          </button>`;
-        })
-        .join('');
-    const lockNote = editable ? '' : `<div class="alert warn">Só dá para reconfigurar no santuário, fora de combate.</div>`;
+    const lockNote = editable ? '' : `<div class="alert warn">Só dá para reconfigurar no santuário, fora de combate. Você ainda pode consultar tudo.</div>`;
+    const fits = c.knownSpells.filter((id) => spellNeed(sim, id) <= slot.level).length;
+    const head = (info: EffectiveInfo | null) => `<div class="ed-head">
+        <h3>Elo ${slot.level} <kbd class="ek big" title="Tecla deste Elo">${SLOT_KEYS[slot.level - 1]}</kbd></h3>
+        ${info ? `<div class="eff-big ${info.beyondLimit ? 'beyond' : ''}"><span>nível efetivo</span><b>${info.effective}</b>${info.beyondLimit ? '<em>Além-limite</em>' : ''}</div>` : ''}
+      </div>`;
     if (!tech) {
-      return `<div class="ed-head"><h3>Elo ${slot.level}</h3></div>${lockNote}<h5 class="gtitle">Grimório</h5><div class="grimoire">${techPick}</div>
-        <p class="empty-note">Escolha uma magia para este Elo. Magias de outras afinidades pedem Elos mais altos.</p>`;
+      return `${head(null)}${lockNote}
+        <div class="ed-sec"><h5>Magia</h5>
+          <button class="socket spell empty" data-open="spells">
+            <span class="sk-ic">${icon('plus', 26)}</span>
+            <span class="sk-txt"><b>Escolher magia</b><small>${fits} das suas ${c.knownSpells.length} magias cabem neste Elo</small></span>
+          </button>
+        </div>
+        <div class="ed-sec"><h5>Restrições</h5><p class="empty-note">Escolha uma magia primeiro: cada magia aceita Restrições diferentes.</p></div>`;
     }
     const info = sim.slotInfo(slot)!;
     const discount = modifierDiscount(c.mastery[tech.id]);
@@ -373,39 +470,180 @@ export class Panels {
     ]
       .map(([k, v, s]) => `<div class="stat"><span>${k}</span><b>${v}</b><small>${s}</small></div>`)
       .join('');
-    const pacts = PACT_IDS.filter((id) => tech.pacts.includes(id))
-      .map((id) => {
-        const d = PACTS[id];
-        const on = slot.restrictions.includes(id);
-        const why = on ? null : canAddRestriction(slot, id);
-        const aligned = d.value && c.psyche.values[d.value] >= 25;
-        const contrary = d.value && c.psyche.values[d.value] <= -25;
-        return `<button class="pact-card ${on ? 'on' : ''} ${d.oath ? 'oath' : ''}" data-pact="${id}" ${!editable || (why && !on) ? 'disabled' : ''} title="${escapeHtml(why ?? '')}">
-          <span class="pc-top">${pactPips(d.level)}<b>+${d.level}</b>${d.oath ? '<em>juramento</em>' : ''}${
-            d.value
-              ? `<span class="val ${aligned ? 'good' : contrary ? 'bad' : ''}" title="${aligned ? 'Valor forte: a primeira Restrição alinhada conta +1 nível' : contrary ? 'Contra os seus valores: cada uso soma estresse' : 'Valor ligado a esta cláusula'}">${VALUE_NAMES[d.value]}</span>`
-              : ''
-          }</span>
-          <span class="pc-name">${d.name}</span>
-          <span class="pc-desc">${d.desc}</span>
+    const color = AFFINITY_COLORS[tech.affinity];
+    const spellSocket = `<div class="socket spell" style="--c:${color}">
+        <button class="sk-main" data-open="spells" title="${editable ? 'Trocar a magia deste Elo' : 'Ver detalhes'}">
+          <span class="sk-ic">${icon(tech.icon, 34)}</span>
+          <span class="sk-txt"><b>${tech.name}</b><small>${tech.role} · <span style="color:${color}">${AFFINITY_NAMES[tech.affinity]}</span> · Maestria ${displayLevel(c.mastery[tech.id])}</small><span class="sk-desc">${tech.desc}</span></span>
+          <span class="sk-cta">${editable ? 'Trocar' : 'Detalhes'}</span>
+        </button>
+        ${editable ? `<button class="sk-x" data-a="clear-spell" title="Esvaziar o Elo">${icon('x', 14)}</button>` : ''}
+      </div>`;
+    const sockets = Array.from({ length: info.maxRestrictions }, (_, i) => {
+      const id = slot.restrictions[i];
+      if (!id)
+        return `<button class="socket pact empty" data-open="pacts">
+          <span class="sk-ic">${icon('plus', 18)}</span><span class="sk-txt"><b>Restrição</b><small>${tech.pacts.length} compatíveis com ${tech.name}</small></span>
         </button>`;
-      })
-      .join('');
-    const slotsDots = Array.from({ length: info.maxRestrictions }, (_, i) => `<i class="${i < slot.restrictions.length ? 'on' : ''}"></i>`).join('');
-    return `<div class="ed-head">
-        <h3>Elo ${slot.level}</h3>
-        <div class="eff-big ${info.beyondLimit ? 'beyond' : ''}"><span>nível efetivo</span><b>${info.effective}</b>${info.beyondLimit ? '<em>Além-limite</em>' : ''}</div>
-      </div>
+      const d = PACTS[id];
+      const v = d.value ? c.psyche.values[d.value] : 0;
+      const valTag = d.value
+        ? `<span class="val ${v >= STRONG_VALUE ? 'good' : v <= -STRONG_VALUE ? 'bad' : ''}" title="${v >= STRONG_VALUE ? 'Valor forte em você' : v <= -STRONG_VALUE ? 'Contra os seus valores: cada uso soma estresse' : 'Valor ligado a esta cláusula'}">${VALUE_NAMES[d.value]}</span>`
+        : '';
+      const aligned = info.alignedPact === id;
+      return `<div class="socket pact filled ${d.oath ? 'oath' : ''} ${aligned ? 'aligned' : ''}">
+          <button class="sk-main" data-open-pact="${id}" title="Ver detalhes">
+            <span class="sk-lvl">+${d.level}${aligned ? '<i title="Alinhada a um valor forte: +1 nível">+1</i>' : ''}</span>
+            <span class="sk-txt"><b>${d.name}</b><small>${d.oath ? 'Juramento' : 'Restrição'} ${valTag}</small><span class="sk-desc">${d.desc}</span></span>
+          </button>
+          ${editable ? `<button class="sk-x" data-rm-pact="${id}" title="Remover">${icon('x', 14)}</button>` : ''}
+        </div>`;
+    }).join('');
+    return `${head(info)}
       ${lockNote}
       ${slot.sealed ? '<div class="alert bad">Elo selado por juramento quebrado. Medite em Silêncio no santuário para cumprir a penitência.</div>' : ''}
-      <h5 class="gtitle">Grimório</h5><div class="grimoire">${techPick}</div>
-      <p class="card-sub"><b style="color:${AFFINITY_COLORS[tech.affinity]}">${tech.name}</b> · ${tech.role} de ${AFFINITY_NAMES[tech.affinity]}. ${tech.desc}</p>
+      <div class="ed-sec"><h5>Magia</h5>${spellSocket}</div>
       ${levelLadder(info)}
       <div class="stats">${stats}</div>
-      <div class="ed-sec"><h5>Restrições <span class="slots">${slotsDots}</span><small>${slot.restrictions.length}/${info.maxRestrictions} · cada nível = +1 nível efetivo</small></h5>
-        <div class="pacts">${pacts}</div></div>
+      <div class="ed-sec"><h5>Restrições <small>${slot.restrictions.length}/${info.maxRestrictions} · cada nível = +1 nível efetivo</small></h5>
+        <div class="sockets">${sockets}</div></div>
       <div class="ed-sec"><h5>Forja <small>${discount ? `Maestria: −${discount} no custo de cada modificador` : 'clique nos pontos para distribuir'}</small></h5>
         ${forgeEqualizer(slot, info, tech, discount, editable)}</div>`;
+  }
+
+  // -------------------------------------------------------------------------
+  // Grimório (consulta) e catálogo de escolha
+  // -------------------------------------------------------------------------
+
+  private codexTab(): string {
+    return `<section class="card cat-host">${catalogHtml(this.sim, this.cat, this.codexKind, null)}</section>`;
+  }
+
+  /** Catálogo visível agora (e em que contexto), ou null. */
+  private catalogNow(): { kind: CatalogKind; ctx: PickContext | null } | null {
+    if (this.current === 'codex') return { kind: this.codexKind, ctx: null };
+    if (this.current === 'elos' && this.eloView !== 'elo')
+      return { kind: this.eloView, ctx: { slot: this.sim.c.elos[this.selectedElo - 1]!, editable: this.editable() } };
+    return null;
+  }
+
+  private catalogMove(delta: number): void {
+    const cur = this.catalogNow();
+    if (!cur) return;
+    const { list } = visibleEntries(this.sim, this.cat, cur.kind, cur.ctx);
+    if (!list.length) return;
+    const sel = cur.kind === 'spells' ? this.cat.selSpell : this.cat.selPact;
+    const i = Math.max(0, list.findIndex((e) => e.id === sel));
+    const next = list[Math.min(list.length - 1, Math.max(0, i + delta))]!.id;
+    if (cur.kind === 'spells') this.cat.selSpell = next as SpellId;
+    else this.cat.selPact = next as PactId;
+    this.render();
+    this.root.querySelector('.crow.sel')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  /** Enter: a ação principal da ficha aberta (equipar, adicionar, remover). */
+  private catalogPrimary(): void {
+    this.root.querySelector<HTMLButtonElement>('.cd-actions [data-cat-act]:not(:disabled)')?.click();
+  }
+
+  private equipSpell(id: SpellId | null): void {
+    const c = this.sim.c;
+    const slot = c.elos[this.selectedElo - 1]!;
+    if (id === slot.technique) return;
+    // Cada magia ocupa um Elo só: troca de lugar se já estiver em outro.
+    const other = id ? c.elos.find((s) => s !== slot && s.technique === id) : null;
+    if (other) {
+      other.technique = slot.technique;
+      other.mods = {};
+      sanitizeSlot(other);
+    }
+    slot.technique = id;
+    slot.mods = {};
+    sanitizeSlot(slot);
+    this.sfx?.ui();
+  }
+
+  private setPact(id: PactId, on: boolean): void {
+    const c = this.sim.c;
+    const slot = c.elos[this.selectedElo - 1]!;
+    if (!on) slot.restrictions = slot.restrictions.filter((x) => x !== id);
+    else if (!canAddRestriction(slot, id) && slot.technique && SPELLS[slot.technique as SpellId].pacts.includes(id)) slot.restrictions.push(id);
+    else return;
+    const info = this.sim.slotInfo(slot);
+    if (info && slot.technique) trimMods(slot, info, modifierDiscount(c.mastery[slot.technique as MasteryId]));
+    this.sfx?.ui();
+  }
+
+  /** Teclas com o catálogo aberto (fora do campo de busca). Devolve true se consumiu. */
+  handleKey(code: string): boolean {
+    const cur = this.catalogNow();
+    if (!cur) return false;
+    if (code === 'ArrowDown' || code === 'ArrowUp') {
+      this.catalogMove(code === 'ArrowDown' ? 1 : -1);
+      return true;
+    }
+    if (code === 'Enter' || code === 'NumpadEnter') {
+      this.catalogPrimary();
+      return true;
+    }
+    if (code === 'Slash' || code === 'NumpadDivide' || code === 'IntlRo') {
+      this.focusSearch();
+      return true;
+    }
+    if (code === 'Escape' && cur.ctx) {
+      this.eloView = 'elo';
+      this.render();
+      return true;
+    }
+    return false;
+  }
+
+  private focusSearch(): void {
+    const el = this.root.querySelector<HTMLInputElement>('[data-search]');
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }
+
+  private onSearchKey(e: KeyboardEvent): void {
+    const el = e.target as HTMLElement;
+    if (!el.matches('[data-search]')) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      this.catalogMove(e.key === 'ArrowDown' ? 1 : -1);
+      this.focusSearch();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      this.catalogPrimary();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      if ((el as HTMLInputElement).value) {
+        this.setQuery('');
+        this.focusSearch();
+      } else (el as HTMLInputElement).blur();
+    }
+  }
+
+  private setQuery(q: string): void {
+    const cur = this.catalogNow();
+    if (!cur) return;
+    if (cur.kind === 'spells') this.cat.spellQuery = q;
+    else this.cat.pactQuery = q;
+    this.render();
+  }
+
+  private onFilterChange(e: Event): void {
+    const el = e.target as HTMLSelectElement;
+    const f = el.dataset.f;
+    const cur = this.catalogNow();
+    if (!f || !cur) return;
+    if (f === 'sort') {
+      if (cur.kind === 'spells') this.cat.spellSort = el.value as CatalogState['spellSort'];
+      else this.cat.pactSort = el.value as CatalogState['pactSort'];
+    } else if (f === 'role') this.cat.spellRole = el.value;
+    else if (f === 'value') this.cat.pactValue = el.value as CatalogState['pactValue'];
+    this.render();
   }
 
   // -------------------------------------------------------------------------
@@ -488,7 +726,7 @@ export class Panels {
       ['Clique num NPC', 'Conversar'],
       ['Shift · Tab', 'Posturas: Silêncio, Olhar (toque de novo para sair)'],
       ['Roda do mouse · Z / X', 'Maré: «« « • » »» entre defesa (Véu) e ataque (Ímpeto)'],
-      ['C · K · M · N', 'Psique · Grade de Elos · Maestria · Mapa'],
+      ['C · K · G · M · N', 'Psique · Grade de Elos · Grimório · Maestria · Mapa'],
       ['H · Esc', 'Ajuda · Pausa'],
     ];
     this.small(

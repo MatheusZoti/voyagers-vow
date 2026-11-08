@@ -12,7 +12,7 @@ import { escapeHtml } from './util';
 export { escapeHtml };
 import { icon } from './ui/icons';
 
-const SLOT_KEYS = ['1', '2', '3', '4', 'Q', 'E', 'R', 'F'];
+import { SLOT_KEYS } from './keys';
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] => {
   const el = document.createElement(tag);
