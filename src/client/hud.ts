@@ -1,5 +1,5 @@
 import { AFFINITY_COLORS, AFFINITY_NAMES } from '../sim/flow/affinity';
-import { POSTURE_IDS, POSTURES } from '../sim/flow/flow';
+import { POSTURES, TIDE_LEVELS, tideLabel, tideLevel, type Posture } from '../sim/flow/flow';
 import { xpToNext } from '../sim/character';
 import { EMOTION_COLORS, EMOTION_NAMES } from '../sim/psyche/emotions';
 import { CRISIS_NAMES, dominant, STRESS_BAND_NAMES, stressBand } from '../sim/psyche/psyche';
@@ -36,7 +36,7 @@ export class Hud {
   private notices = h('div', 'notices');
   private bossBar = h('div', 'boss');
   private bossFill = h('div', 'boss-fill');
-  private postures: HTMLElement[] = [];
+  private postures: Array<{ el: HTMLElement; id: Posture }> = [];
   private slots: HTMLElement[] = [];
   private tideFill = h('div', 'tide-atk');
   private tideMarker = h('div', 'tide-target');
@@ -95,19 +95,24 @@ export class Hud {
 
     const row = h('div', 'row');
     const postureGroup = h('div', 'group');
-    for (const id of POSTURE_IDS) {
+    for (const id of ['silence', 'gaze'] as const) {
       const d = POSTURES[id];
       const b = h('div', 'key posture', `<span class="k">${d.key}</span><span class="pi">${icon(id, 22)}</span><span class="n">${d.name}</span>`);
       b.style.setProperty('--c', d.color);
       b.title = d.desc;
       postureGroup.append(b);
-      this.postures.push(b);
+      this.postures.push({ el: b, id });
     }
     const tide = h('div', 'tide');
     const track = h('div', 'tide-track');
     track.append(this.tideFill, this.tideMarker);
+    for (let i = 1; i < TIDE_LEVELS * 2; i++) {
+      const notch = h('div', 'tide-notch');
+      notch.style.left = `${(i / (TIDE_LEVELS * 2)) * 100}%`;
+      track.append(notch);
+    }
     tide.append(h('span', 'tide-label', `${icon('tide', 14)} Maré`), track, this.tideText);
-    tide.title = 'Roda do mouse (ou Z/X): distribui o Fluxo entre ataque e defesa.';
+    tide.title = 'Roda do mouse (ou Z/X): 5 degraus entre defesa (Véu) e ataque (Ímpeto). Cada degrau fora do centro dá ±15% e drena 1% do Fluxo/s.';
 
     const slotGroup = h('div', 'group');
     for (let i = 0; i < 5; i++) {
@@ -197,14 +202,13 @@ export class Hud {
     this.crisis.textContent = cr.phase === 'active' ? CRISIS_NAMES[cr.id] : cr.phase === 'warning' ? `${CRISIS_NAMES[cr.id]} em ${cr.remaining.toFixed(1)} s` : '';
     this.crisis.className = `crisis-tag ${cr.phase}`;
 
-    this.postures.forEach((el, i) => {
-      el.classList.toggle('active', p.posture === POSTURE_IDS[i]);
-    });
+    const tideLvl = tideLevel(p.tide.target);
+    for (const k of this.postures) k.el.classList.toggle('active', p.posture === k.id);
 
-    const atk = Math.round(p.tide.value * 100);
     this.tideFill.style.width = `${p.tide.value * 100}%`;
     this.tideMarker.style.left = `${p.tide.target * 100}%`;
-    this.tideText.textContent = sim.mods.tideLock !== null ? 'travada' : `${atk}/${100 - atk}`;
+    this.tideText.textContent = sim.mods.tideLock !== null ? `travada · ${tideLabel(tideLvl)}` : tideLabel(tideLvl);
+    this.tideText.dataset.lvl = String(tideLvl);
 
     // Elos.
     this.slots.forEach((el, i) => {
@@ -250,7 +254,7 @@ export class Hud {
       let hint = '';
       if (p.dead) hint = 'Você caiu… renascendo no santuário.';
       else if (sim.meditating()) hint = c.elos.some((e) => e.sealed) ? 'Cumprindo a penitência…' : 'Meditando. O estresse cai e a Calma chega.';
-      else if (sim.inSanctuary()) hint = `${sim.map.safeName}: <b>2</b> Silêncio para meditar · <b>K</b> Grade de Elos · <b>C</b> Ficha`;
+      else if (sim.inSanctuary()) hint = `${sim.map.safeName}: <b>Shift</b> Silêncio para meditar · <b>K</b> Grade de Elos · <b>C</b> Ficha`;
       this.hint.innerHTML = hint;
       this.hint.classList.toggle('show', !!hint);
     }

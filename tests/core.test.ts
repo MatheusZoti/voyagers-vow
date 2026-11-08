@@ -190,7 +190,7 @@ describe('Psique', () => {
     expect(p.crisis.phase).toBe('warning');
     for (let i = 0; i < 31; i++) tickPsyche(p, 0.1, ctx);
     expect(p.crisis.phase).toBe('active');
-    const mods = computeFlowMods(p, 'veil');
+    const mods = computeFlowMods(p, 'open');
     expect(mods.tideLock).toBe(1);
     expect(mods.techniqueCost).toBeGreaterThanOrEqual(2);
   });
@@ -214,9 +214,9 @@ describe('Maré', () => {
     const furyTide = createTide();
     shiftTide(calmTide, -5);
     shiftTide(furyTide, -5);
-    const neutral = computeFlowMods(p, 'veil');
+    const neutral = computeFlowMods(p, 'open');
     p.emotions.fury = { id: 'fury', intensity: 1, remaining: 10, duration: 10 };
-    const furious = computeFlowMods(p, 'veil');
+    const furious = computeFlowMods(p, 'open');
     tickTide(calmTide, 0.1, neutral, 0, 0);
     tickTide(furyTide, 0.1, furious, 0, 0);
     expect(furyTide.value).toBeGreaterThan(calmTide.value);

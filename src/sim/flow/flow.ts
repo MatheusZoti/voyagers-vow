@@ -3,10 +3,11 @@ import { intensityOf } from '../psyche/emotions';
 import { activeCrisis, stressBand, type PsycheState } from '../psyche/psyche';
 
 // ---------------------------------------------------------------------------
-// Posturas básicas (GDD, Pilar 1). Só uma ativa por vez.
+// Posturas básicas (GDD, Pilar 1). Só uma ativa por vez. O Véu e o Ímpeto
+// deixaram de ser posturas: agora são os dois lados da Maré (ver abaixo).
 // ---------------------------------------------------------------------------
 
-export const POSTURE_IDS = ['veil', 'silence', 'impetus', 'gaze'] as const;
+export const POSTURE_IDS = ['open', 'silence', 'gaze'] as const;
 export type Posture = (typeof POSTURE_IDS)[number];
 
 export interface PostureDef {
@@ -14,9 +15,6 @@ export interface PostureDef {
   key: string;
   /** consumo de Fluxo por segundo */
   drain: number;
-  /** redução de dano recebido (0–1) */
-  damageReduction: number;
-  outgoingMult: number;
   incomingMult: number;
   regenMult: number;
   allowsTechniques: boolean;
@@ -25,53 +23,35 @@ export interface PostureDef {
 }
 
 export const POSTURES: Record<Posture, PostureDef> = {
-  veil: {
-    name: 'Véu',
-    key: '1',
-    drain: 0.6,
-    damageReduction: 0.25,
-    outgoingMult: 1,
+  open: {
+    name: 'Aberta',
+    key: '',
+    drain: 0,
     incomingMult: 1,
     regenMult: 1,
     allowsTechniques: true,
-    color: '#bfe3ff',
-    desc: 'Redução de dano constante. Consumo baixo.',
+    color: '#dfe8f0',
+    desc: 'Sem postura: só a Maré decide entre ataque e defesa.',
   },
   silence: {
     name: 'Silêncio',
-    key: '2',
+    key: 'Shift',
     drain: 0,
-    damageReduction: 0,
-    outgoingMult: 1,
     incomingMult: 2,
     regenMult: 3,
     allowsTechniques: false,
     color: '#6d7a8c',
-    desc: 'Some para inimigos comuns que ainda não te viram (o alcance deles encolhe com a Maestria); Fluxo regenera 3x. Dano recebido dobrado, sem técnicas.',
-  },
-  impetus: {
-    name: 'Ímpeto',
-    key: '3',
-    drain: 7,
-    damageReduction: 0,
-    outgoingMult: 1.5,
-    incomingMult: 1,
-    regenMult: 0,
-    allowsTechniques: true,
-    color: '#ff9a3d',
-    desc: 'Amplifica o dano de todas as técnicas. Drena a reserva.',
+    desc: 'Some para inimigos comuns que ainda não te viram (o alcance deles encolhe com a Maestria); Fluxo regenera 3x. Dano recebido dobrado, sem técnicas. Aperte Shift de novo para sair.',
   },
   gaze: {
     name: 'Olhar',
-    key: '4',
+    key: 'Tab',
     drain: 2.5,
-    damageReduction: 0,
-    outgoingMult: 1,
     incomingMult: 1,
     regenMult: 0.5,
     allowsTechniques: true,
     color: '#c58cff',
-    desc: 'Revela inimigos em Sombra e armadilhas. Sem bônus de defesa.',
+    desc: 'Revela inimigos em Sombra e armadilhas. Aperte Tab de novo para fechar.',
   },
 };
 
@@ -81,26 +61,61 @@ export const POSTURES: Record<Posture, PostureDef> = {
 
 export const BASE_FLOW_MAX = 100;
 export const BASE_FLOW_REGEN = 4; // por segundo
+/** guarda base do Viajante: a redução de 25% que o antigo Véu dava sempre (some na defesa zero) */
+export const BASE_GUARD = 0.25;
 
 // ---------------------------------------------------------------------------
-// Maré: distribui o Fluxo entre ataque e defesa em tempo real.
+// Maré: distribui o Fluxo entre ataque e defesa em 5 degraus.
+//   «« Véu forte   · Def +30%, Atk −30%, −2% do Fluxo/s
+//   «  Véu         · Def +15%, Atk −15%, −1% do Fluxo/s
+//   •  neutra      · sem efeito
+//   »  Ímpeto      · Atk +15%, Def −15%, −1% do Fluxo/s
+//   »» Ímpeto forte · Atk +30%, Def −30%, −2% do Fluxo/s
+// Roda do mouse (ou Z/X) move um degrau por vez. O lado da defesa é o Véu; o do ataque, o Ímpeto.
 // ---------------------------------------------------------------------------
 
-export const TIDE_STEP = 0.1;
+/** degraus de cada lado do centro */
+export const TIDE_LEVELS = 2;
+export const TIDE_STEP = 0.5 / TIDE_LEVELS;
 export const TIDE_BASE_SPEED = 1.6; // fração por segundo
+/** bônus/penalidade por degrau */
+export const TIDE_SWING_PER_LEVEL = 0.15;
+/** fração do Fluxo máximo drenada por segundo, por degrau */
+export const TIDE_DRAIN_PER_LEVEL = 0.01;
 
 export interface TideState {
   /** fração do Fluxo no ataque (0 = toda defesa, 1 = todo ataque) */
   target: number;
   value: number;
-  /** tempo jogado em que a defesa passou de 70% pela última vez */
+  /** último instante em que a Maré desceu rumo à defesa dentro da zona defensiva */
   lastDefenseShiftAt: number;
 }
 
 export const createTide = (): TideState => ({ target: 0.5, value: 0.5, lastDefenseShiftAt: -999 });
 
-export const tideOutgoing = (attack: number) => 0.5 + attack; // 0.5x … 1.5x
-export const tideIncoming = (attack: number) => 0.4 + 1.2 * attack; // 0.4x … 1.6x
+/** degrau contínuo: −2 (toda defesa) … +2 (todo ataque) */
+const tideLevels = (attack: number) => (attack - 0.5) / TIDE_STEP;
+/** degrau inteiro mais próximo (−2 … +2) */
+export const tideLevel = (attack: number) => Math.round(tideLevels(attack));
+
+export const tideOutgoing = (attack: number) => 1 + TIDE_SWING_PER_LEVEL * tideLevels(attack); // 0.7x … 1.3x
+export const tideIncoming = (attack: number) => 1 + TIDE_SWING_PER_LEVEL * tideLevels(attack); // 0.7x … 1.3x
+/** fração do Fluxo máximo drenada por segundo */
+export const tideDrain = (attack: number) => TIDE_DRAIN_PER_LEVEL * Math.abs(tideLevels(attack));
+
+export const TIDE_SIDES = {
+  veil: { name: 'Véu', color: '#bfe3ff' },
+  impetus: { name: 'Ímpeto', color: '#ff9a3d' },
+} as const;
+
+/** rótulo curto do degrau */
+export function tideLabel(level: number): string {
+  if (level <= -2) return '«« Def +30%';
+  if (level === -1) return '« Def +15%';
+  if (level === 1) return 'Atk +15% »';
+  if (level >= 2) return 'Atk +30% »»';
+  return '• neutra';
+}
 
 // ---------------------------------------------------------------------------
 // Modificadores do Fluxo vindos da Psique (GDD, "Emoções alteram o Fluxo em combate")
@@ -112,8 +127,10 @@ export interface FlowMods {
   regen: number;
   /** multiplicador do custo de técnicas */
   techniqueCost: number;
-  /** multiplicador do custo do Ímpeto e de posturas */
+  /** multiplicador do custo das posturas */
   postureDrain: number;
+  /** multiplicador da drenagem da Maré fora do centro */
+  tideDrain: number;
   tideSpeed: number;
   /** multiplicador extra quando a Maré volta para a defesa */
   tideToDefense: number;
@@ -129,13 +146,15 @@ export interface FlowMods {
   flowMaxMult: number;
 }
 
-export function computeFlowMods(p: PsycheState, posture: Posture): FlowMods {
+/** `tide` é o valor atual da Maré (0 = defesa, 1 = ataque). */
+export function computeFlowMods(p: PsycheState, posture: Posture, tide = 0.5): FlowMods {
   const m: FlowMods = {
     outgoing: 1,
     incoming: 1,
     regen: 1,
     techniqueCost: 1,
     postureDrain: 1,
+    tideDrain: 1,
     tideSpeed: 1,
     tideToDefense: 1,
     tideLock: null,
@@ -156,12 +175,13 @@ export function computeFlowMods(p: PsycheState, posture: Posture): FlowMods {
   const pride = intensityOf(e, 'pride');
   const shame = intensityOf(e, 'shame');
 
+  const level = tideLevel(tide);
   // Fúria: Ímpeto mais forte; Maré lenta para voltar à defesa.
-  if (posture === 'impetus') m.outgoing *= 1 + 0.3 * fury;
+  if (level > 0) m.outgoing *= 1 + 0.3 * fury;
   m.tideToDefense *= 1 - 0.6 * fury;
   // Medo: Véu mais forte; Ímpeto custa mais.
-  if (posture === 'veil') m.incoming *= 1 - 0.25 * fear;
-  if (posture === 'impetus') m.postureDrain *= 1 + 0.6 * fear;
+  if (level < 0) m.incoming *= 1 - 0.25 * fear;
+  if (level > 0) m.tideDrain *= 1 + 0.6 * fear;
   // Calma: Maré mais precisa; regeneração maior.
   m.tideSpeed *= 1 + 0.8 * calm;
   m.regen *= 1 + 0.5 * calm;
@@ -188,6 +208,7 @@ export function computeFlowMods(p: PsycheState, posture: Posture): FlowMods {
       m.tideLock = 1;
       m.techniqueCost *= 2;
       m.postureDrain *= 2;
+      m.tideDrain *= 2;
       break;
     case 'panic':
       m.moveSpeed *= 1.45;
@@ -213,9 +234,11 @@ export function tickTide(t: TideState, dt: number, mods: FlowMods, masteryBonus:
   const speed = TIDE_BASE_SPEED * mods.tideSpeed * (1 + masteryBonus) * (towardDefense ? mods.tideToDefense : 1);
   const before = t.value;
   t.value = approach(t.value, t.target, Math.max(0.05, speed) * dt);
-  if (before > 0.3 && t.value <= 0.3) t.lastDefenseShiftAt = playTime;
+  // Descer rumo à defesa dentro da zona defensiva (« ou ««) abre a janela da Maré perfeita.
+  if (t.value < before && t.value <= 0.3) t.lastDefenseShiftAt = playTime;
 }
 
 export function shiftTide(t: TideState, steps: number): void {
-  t.target = clamp(Math.round((t.target + steps * TIDE_STEP) * 10) / 10, 0, 1);
+  const level = clamp(Math.round(tideLevels(t.target)) + steps, -TIDE_LEVELS, TIDE_LEVELS);
+  t.target = 0.5 + level * TIDE_STEP;
 }

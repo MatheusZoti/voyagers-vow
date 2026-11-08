@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { AFFINITY_COLORS } from '../../sim/flow/affinity';
 import { NPCS, type NpcId } from '../../sim/psyche/dialogues';
 import { SPELLS } from '../../sim/techniques';
-import { POSTURES, type Posture } from '../../sim/flow/flow';
+import { POSTURES, TIDE_SIDES, tideLevel } from '../../sim/flow/flow';
 import type { Vec2 } from '../../sim/math';
 import type { SimEvent, Simulation } from '../../sim/sim';
 import type { Enemy } from '../../sim/world/entities';
@@ -59,7 +59,7 @@ export class GameView {
   private player: Rig;
   private playerLast = new THREE.Vector3();
   private enemies = new Map<number, EnemyView>();
-  private aura: Record<Posture, THREE.Object3D>;
+  private aura: Record<'veil' | 'impetus' | 'gaze' | 'silence', THREE.Object3D>;
   private tideAtk: THREE.Mesh;
   private tideDef: THREE.Mesh;
   private tideShown = -1;
@@ -129,12 +129,12 @@ export class GameView {
     // Auras das posturas.
     const additive = (color: string, opacity: number) =>
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-    const veil = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), additive(POSTURES.veil.color, 0.06));
+    const veil = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), additive(TIDE_SIDES.veil.color, 0.06));
     veil.position.y = 1;
     veil.scale.set(0.85, 1.15, 0.85);
     const impetus = new THREE.Group();
     for (let i = 0; i < 7; i++) {
-      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.9, 4), additive(POSTURES.impetus.color, 0.55));
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.9, 4), additive(TIDE_SIDES.impetus.color, 0.55));
       const a = (i / 7) * Math.PI * 2;
       flame.position.set(Math.cos(a) * 0.55, 0.5, Math.sin(a) * 0.55);
       flame.userData.phase = i;
@@ -329,6 +329,15 @@ export class GameView {
     return v;
   }
 
+  /** cor do golpe: lado da Maré, ou a postura quando ela está no centro */
+  private stanceColor(): string {
+    const p = this.sim.player;
+    const lvl = tideLevel(p.tide.value);
+    if (lvl < 0) return TIDE_SIDES.veil.color;
+    if (lvl > 0) return TIDE_SIDES.impetus.color;
+    return POSTURES[p.posture].color;
+  }
+
   handleEvents(events: SimEvent[]): void {
     const sim = this.sim;
     for (const ev of events) {
@@ -336,8 +345,8 @@ export class GameView {
         case 'swing':
           if (ev.finisher) {
             this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range, '#fff4d0', (150 * Math.PI) / 180);
-            this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range * 0.7, POSTURES[sim.player.posture].color, (130 * Math.PI) / 180);
-          } else this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range, POSTURES[sim.player.posture].color);
+            this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range * 0.7, this.stanceColor(), (130 * Math.PI) / 180);
+          } else this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range, this.stanceColor());
           break;
         case 'telegraphLine':
           this.fx.lineTelegraph({ x: ev.x, y: ev.y }, ev.dir, ev.length, ev.width, ev.duration);
@@ -497,18 +506,24 @@ export class GameView {
     setOpacity(this.player, p.posture === 'silence' ? 0.45 : 1);
 
     // Auras.
-    for (const [k, o] of Object.entries(this.aura) as Array<[Posture, THREE.Object3D]>) o.visible = !p.dead && p.posture === k;
-    this.aura.veil.scale.setScalar(1 + Math.sin(this.time * 3) * 0.03);
-    (this.aura.veil as THREE.Mesh).scale.y = 1.15;
+    // Véu e Ímpeto seguem a Maré: a aura cresce a cada degrau.
+    const lvl = tideLevel(p.tide.value);
+    this.aura.gaze.visible = !p.dead && p.posture === 'gaze';
+    this.aura.silence.visible = !p.dead && p.posture === 'silence';
+    this.aura.veil.visible = !p.dead && lvl < 0;
+    this.aura.impetus.visible = !p.dead && lvl > 0;
+    this.aura.veil.scale.setScalar((1 + Math.sin(this.time * 3) * 0.03) * (lvl <= -2 ? 1.12 : 1));
+    (this.aura.veil as THREE.Mesh).scale.y *= 1.15;
     const veilMat = (this.aura.veil as THREE.Mesh).material as THREE.MeshBasicMaterial;
-    veilMat.opacity = p.flow > 0 ? 0.06 : 0.015;
+    veilMat.opacity = p.flow > 0 ? (lvl <= -2 ? 0.11 : 0.06) : 0.015;
+    const flameBoost = lvl >= 2 ? 1.35 : 1;
     this.aura.impetus.children.forEach((f) => {
       const ph = f.userData.phase as number;
-      f.scale.y = 0.7 + Math.abs(Math.sin(this.time * 9 + ph * 1.7)) * 0.9;
+      f.scale.y = (0.7 + Math.abs(Math.sin(this.time * 9 + ph * 1.7)) * 0.9) * flameBoost;
       f.position.y = 0.4 + f.scale.y * 0.3;
     });
     this.aura.impetus.rotation.y += dt * 2;
-    this.impetusLight.intensity = p.posture === 'impetus' && !p.dead ? 5 + Math.sin(this.time * 20) * 1.2 : 0;
+    this.impetusLight.intensity = lvl > 0 && !p.dead ? (lvl >= 2 ? 7 : 4) + Math.sin(this.time * 20) * 1.2 : 0;
     this.player.body.traverse((o) => {
       if (o.userData.gazeEye) o.visible = p.posture === 'gaze';
     });

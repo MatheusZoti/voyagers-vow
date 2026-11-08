@@ -22,13 +22,16 @@ export class InputController {
     window.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       this.keys.add(e.code);
+      // Tab alterna o Olhar: não deixa o navegador mover o foco.
+      if (e.code === 'Tab') e.preventDefault();
       if (e.repeat) return;
       this.onKey(e.code);
       if (!this.enabled) return;
       const slotKeys: Record<string, number> = { KeyQ: 1, KeyE: 2, KeyR: 3, KeyF: 4, KeyT: 5, KeyG: 6, KeyV: 7, KeyB: 8 };
       if (e.code in slotKeys) this.pendingSlot = slotKeys[e.code]!;
-      const postures: Record<string, Posture> = { Digit1: 'veil', Digit2: 'silence', Digit3: 'impetus', Digit4: 'gaze' };
-      if (e.code in postures) this.pendingPosture = postures[e.code]!;
+      // Shift alterna o Silêncio; Tab, o Olhar. 1 a 4 estão livres (Véu e Ímpeto viraram a Maré).
+      if (e.key === 'Shift') this.pendingPosture = 'silence';
+      if (e.code === 'Tab') this.pendingPosture = 'gaze';
       if (e.code === 'KeyZ') this.tideSteps -= 1;
       if (e.code === 'KeyX') this.tideSteps += 1;
     }, o);
@@ -78,7 +81,7 @@ export class InputController {
     input.aim = aim ?? fallbackAim;
     input.basic = this.mouse.left || k.has('Space');
     input.useSlot = this.pendingSlot;
-    input.posture = this.pendingPosture;
+    input.togglePosture = this.pendingPosture;
     input.tideSteps = this.tideSteps;
     this.pendingSlot = null;
     this.pendingPosture = null;

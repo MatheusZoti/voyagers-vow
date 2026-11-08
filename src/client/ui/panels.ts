@@ -58,12 +58,12 @@ const MASTERY_EFFECT: Record<MasteryId, string> = {
   ...(Object.fromEntries(SPELL_IDS.map((id) => [id, SPELL_MASTERY])) as Record<SpellId, string>),
   point: 'Crítico mais forte (+0,1x por nível); −1,5% de custo por nível.',
   basic: '+3% de dano do golpe básico por nível.',
-  veil: '+0,5% de redução de dano no Véu por nível.',
+  veil: '+0,5% de redução de dano com a Maré na defesa (Véu) por nível. Sobe recebendo golpes nela.',
   silence: 'Inimigos te percebem de mais perto (−2% do raio por nível). Sobe passando despercebido perto de inimigos e meditando.',
-  impetus: 'Sobe sustentando o Ímpeto em combate.',
+  impetus: '+0,5% de dano com a Maré no ataque (Ímpeto) por nível. Sobe sustentando-a em combate.',
   gaze: 'Sobe revelando inimigos em Sombra e armadilhas.',
   tide: '+4% de velocidade da Maré por nível. Sobe com Marés perfeitas.',
-  capacity: '+4 de reserva de Fluxo por nível. Sobe sustentando o Ímpeto.',
+  capacity: '+4 de reserva de Fluxo por nível. Sobe sustentando a Maré no ataque.',
 };
 
 /** Janela do personagem (abas) e menus de ajuda e pausa. O jogo pausa enquanto ela está aberta. */
@@ -486,8 +486,8 @@ export class Panels {
       ['Botão direito', 'Magia do Elo 1'],
       ['Q E R F T', 'Magias nos Elos 1 a 5'],
       ['Clique num NPC', 'Conversar'],
-      ['1 2 3 4', 'Posturas: Véu, Silêncio, Ímpeto, Olhar'],
-      ['Roda do mouse · Z / X', 'Maré: mais defesa / mais ataque'],
+      ['Shift · Tab', 'Posturas: Silêncio, Olhar (toque de novo para sair)'],
+      ['Roda do mouse · Z / X', 'Maré: «« « • » »» entre defesa (Véu) e ataque (Ímpeto)'],
       ['C · K · M · N', 'Psique · Grade de Elos · Maestria · Mapa'],
       ['H · Esc', 'Ajuda · Pausa'],
     ];

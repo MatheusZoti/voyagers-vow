@@ -88,7 +88,7 @@ export class DialogueBox {
       e.preventDefault();
       fn(e);
     };
-    // Captura antes do jogo, para 1–3 não trocarem a postura.
+    // Captura antes do jogo, para 1–3 escolherem a resposta sem acionar nada no jogo.
     window.addEventListener('keydown', this.keyHandler, true);
   }
 

@@ -1,6 +1,7 @@
 import { createCharacter, maxHpFor, refreshEloUnlocks } from '../src/sim/character';
 import { AFFINITY_RING, type Affinity } from '../src/sim/flow/affinity';
 import { dist, normalize } from '../src/sim/math';
+import { tideLevel } from '../src/sim/flow/flow';
 import { emptyInput, Simulation, TICK, type PlayerInput } from '../src/sim/sim';
 import { SPELLS, type SpellId } from '../src/sim/techniques';
 import type { Enemy, EnemyKind } from '../src/sim/world/entities';
@@ -30,12 +31,13 @@ function botInput(sim: Simulation, ids: Set<number>, skill: number): PlayerInput
   );
   if (skill > 0 && heavy) {
     // Fica e gira a Maré para a defesa no instante do golpe.
-    input.tideSteps = heavy.timer < 0.45 ? Math.round((0.2 - p.tide.target) * 10) : 0;
+    input.tideSteps = heavy.timer < 0.45 ? -2 - tideLevel(p.tide.target) : 0;
   } else if (skill > 0 && cone) {
     input.move = normalize({ x: p.pos.x - cone.pos.x, y: p.pos.y - cone.pos.y });
-    input.tideSteps = Math.round((0.5 - p.tide.target) * 10);
+    input.tideSteps = -tideLevel(p.tide.target);
   } else {
-    if (skill > 0) input.tideSteps = Math.round((0.5 - p.tide.target) * 10);
+    // Hábil: luta com a Maré no centro e desce para «« nos golpes pesados.
+    if (skill > 0) input.tideSteps = -tideLevel(p.tide.target);
     if (d > 1.6) input.move = sim.pathDir(p.pos, target.pos);
   }
   input.basic = d < 2.1;

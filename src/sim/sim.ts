@@ -13,12 +13,15 @@ import { AFFINITY_COLORS, AFFINITY_NAMES } from './flow/affinity';
 import {
   BASE_FLOW_MAX,
   BASE_FLOW_REGEN,
+  BASE_GUARD,
   computeFlowMods,
   createTide,
   POSTURES,
   shiftTide,
   tickTide,
+  tideDrain,
   tideIncoming,
+  tideLevel,
   tideOutgoing,
   type FlowMods,
   type Posture,
@@ -76,11 +79,15 @@ export interface PlayerInput {
   basic: boolean;
   /** nível do Elo a ativar neste tick */
   useSlot: number | null;
+  /** fixa a postura (Silêncio, Olhar ou Aberta) */
   posture: Posture | null;
+  /** alterna a postura: pedir a mesma que já está ativa volta para Aberta */
+  togglePosture: Posture | null;
+  /** degraus da Maré: negativo = rumo à defesa (Véu), positivo = rumo ao ataque (Ímpeto) */
   tideSteps: number;
 }
 
-export const emptyInput = (): PlayerInput => ({ move: { x: 0, y: 0 }, aim: { x: 0, y: 0 }, basic: false, useSlot: null, posture: null, tideSteps: 0 });
+export const emptyInput = (): PlayerInput => ({ move: { x: 0, y: 0 }, aim: { x: 0, y: 0 }, basic: false, useSlot: null, posture: null, togglePosture: null, tideSteps: 0 });
 
 export type NoticeTone = 'info' | 'good' | 'bad' | 'warn' | 'memory' | 'crisis';
 
@@ -201,7 +208,7 @@ export class Simulation {
       facing: { x: 1, y: 0 },
       hp: maxHpFor(character),
       flow: this.flowMax(),
-      posture: 'veil',
+      posture: 'open',
       tide: createTide(),
       basicCd: 0,
       slotCd: {},
@@ -226,7 +233,7 @@ export class Simulation {
     for (const s of this.map.spawns) this.spawn(s.kind, { x: s.x + 0.5, y: s.y + 0.5 });
     if (this.map.bossSpawn) this.spawn('boss', { ...this.map.bossSpawn });
     this.traps = this.map.traps.map((p) => ({ pos: { ...p }, armed: true, revealed: false, rearmIn: 0 }));
-    this.mods = computeFlowMods(character.psyche, 'veil');
+    this.mods = computeFlowMods(character.psyche, 'open');
     this.explored = new Uint8Array(this.map.w * this.map.h);
     const saved = character.explored?.[this.map.id] ?? '';
     for (let i = 0; i < saved.length && i < this.explored.length; i++) this.explored[i] = saved.charCodeAt(i) === 49 ? 1 : 0;
@@ -417,7 +424,7 @@ export class Simulation {
     const p = this.player;
     const psy = this.c.psyche;
 
-    this.mods = computeFlowMods(psy, p.posture);
+    this.mods = computeFlowMods(psy, p.posture, p.tide.value);
 
     if (p.dead) {
       p.respawnIn -= dt;
@@ -454,12 +461,23 @@ export class Simulation {
       if (n.type === 'crisisStart' && this.c.psyche.crisis.phase === 'active') {
         // Uma Crise derruba a Afiação das técnicas em uso.
         const inUse = this.c.elos.filter((s) => s.technique).map((s) => s.technique as MasteryId);
-        for (const id of ['basic', this.player.posture, ...inUse] as MasteryId[]) {
+        for (const id of ['basic', ...this.stanceMastery(), ...inUse] as MasteryId[]) {
           const r = this.c.mastery[id];
           r.sharpness = Math.max(0, r.sharpness - 0.2);
         }
       }
     }
+  }
+
+  /** Maestrias da postura e do lado da Maré em uso agora. */
+  private stanceMastery(): MasteryId[] {
+    const p = this.player;
+    const ids: MasteryId[] = [];
+    if (p.posture !== 'open') ids.push(p.posture);
+    const lvl = tideLevel(p.tide.value);
+    if (lvl < 0) ids.push('veil');
+    if (lvl > 0) ids.push('impetus');
+    return ids;
   }
 
   private feel(kind: PsycheEventKind, magnitude = 1): void {
@@ -502,6 +520,7 @@ export class Simulation {
 
     // Postura.
     let wanted = input.posture;
+    if (input.togglePosture) wanted = input.togglePosture === p.posture ? 'open' : input.togglePosture;
     if (m.forcedPosture) wanted = m.forcedPosture;
     if (wanted && wanted !== p.posture) {
       if (wanted === 'silence' && !m.silenceAllowed) this.notice('O Orgulho não deixa você se esconder.', 'warn');
@@ -509,27 +528,32 @@ export class Simulation {
         /* Pânico força o Silêncio */
       } else {
         p.posture = wanted;
-        this.mods = computeFlowMods(c.psyche, p.posture);
+        this.mods = computeFlowMods(c.psyche, p.posture, p.tide.value);
       }
     }
-    if (p.posture === 'silence' && !m.silenceAllowed && !m.forcedPosture) p.posture = 'veil';
+    if (p.posture === 'silence' && !m.silenceAllowed && !m.forcedPosture) p.posture = 'open';
 
-    // Maré.
+    // Maré: degraus rumo à defesa (Véu) ou ao ataque (Ímpeto).
     if (input.tideSteps) shiftTide(p.tide, input.tideSteps);
     tickTide(p.tide, dt, this.mods, displayLevel(c.mastery.tide) * 0.04, this.time);
 
-    // Reserva de Fluxo.
+    // Reserva de Fluxo: a postura e a Maré fora do centro drenam.
     const def = POSTURES[p.posture];
     const flowMax = this.flowMax();
     p.flow -= def.drain * this.mods.postureDrain * dt;
+    p.flow -= tideDrain(p.tide.value) * flowMax * this.mods.tideDrain * dt;
     if (this.time >= p.flowLockUntil) {
       p.flow += BASE_FLOW_REGEN * def.regenMult * this.mods.regen * TUNING.flowRegen * dt;
     }
     if (p.flow <= 0) {
       p.flow = 0;
       if (def.drain > 1) {
-        p.posture = 'veil';
-        this.notice('Fluxo esgotado: você volta ao Véu.', 'warn');
+        p.posture = 'open';
+        this.notice(`Fluxo esgotado: o ${POSTURES.gaze.name} se fecha.`, 'warn');
+      }
+      if (p.tide.target !== 0.5 && this.mods.tideLock === null) {
+        p.tide.target = 0.5;
+        this.notice('Fluxo esgotado: a Maré volta ao centro.', 'warn');
       }
     }
     p.flow = Math.min(p.flow, flowMax);
@@ -546,8 +570,8 @@ export class Simulation {
       }
     }
 
-    // Ímpeto sustentado treina a capacidade da reserva.
-    if (p.posture === 'impetus' && this.inCombat()) {
+    // Ímpeto (Maré no ataque) sustentado treina a capacidade da reserva.
+    if (tideLevel(p.tide.value) > 0 && this.inCombat()) {
       this.impetusAcc += dt;
       if (this.impetusAcc >= 1) {
         this.impetusAcc -= 1;
@@ -707,9 +731,9 @@ export class Simulation {
   private outgoingMult(): number {
     const p = this.player;
     return (
-      POSTURES[p.posture].outgoingMult *
       this.mods.outgoing *
       tideOutgoing(p.tide.value) *
+      (tideLevel(p.tide.value) > 0 ? 1 + 0.005 * (displayLevel(this.c.mastery.impetus) - 1) : 1) *
       (1 + 0.04 * (this.c.level - 1)) *
       (this.focused() ? 1.1 : 1)
     );
@@ -1140,11 +1164,10 @@ export class Simulation {
     const defenseZero = this.time < p.defenseZeroUntil;
     let perfect = false;
     if (defenseZero) {
-      // Defesa zero: sem redução do Véu e sem a Maré (o Ponto pôs todo o Fluxo no golpe).
+      // Defesa zero: sem o Véu e sem a Maré (o Ponto pôs todo o Fluxo no golpe).
     } else {
-      const veilBonus = p.posture === 'veil' ? 0.005 * (displayLevel(this.c.mastery.veil) - 1) : 0;
-      const dr = p.flow > 0 ? def.damageReduction + veilBonus : 0;
-      mult *= 1 - dr;
+      const veilBonus = tideLevel(p.tide.value) < 0 ? 0.005 * (displayLevel(this.c.mastery.veil) - 1) : 0;
+      mult *= 1 - BASE_GUARD - veilBonus;
       mult *= tideIncoming(p.tide.value);
       if (opts.heavy && p.tide.value <= 0.3 && this.time - p.tide.lastDefenseShiftAt <= 1.0) {
         perfect = true;
@@ -1156,7 +1179,7 @@ export class Simulation {
     p.lastHitTakenAt = this.time;
     p.lastCombatAt = this.time;
     this.events.push({ t: 'damage', x: p.pos.x, y: p.pos.y, amount: dmg, target: 'player' });
-    if (p.posture === 'veil' && !defenseZero) this.train('veil', Math.max(1, raw - dmg) * 0.3, this.currentRisk(opts.source));
+    if (tideLevel(p.tide.value) < 0 && !defenseZero) this.train('veil', Math.max(1, raw - dmg) * 0.3, this.currentRisk(opts.source));
     if (perfect) {
       this.events.push({ t: 'perfectTide', x: p.pos.x, y: p.pos.y });
       this.notice('Maré perfeita!', 'good');
@@ -1211,7 +1234,7 @@ export class Simulation {
     p.pos = { ...this.map.playerStart };
     p.hp = this.maxHp();
     p.flow = this.flowMax() * 0.5;
-    p.posture = 'veil';
+    p.posture = 'open';
     p.tide = createTide();
     p.defenseZeroUntil = -1;
     p.pointUntil = -1;

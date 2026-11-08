@@ -828,6 +828,20 @@ input.name {
 .tide-text {
   color: var(--muted);
 }
+.tide-text[data-lvl^='-'] {
+  color: #8fd0ff;
+}
+.tide-text[data-lvl='1'],
+.tide-text[data-lvl='2'] {
+  color: #ffb070;
+}
+.tide-notch {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: rgba(10, 12, 20, 0.55);
+}
 
 /* ---------- textos flutuantes ---------- */
 .floater {

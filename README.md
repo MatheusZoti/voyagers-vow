@@ -2,7 +2,7 @@
 
 ARPG isométrico em 3D (estilo Albion) em que o personagem cresce por três sistemas em ciclo:
 
-- **Fluxo** — a energia vital: posturas (Véu, Silêncio, Ímpeto, Olhar), a **Maré** entre ataque e defesa, **magias** e **Pactos**.
+- **Fluxo** — a energia vital: posturas (Silêncio, Olhar), a **Maré** em 5 degraus entre defesa (Véu) e ataque (Ímpeto), **magias** e **Pactos**.
 - **Psique** — traços, valores, emoções, memórias e estresse. Nasce das conversas com NPCs e das ações no jogo, e modula o Fluxo em combate.
 - **Maestria** — cada magia e postura sobe com prática real e perde afiação quando fica parada (relógio em tempo jogado).
 
@@ -38,8 +38,8 @@ npm run build
 | Golpe básico | Botão esquerdo · Espaço |
 | Magias nos Elos 1–5 | Q · E · R · F · T (botão direito = Elo 1) |
 | Conversar | Clique no NPC |
-| Posturas | 1 Véu · 2 Silêncio · 3 Ímpeto · 4 Olhar |
-| Maré (ataque ↔ defesa) | Roda do mouse (ou Z / X) |
+| Posturas (toque de novo para sair) | Shift Silêncio · Tab Olhar |
+| Maré: «« « • » »» (±15% por degrau, −1% de Fluxo/s por degrau) | Roda do mouse (ou Z / X) |
 | Psique · Grade de Elos · Maestria · Mapa | C · K · M · N |
 | Ajuda · Pausa (volume) | H · Esc |
 | Painel de playtest | ` (crase) ou F2 |

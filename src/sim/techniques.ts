@@ -232,7 +232,7 @@ export const TECHNIQUES = SPELLS;
 export type TechniqueDef = SpellDef;
 
 /** Tudo o que tem Maestria. */
-export type MasteryId = SpellId | Posture | 'tide' | 'basic' | 'capacity';
+export type MasteryId = SpellId | Exclude<Posture, 'open'> | 'veil' | 'impetus' | 'tide' | 'basic' | 'capacity';
 export const FIXED_MASTERY_IDS: readonly MasteryId[] = ['basic', 'veil', 'silence', 'impetus', 'gaze', 'tide', 'capacity'];
 export const MASTERY_IDS: readonly MasteryId[] = [...FIXED_MASTERY_IDS, ...SPELL_IDS];
 export const MASTERY_NAMES: Record<MasteryId, string> = {
