@@ -57,7 +57,7 @@ const MASTERY_EFFECT: Record<MasteryId, string> = {
   point: 'Crítico mais forte (+0,1x por nível); −1,5% de custo por nível.',
   basic: '+3% de dano do golpe básico por nível.',
   veil: '+0,5% de redução de dano no Véu por nível.',
-  silence: 'Sobe meditando em Silêncio no santuário.',
+  silence: 'Inimigos te percebem de mais perto (−2% do raio por nível). Sobe passando despercebido perto de inimigos e meditando.',
   impetus: 'Sobe sustentando o Ímpeto em combate.',
   gaze: 'Sobe revelando inimigos em Sombra e armadilhas.',
   tide: '+4% de velocidade da Maré por nível. Sobe com Marés perfeitas.',

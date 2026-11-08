@@ -27,6 +27,7 @@ const CAM_OFFSET = new THREE.Vector3(0, 17, 12.5);
 interface EnemyView {
   rig: Rig;
   markRing: THREE.Mesh;
+  detectRing: THREE.Mesh;
   rootRing: THREE.Mesh;
   bar: THREE.Group;
   barFill: THREE.Mesh;
@@ -285,8 +286,16 @@ export class GameView {
     rootRing.rotation.x = Math.PI / 2;
     rootRing.position.y = 0.25;
     rootRing.visible = false;
-    rig.root.add(markRing, rootRing);
-    v = { rig, markRing, rootRing, bar, barFill: fill, last: new THREE.Vector3(e.pos.x, 0, e.pos.y), dead: 0, hurt: 0, attack: 0, punch: 0 };
+    // Até onde ele te percebe em Silêncio (escala = raio em metros).
+    const detectRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.96, 1, 48),
+      new THREE.MeshBasicMaterial({ color: '#c9b8ff', transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    detectRing.rotation.x = -Math.PI / 2;
+    detectRing.position.y = 0.06;
+    detectRing.visible = false;
+    rig.root.add(markRing, rootRing, detectRing);
+    v = { rig, markRing, rootRing, detectRing, bar, barFill: fill, last: new THREE.Vector3(e.pos.x, 0, e.pos.y), dead: 0, hurt: 0, attack: 0, punch: 0 };
     rig.root.position.copy(v.last);
     this.enemies.set(e.id, v);
     return v;
@@ -600,6 +609,11 @@ export class GameView {
       v.markRing.visible = alive && sim.time < e.charmedUntil;
       v.markRing.rotation.z += dt * 3;
       v.rootRing.visible = alive && sim.time < e.rootUntil;
+      const hiddenFrom =
+        alive && sim.player.posture === 'silence' && !e.def.elite && !e.aggro && (!e.def.shadowed || e.revealed) &&
+        Math.hypot(e.pos.x - sim.player.pos.x, e.pos.y - sim.player.pos.y) < 14;
+      v.detectRing.visible = hiddenFrom;
+      if (hiddenFrom) v.detectRing.scale.setScalar(sim.stealthRadius(e));
     }
 
     // Câmera estilo Albion: inclinada, fixa, seguindo o personagem.

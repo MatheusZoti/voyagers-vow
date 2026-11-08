@@ -47,7 +47,7 @@ export const POSTURES: Record<Posture, PostureDef> = {
     regenMult: 3,
     allowsTechniques: false,
     color: '#6d7a8c',
-    desc: 'Invisível para inimigos comuns; Fluxo regenera 3x. Dano recebido dobrado, sem técnicas.',
+    desc: 'Some para inimigos comuns que ainda não te viram (o alcance deles encolhe com a Maestria); Fluxo regenera 3x. Dano recebido dobrado, sem técnicas.',
   },
   impetus: {
     name: 'Ímpeto',

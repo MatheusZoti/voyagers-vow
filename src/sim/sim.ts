@@ -162,6 +162,7 @@ export class Simulation {
   private rng: Rng;
   private nextId = 1;
   private impetusAcc = 0;
+  private sneakAcc = 0;
   /** efeitos com atraso (ex.: Chuva de Esferas) */
   private pending: Array<{ at: number; run: () => void }> = [];
   /** último ponto mirado (para magias que miram no chão) */
@@ -457,6 +458,18 @@ export class Simulation {
       }
     }
     p.flow = Math.min(p.flow, flowMax);
+
+    // Passar perto de inimigos sem ser notado treina o Silêncio.
+    if (p.posture === 'silence' && !this.inSanctuary()) {
+      const near = this.enemies.filter((e) => e.state !== 'dead' && !e.aggro && !e.def.elite && dist(e.pos, p.pos) < e.def.aggroRadius);
+      if (near.length) {
+        this.sneakAcc += dt;
+        if (this.sneakAcc >= 1) {
+          this.sneakAcc -= 1;
+          this.train('silence', 2 * near.length, this.currentRisk(near[0]));
+        }
+      }
+    }
 
     // Ímpeto sustentado treina a capacidade da reserva.
     if (p.posture === 'impetus' && this.inCombat()) {
@@ -1152,8 +1165,18 @@ export class Simulation {
     if (p.dead || this.inSanctuary()) return false;
     const d = dist(e.pos, p.pos);
     if (e.def.boss) return p.bossEngaged;
-    if (p.posture === 'silence' && !e.def.elite) return d < 1.4;
+    if (p.posture === 'silence' && !e.def.elite) {
+      // Quem já te viu não é enganado: só te perde se você se afastar bastante.
+      if (e.aggro) return d < e.def.aggroRadius * 1.5;
+      return d < this.stealthRadius(e);
+    }
     return d < e.def.aggroRadius || (e.aggro && d < e.def.aggroRadius * 2);
+  }
+
+  /** Até onde um inimigo comum percebe você em Silêncio: encolhe com a Maestria do Silêncio. */
+  stealthRadius(e: Enemy): number {
+    const lvl = displayLevel(this.c.mastery.silence);
+    return Math.max(1.2, e.def.aggroRadius * (0.6 - 0.02 * (lvl - 1)));
   }
 
   private updateEnemies(dt: number): void {
