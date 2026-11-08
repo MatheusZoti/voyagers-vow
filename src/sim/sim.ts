@@ -54,8 +54,9 @@ import {
   type SpellId,
   type TechniqueId,
 } from './techniques';
-import { ENEMIES, SPELL_DROP_CHANCE, type AttackDef, type Echo, type Enemy, type EnemyKind, type SpellDrop, type Trap } from './world/entities';
+import { armorReduction, ENEMIES, SPELL_DROP_CHANCE, type AttackDef, type Echo, type Enemy, type EnemyKind, type SpellDrop, type Trap } from './world/entities';
 import { buildMap, inCircle, isBlocked, moveWithCollision, type GameMap } from './world/map';
+import { TUNING } from './tuning';
 
 export const TICK = 1 / 30;
 
@@ -76,11 +77,24 @@ export const emptyInput = (): PlayerInput => ({ move: { x: 0, y: 0 }, aim: { x: 
 export type NoticeTone = 'info' | 'good' | 'bad' | 'warn' | 'memory' | 'crisis';
 
 export type SimEvent =
-  | { t: 'damage'; x: number; y: number; amount: number; target: 'enemy' | 'player'; id?: number; crit?: boolean; pierce?: boolean; immune?: boolean }
-  | { t: 'swing'; x: number; y: number; dir: Vec2; range: number }
+  | {
+      t: 'damage';
+      x: number;
+      y: number;
+      amount: number;
+      target: 'enemy' | 'player';
+      id?: number;
+      crit?: boolean;
+      pierce?: boolean;
+      immune?: boolean;
+      /** golpe pesado (finalizador do combo, magia): pausa maior no acerto */
+      big?: boolean;
+    }
+  | { t: 'swing'; x: number; y: number; dir: Vec2; range: number; finisher?: boolean }
   | { t: 'signature'; from: Vec2; to: Vec2; radius: number; beyond: boolean }
   | { t: 'pointCharge' }
   | { t: 'telegraph'; x: number; y: number; r: number; duration: number; heavy: boolean }
+  | { t: 'telegraphArc'; x: number; y: number; dir: Vec2; range: number; arc: number; duration: number }
   | { t: 'enemySwing'; id: number; dir: Vec2; range: number }
   | { t: 'enemyDeath'; id: number; x: number; y: number; boss: boolean }
   | { t: 'playerDeath'; x: number; y: number }
@@ -126,6 +140,9 @@ export interface PlayerState {
   needs: { fight: number; rest: number };
   /** visual: acaba de atacar (s) */
   attackAnim: number;
+  /** combo do golpe básico: 0, 1, 2 (o terceiro é o finalizador) */
+  combo: number;
+  comboTimer: number;
   bossEngaged: boolean;
 }
 
@@ -179,6 +196,8 @@ export class Simulation {
       nearDeathCd: 0,
       needs: { fight: 0.7, rest: 0.8 },
       attackAnim: 0,
+      combo: 0,
+      comboTimer: 0,
       bossEngaged: false,
     };
     for (const s of this.map.spawns) this.spawn(s.kind, { x: s.x + 0.5, y: s.y + 0.5 });
@@ -294,11 +313,14 @@ export class Simulation {
   slotCost(slot: EloSlot, info: EffectiveInfo): number {
     const tech = TECHNIQUES[slot.technique as TechniqueId];
     const res = resonance(tech.tags, this.c.psyche.traits);
-    return ((info.costPct / 100) * this.flowMax() * masteryCostMult(this.c.mastery[tech.id]) * this.mods.techniqueCost) / Math.max(0.5, res);
+    return (
+      ((info.costPct / 100) * this.flowMax() * masteryCostMult(this.c.mastery[tech.id]) * this.mods.techniqueCost * TUNING.spellCost) /
+      Math.max(0.5, res)
+    );
   }
 
   slotCooldown(slot: EloSlot, info: EffectiveInfo): number {
-    return info.cooldown * (1 - 0.12 * (slot.mods.cadence ?? 0));
+    return info.cooldown * (1 - 0.12 * (slot.mods.cadence ?? 0)) * TUNING.cooldown;
   }
 
   private contraryPacts(slot: EloSlot): number {
@@ -424,7 +446,7 @@ export class Simulation {
     const flowMax = this.flowMax();
     p.flow -= def.drain * this.mods.postureDrain * dt;
     if (this.time >= p.flowLockUntil) {
-      p.flow += BASE_FLOW_REGEN * def.regenMult * this.mods.regen * dt;
+      p.flow += BASE_FLOW_REGEN * def.regenMult * this.mods.regen * TUNING.flowRegen * dt;
     }
     if (p.flow <= 0) {
       p.flow = 0;
@@ -449,7 +471,7 @@ export class Simulation {
     // Movimento.
     const dir = normalize(input.move);
     const slow = this.time < p.slowUntil ? 0.5 : 1;
-    const speed = 5.2 * this.mods.moveSpeed * slow * (p.attackAnim > 0.15 ? 0.55 : 1);
+    const speed = 5.2 * this.mods.moveSpeed * slow * (p.attackAnim > 0.15 ? 0.7 : 1);
     if (dir.x || dir.y) moveWithCollision(this.map, p.pos, dir.x * speed * dt, dir.y * speed * dt, 0.35);
     this.lastAim = { ...input.aim };
     const aimDir = normalize({ x: input.aim.x - p.pos.x, y: input.aim.y - p.pos.y });
@@ -459,6 +481,7 @@ export class Simulation {
 
     // Golpe básico.
     p.basicCd -= dt;
+    p.comboTimer = Math.max(0, p.comboTimer - dt);
     if (input.basic && p.basicCd <= 0 && !(p.posture === 'silence')) this.basicAttack();
 
     // Técnicas nos Elos.
@@ -583,12 +606,22 @@ export class Simulation {
     );
   }
 
+  /**
+   * Golpe básico em combo de 3: dois golpes rápidos e um finalizador mais forte,
+   * mais largo, que empurra e faz inimigos comuns cambalearem.
+   */
   private basicAttack(): void {
     const p = this.player;
-    const range = 1.8;
-    p.basicCd = 0.42;
-    p.attackAnim = 0.25;
-    this.events.push({ t: 'swing', x: p.pos.x, y: p.pos.y, dir: { ...p.facing }, range });
+    p.combo = p.comboTimer > 0 ? (p.combo + 1) % 3 : 0;
+    const finisher = p.combo === 2;
+    const range = finisher ? 2.15 : 1.85;
+    const arc = ((finisher ? 75 : 55) * Math.PI) / 180;
+    p.basicCd = finisher ? 0.55 : 0.36;
+    p.comboTimer = 0.95;
+    p.attackAnim = finisher ? 0.32 : 0.24;
+    // Pequeno avanço a cada golpe: dá peso ao ataque.
+    moveWithCollision(this.map, p.pos, p.facing.x * (finisher ? 0.35 : 0.18), p.facing.y * (finisher ? 0.35 : 0.18), 0.35);
+    this.events.push({ t: 'swing', x: p.pos.x, y: p.pos.y, dir: { ...p.facing }, range, finisher });
     const sharp = sharpnessMult(this.c.mastery.basic.sharpness);
     const mastery = 1 + 0.03 * (displayLevel(this.c.mastery.basic) - 1);
     let hitAny = false;
@@ -597,10 +630,11 @@ export class Simulation {
       const d = dist(e.pos, p.pos);
       if (d > range + e.def.radius) continue;
       const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
-      if (d > 0.6 && angleBetween(to, p.facing) > (55 * Math.PI) / 180) continue;
+      if (d > 0.6 && angleBetween(to, p.facing) > arc) continue;
       hitAny = true;
-      const dmg = 9 * this.outgoingMult() * sharp * mastery;
-      this.hitEnemy(e, dmg, { ignoreArmor: false, source: 'basic' });
+      const dmg = 10 * (finisher ? 1.5 : 1) * this.outgoingMult() * sharp * mastery;
+      this.hitEnemy(e, dmg, { ignoreArmor: false, source: 'basic', knock: finisher ? 7 : 2.5, big: finisher });
+      if (finisher && !e.def.elite) this.stunEnemy(e, 0.3);
       this.train('basic', 3, this.currentRisk(e));
     }
     if (hitAny) p.lastCombatAt = this.time;
@@ -664,7 +698,7 @@ export class Simulation {
     }
     if (slot.mods.stun) this.stunEnemy(e, 0.8);
     this.train(spell.id, 10, this.currentRisk(e));
-    if (dmg > 0) this.hitEnemy(e, dmg, { ignoreArmor: pierce || !!slot.mods.shatter, source: 'spell' });
+    if (dmg > 0) this.hitEnemy(e, dmg, { ignoreArmor: pierce || !!slot.mods.shatter, source: 'spell', knock: 4, big: true });
     return true;
   }
 
@@ -874,9 +908,15 @@ export class Simulation {
     if (p.hp > before) this.events.push({ t: 'heal', amount: Math.round(p.hp - before) });
   }
 
-  private hitEnemy(e: Enemy, raw: number, opts: { ignoreArmor: boolean; source: 'basic' | 'spell' }): void {
+  private hitEnemy(e: Enemy, raw: number, opts: { ignoreArmor: boolean; source: 'basic' | 'spell'; knock?: number; big?: boolean }): void {
     const p = this.player;
-    let dmg = raw;
+    let dmg = raw * TUNING.playerDamage;
+    // Recuo: empurra para longe do jogador (elites resistem, o chefe não se move).
+    if (opts.knock && !e.def.boss) {
+      const away = normalize({ x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y });
+      const k = opts.knock * TUNING.knockback * (e.def.elite ? 0.35 : 1);
+      e.knock = { x: e.knock.x + away.x * k, y: e.knock.y + away.y * k };
+    }
     let crit = false;
     let ignoreArmor = opts.ignoreArmor;
     const pointSlot = this.c.elos.find((s) => s.technique === 'point' && s.unlocked);
@@ -901,13 +941,23 @@ export class Simulation {
       if (mods.restore) this.healPlayer(this.maxHp() * 0.06);
       this.train('point', 8, this.currentRisk(e));
     }
-    if (!ignoreArmor) dmg = Math.max(1, dmg - e.def.armor);
+    if (!ignoreArmor) dmg = Math.max(1, dmg * (1 - armorReduction(e.def.armor)));
     dmg = Math.round(dmg);
     e.hp -= dmg;
     e.hurtAgo = 0;
     e.aggro = true;
     if (e.def.boss) p.bossEngaged = true;
-    this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: dmg, target: 'enemy', id: e.id, crit, pierce: ignoreArmor && e.def.armor > 0 });
+    this.events.push({
+      t: 'damage',
+      x: e.pos.x,
+      y: e.pos.y,
+      amount: dmg,
+      target: 'enemy',
+      id: e.id,
+      crit,
+      pierce: ignoreArmor && e.def.armor > 0,
+      big: opts.big,
+    });
     if (e.hp <= 0) this.killEnemy(e);
   }
 
@@ -927,7 +977,7 @@ export class Simulation {
       this.notice(`${e.def.name} deixou cair um grimório.`, 'good');
     }
     p.needs.fight = clamp(p.needs.fight + 0.12, 0, 1);
-    this.gainXp(e.def.xp, true);
+    this.gainXp(Math.round(e.def.xp * TUNING.xp), true);
     p.killTimes = p.killTimes.filter((t) => this.time - t < 6);
     p.killTimes.push(this.time);
     if (e.def.boss) {
@@ -969,7 +1019,7 @@ export class Simulation {
     const defenseZero = this.time < p.defenseZeroUntil;
     let perfect = false;
     if (defenseZero) {
-      mult *= 1.25;
+      // Defesa zero: sem redução do Véu e sem a Maré (o Ponto pôs todo o Fluxo no golpe).
     } else {
       const veilBonus = p.posture === 'veil' ? 0.005 * (displayLevel(this.c.mastery.veil) - 1) : 0;
       const dr = p.flow > 0 ? def.damageReduction + veilBonus : 0;
@@ -980,7 +1030,7 @@ export class Simulation {
         mult *= 0.5;
       }
     }
-    const dmg = Math.max(1, Math.round(raw * mult));
+    const dmg = Math.max(1, Math.round(raw * mult * TUNING.enemyDamage));
     p.hp -= dmg;
     p.lastHitTakenAt = this.time;
     p.lastCombatAt = this.time;
@@ -1059,7 +1109,10 @@ export class Simulation {
       pos: { ...pos },
       home: { ...pos },
       facing: { x: -1, y: 0 },
-      hp: def.hp,
+      hp: def.hp * TUNING.enemyHp,
+      maxHp: def.hp * TUNING.enemyHp,
+      windupTotal: 0,
+      knock: { x: 0, y: 0 },
       state: 'idle',
       timer: 0,
       attack: null,
@@ -1081,7 +1134,8 @@ export class Simulation {
   }
 
   private resetEnemy(e: Enemy): void {
-    e.hp = e.def.hp;
+    e.maxHp = e.def.hp * TUNING.enemyHp;
+    e.hp = e.maxHp;
     e.aggro = false;
     e.state = 'return';
     e.phase = 1;
@@ -1111,9 +1165,19 @@ export class Simulation {
       if (e.state === 'dead') {
         e.respawnIn -= dt;
         if (e.respawnIn <= 0 && dist(e.home, p.pos) > 14) {
-          Object.assign(e, { hp: e.def.hp, state: 'idle', pos: { ...e.home }, aggro: false, signatureHits: 0, phase: 1 });
+          const maxHp = e.def.hp * TUNING.enemyHp;
+          Object.assign(e, { hp: maxHp, maxHp, state: 'idle', pos: { ...e.home }, aggro: false, signatureHits: 0, phase: 1 });
         }
         continue;
+      }
+
+      // Recuo do último golpe recebido.
+      if (Math.abs(e.knock.x) + Math.abs(e.knock.y) > 0.05) {
+        moveWithCollision(this.map, e.pos, e.knock.x * dt, e.knock.y * dt, Math.min(0.45, e.def.radius * 0.6));
+        const decay = Math.exp(-12 * dt);
+        e.knock.x *= decay;
+        e.knock.y *= decay;
+        if (inCircle(this.map.sanctuary, e.pos, 1)) e.knock = { x: 0, y: 0 };
       }
 
       // Sombra: revelado pelo Olhar ou muito perto.
@@ -1135,7 +1199,7 @@ export class Simulation {
       }
 
       // Fase 2 do chefe.
-      if (e.def.boss && e.phase === 1 && e.hp < e.def.hp * 0.5) {
+      if (e.def.boss && e.phase === 1 && e.hp < e.maxHp * 0.5) {
         e.phase = 2;
         this.notice('O Guardião ruge e chama seus servos!', 'warn');
         for (let i = 0; i < 3; i++) {
@@ -1158,7 +1222,7 @@ export class Simulation {
           const back = { x: e.home.x - e.pos.x, y: e.home.y - e.pos.y };
           if (Math.hypot(back.x, back.y) < 0.5) {
             e.state = 'idle';
-            e.hp = e.def.hp;
+            e.hp = e.maxHp;
           } else this.moveEnemy(e, normalize(back), e.def.speed * 1.3 * dt);
           if (sees && !e.def.boss) e.state = 'chase';
           break;
@@ -1173,14 +1237,17 @@ export class Simulation {
           if (atk) {
             e.attack = atk;
             e.state = 'windup';
-            const windup = atk.windup * (e.phase === 2 ? 0.85 : 1);
+            const windup = atk.windup * (e.phase === 2 ? 0.85 : 1) * TUNING.enemyWindup;
             e.timer = windup;
+            e.windupTotal = windup;
             e.facing = normalize(toPlayer);
             e.attackTarget = atk.type === 'slam' ? { ...p.pos } : { x: e.pos.x + e.facing.x * atk.range, y: e.pos.y + e.facing.y * atk.range };
             if (atk.type === 'slam')
               this.events.push({ t: 'telegraph', x: e.attackTarget.x, y: e.attackTarget.y, r: atk.radius, duration: windup, heavy: atk.heavy });
             else if (atk.type === 'charge')
               this.events.push({ t: 'telegraph', x: e.attackTarget.x, y: e.attackTarget.y, r: atk.radius, duration: windup, heavy: false });
+            else if (e.def.elite)
+              this.events.push({ t: 'telegraphArc', x: e.pos.x, y: e.pos.y, dir: { ...e.facing }, range: atk.range + e.def.radius * 0.5, arc: (140 * Math.PI) / 180, duration: windup });
           } else if (d > e.def.radius + 0.9) {
             e.facing = normalize(toPlayer);
             this.moveEnemy(e, e.facing, e.def.speed * speedMul * dt);
@@ -1189,7 +1256,7 @@ export class Simulation {
         }
         case 'windup':
           e.timer -= dt;
-          if (e.attack?.type === 'melee') e.facing = normalize(toPlayer);
+          if (e.attack?.type === 'melee' && !e.def.elite) e.facing = normalize(toPlayer);
           if (e.timer <= 0) this.executeAttack(e);
           break;
         case 'charging': {
@@ -1236,7 +1303,7 @@ export class Simulation {
       if (e.timer <= 0) {
         this.events.push({ t: 'enemySwing', id: e.id, dir: { ...e.facing }, range: atk.range });
         if (d <= atk.range + foe.def.radius + 0.3) {
-          const dmg = Math.max(1, Math.round(atk.damage * 1.5 - foe.def.armor));
+          const dmg = Math.max(1, Math.round(atk.damage * 1.5 * (1 - armorReduction(foe.def.armor))));
           foe.hp -= dmg;
           foe.hurtAgo = 0;
           this.events.push({ t: 'damage', x: foe.pos.x, y: foe.pos.y, amount: dmg, target: 'enemy', id: foe.id });
@@ -1251,7 +1318,8 @@ export class Simulation {
     } else if (d <= atk.range + foe.def.radius * 0.5 && (e.cooldowns[atk.id] ?? 0) <= 0) {
       e.cooldowns[atk.id] = atk.cooldown;
       e.state = 'windup';
-      e.timer = atk.windup;
+      e.timer = atk.windup * TUNING.enemyWindup;
+      e.windupTotal = e.timer;
     } else {
       e.state = 'chase';
       this.moveEnemy(e, e.facing, e.def.speed * dt);
@@ -1311,6 +1379,7 @@ export class Simulation {
   private moveEnemy(e: Enemy, dir: Vec2, step: number): void {
     if (this.time < e.rootUntil) return; // preso por Correntes
     const before = { ...e.pos };
+    step *= TUNING.enemySpeed;
     moveWithCollision(this.map, e.pos, dir.x * step, dir.y * step, Math.min(0.45, e.def.radius * 0.6));
     // Inimigos não entram no santuário; o chefe não sai da arena.
     if (inCircle(this.map.sanctuary, e.pos, 1) || (e.def.boss && !inCircle(this.map.arena, e.pos, 0))) e.pos = before;
@@ -1318,6 +1387,23 @@ export class Simulation {
 
   private separateEnemies(): void {
     const live = this.enemies.filter((e) => e.state !== 'dead');
+    // Colisão de corpo: o jogador não atravessa inimigos (os inimigos são mais pesados).
+    const p = this.player;
+    if (!p.dead) {
+      for (const e of live) {
+        if (e.def.shadowed && !e.revealed) continue;
+        const dx = p.pos.x - e.pos.x;
+        const dy = p.pos.y - e.pos.y;
+        const d = Math.hypot(dx, dy);
+        const min = e.def.radius + 0.35;
+        if (d >= min) continue;
+        const n = d > 0.001 ? { x: dx / d, y: dy / d } : { x: -p.facing.x, y: -p.facing.y };
+        const push = min - d;
+        const heavy = e.def.boss || e.def.elite ? 1 : 0.7;
+        moveWithCollision(this.map, p.pos, n.x * push * heavy, n.y * push * heavy, 0.35);
+        if (heavy < 1) moveWithCollision(this.map, e.pos, -n.x * push * (1 - heavy), -n.y * push * (1 - heavy), Math.min(0.45, e.def.radius * 0.6));
+      }
+    }
     for (let i = 0; i < live.length; i++)
       for (let j = i + 1; j < live.length; j++) {
         const a = live[i]!;

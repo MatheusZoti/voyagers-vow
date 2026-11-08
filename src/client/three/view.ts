@@ -486,7 +486,7 @@ export class GameView {
       v.rig.root.position.lerp(t, Math.min(1, dt * 15));
       const sp = dead ? 0 : before.distanceTo(v.rig.root.position) / Math.max(dt, 1e-4);
       v.rig.body.rotation.y = lerpAngle(v.rig.body.rotation.y, Math.atan2(e.facing.x, e.facing.y), Math.min(1, dt * 10));
-      const windup = e.state === 'windup' && e.attack ? 1 - e.timer / e.attack.windup : 0;
+      const windup = e.state === 'windup' && e.attack ? 1 - e.timer / Math.max(0.01, e.windupTotal) : 0;
       v.attack = Math.max(0, v.attack - dt);
       animateRig(v.rig, dt, sp, { attack: v.attack / 0.3, windup, dead: dead ? v.dead : 0 });
       let opacity = dead ? Math.max(0, 1 - Math.max(0, v.dead - 1.2) / 0.8) : 1;
@@ -494,9 +494,9 @@ export class GameView {
       setOpacity(v.rig, opacity);
       v.hurt = Math.max(0, v.hurt - dt);
       flash(v.rig, v.hurt > 0 ? 1 : 0);
-      v.bar.visible = !dead && opacity > 0.1 && (e.hp < e.def.hp || e.aggro);
+      v.bar.visible = !dead && opacity > 0.1 && (e.hp < e.maxHp || e.aggro);
       if (v.bar.visible) {
-        const k = Math.max(0, e.hp / e.def.hp);
+        const k = Math.max(0, e.hp / e.maxHp);
         v.barFill.scale.x = Math.max(0.001, k);
         v.barFill.position.x = -(1 - k) * 0.53;
         v.bar.quaternion.copy(this.camera.quaternion);

@@ -52,7 +52,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   grunt: {
     kind: 'grunt',
     name: 'Carniçal',
-    hp: 34,
+    hp: 46,
     armor: 1,
     speed: 3.1,
     radius: 0.45,
@@ -62,13 +62,13 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     elite: false,
     boss: false,
     shadowed: false,
-    attacks: [melee(7, 1.4, 0.45)],
+    attacks: [melee(8, 1.4, 0.45, 0.5, 1.0)],
     respawn: 45,
   },
   stalker: {
     kind: 'stalker',
     name: 'Espreitador',
-    hp: 28,
+    hp: 38,
     armor: 0,
     speed: 4.2,
     radius: 0.4,
@@ -84,7 +84,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   brute: {
     kind: 'brute',
     name: 'Bruto de Pedra',
-    hp: 170,
+    hp: 230,
     armor: 9,
     speed: 2.5,
     radius: 0.8,
@@ -103,8 +103,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   boss: {
     kind: 'boss',
     name: 'Guardião da Ponte',
-    hp: 1100,
-    armor: 10,
+    hp: 900,
+    armor: 8,
     speed: 2.9,
     radius: 1.4,
     level: 5,
@@ -114,13 +114,19 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     boss: true,
     shadowed: false,
     attacks: [
-      { id: 'swipe', type: 'melee', range: 3, windup: 0.6, recover: 0.6, damage: 14, radius: 3, heavy: false, cooldown: 1.4 },
-      { id: 'slam', type: 'slam', range: 8, windup: 1.3, recover: 1.1, damage: 46, radius: 3.4, heavy: true, cooldown: 5.5 },
+      { id: 'swipe', type: 'melee', range: 3, windup: 0.85, recover: 0.7, damage: 11, radius: 3, heavy: false, cooldown: 2.2 },
+      { id: 'slam', type: 'slam', range: 8, windup: 1.3, recover: 1.1, damage: 56, radius: 3.4, heavy: true, cooldown: 5.5 },
       { id: 'charge', type: 'charge', range: 12, windup: 0.8, recover: 1.0, damage: 22, radius: 1.8, heavy: false, cooldown: 7 },
     ],
     respawn: 120,
   },
 };
+
+/**
+ * Armadura reduz o dano em porcentagem (com retorno decrescente), não por subtração:
+ * golpes fracos continuam valendo contra alvos blindados. Armadura 10 = 40%.
+ */
+export const armorReduction = (armor: number) => armor / (armor + 15);
 
 export type EnemyState = 'idle' | 'chase' | 'windup' | 'charging' | 'recover' | 'return' | 'stunned' | 'dead';
 
@@ -148,6 +154,12 @@ export interface Enemy {
   summoned: boolean;
   /** tempo desde o último dano recebido */
   hurtAgo: number;
+  /** vida máxima (definição x ajuste de balanceamento) */
+  maxHp: number;
+  /** duração total do preparo atual (para a animação) */
+  windupTotal: number;
+  /** recuo pendente ao ser atingido (m/s, decai rápido) */
+  knock: { x: number; y: number };
   /** preso por Correntes até este tempo (pode atacar, não anda) */
   rootUntil: number;
   /** sob a Marca da Discórdia até este tempo (luta contra os aliados) */

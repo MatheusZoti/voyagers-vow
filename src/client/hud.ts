@@ -212,7 +212,7 @@ export class Hud {
     const boss = sim.boss();
     const showBoss = !!boss && boss.state !== 'dead' && p.bossEngaged;
     this.bossBar.classList.toggle('show', showBoss);
-    if (boss && showBoss) this.bossFill.style.width = `${(boss.hp / boss.def.hp) * 100}%`;
+    if (boss && showBoss) this.bossFill.style.width = `${(boss.hp / boss.maxHp) * 100}%`;
 
     // Textos estáticos (só mudam às vezes).
     const statics = `${c.name}|${c.level}|${c.affinity}|${c.penaltyLevel}|${sim.focused()}|${sim.inSanctuary()}|${sim.meditating()}|${c.elos.some((e) => e.sealed)}|${p.dead}`;
