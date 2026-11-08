@@ -1,9 +1,10 @@
 import type { Vec2 } from '../math';
 import type { SpellId } from '../techniques';
 
-export type EnemyKind = 'grunt' | 'stalker' | 'brute' | 'boss';
+export type EnemyKind = 'grunt' | 'stalker' | 'brute' | 'slinger' | 'boss';
 
-export type AttackType = 'melee' | 'slam' | 'charge';
+/** shot = projétil que voa em linha reta (dá para desviar; árvores e rochas bloqueiam) */
+export type AttackType = 'melee' | 'slam' | 'charge' | 'shot';
 
 export interface AttackDef {
   id: string;
@@ -81,6 +82,27 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     attacks: [melee(13, 1.3, 0.35, 0.7, 1.6)],
     respawn: 60,
   },
+  slinger: {
+    kind: 'slinger',
+    name: 'Lançador de Espinhos',
+    hp: 34,
+    armor: 1,
+    speed: 3.3,
+    radius: 0.42,
+    level: 2,
+    xp: 26,
+    aggroRadius: 10,
+    elite: false,
+    boss: false,
+    shadowed: false,
+    // Mantém distância e atira; o aviso é uma linha no chão na direção do disparo.
+    attacks: [
+      { id: 'shot', type: 'shot', range: 9, windup: 0.75, recover: 0.55, damage: 13, radius: 0.35, heavy: false, cooldown: 2.1 },
+      // Encurralado, ainda se defende com uma estocada fraca.
+      melee(6, 1.2, 0.4, 0.6, 1.4),
+    ],
+    respawn: 55,
+  },
   brute: {
     kind: 'brute',
     name: 'Bruto de Pedra',
@@ -154,8 +176,10 @@ export interface Enemy {
   summoned: boolean;
   /** tempo desde o último dano recebido */
   hurtAgo: number;
-  /** vida máxima (definição x ajuste de balanceamento) */
+  /** vida máxima (definição x tier da região x ajuste de balanceamento) */
   maxHp: number;
+  /** multiplicador de dano pelo tier da região */
+  power: number;
   /** duração total do preparo atual (para a animação) */
   windupTotal: number;
   /** recuo pendente ao ser atingido (m/s, decai rápido) */
@@ -183,7 +207,27 @@ export interface SpellDrop {
 }
 
 /** Chance de uma criatura deixar um grimório ao morrer. */
-export const SPELL_DROP_CHANCE: Record<EnemyKind, number> = { grunt: 0.04, stalker: 0.08, brute: 0.35, boss: 1 };
+export const SPELL_DROP_CHANCE: Record<EnemyKind, number> = { grunt: 0.04, stalker: 0.08, slinger: 0.07, brute: 0.35, boss: 1 };
+
+/** Projétil inimigo em voo. */
+export interface Projectile {
+  id: number;
+  pos: Vec2;
+  dir: Vec2;
+  speed: number;
+  /** distância que ainda pode voar */
+  left: number;
+  damage: number;
+  owner: number;
+}
+
+/** Tier da região: vida, dano e XP dos inimigos. */
+export const tierScale = (tier: number) => ({
+  hp: 1 + 0.45 * (tier - 1),
+  power: 1 + 0.3 * (tier - 1),
+  xp: 1 + 0.6 * (tier - 1),
+  level: 2 * (tier - 1),
+});
 
 export interface Trap {
   pos: Vec2;

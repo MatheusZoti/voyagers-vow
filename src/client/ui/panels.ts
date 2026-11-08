@@ -158,8 +158,8 @@ export class Panels {
     return `<div class="grid mapg">
       <section class="card map-card"><canvas class="bigmap"></canvas></section>
       <section class="card map-side">
-        <h4>Vale da Ponte</h4>
-        <p class="card-sub">Região de tier 1, Santuário: sem PvP. O que você ainda não viu fica sob a névoa; inimigos só aparecem quando estão à vista.</p>
+        <h4>${this.sim.map.name}</h4>
+        <p class="card-sub">Região de tier ${this.sim.map.tier}, zona Santuário: sem PvP. ${this.sim.map.tier > 1 ? 'Inimigos mais fortes e mais recompensa. ' : ''}O que você ainda não viu fica sob a névoa; inimigos só aparecem quando estão à vista. As setas na borda levam a outras regiões.</p>
         <ul class="map-legend">${legend.map(([k, t]) => `<li><i class="lg-${k}"></i>${t}</li>`).join('')}</ul>
       </section>
     </div>`;

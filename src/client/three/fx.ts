@@ -126,6 +126,27 @@ export class Effects {
     });
   }
 
+  /** Faixa de aviso na linha do disparo (Lançador de Espinhos). */
+  lineTelegraph(at: Vec2, dir: Vec2, length: number, width: number, duration: number): void {
+    const g = new THREE.Group();
+    const edgeMat = this.groundMat('#ff8a3a', 0.8, false);
+    const fillMat = this.groundMat('#ff6a2a', 0.18, false);
+    const fill = new THREE.Mesh(new THREE.PlaneGeometry(length, width), fillMat);
+    const edge = new THREE.Mesh(new THREE.PlaneGeometry(length, 0.06), edgeMat);
+    fill.geometry.translate(length / 2, 0, 0);
+    edge.geometry.translate(length / 2, 0, 0);
+    for (const m of [fill, edge]) {
+      m.rotation.x = -Math.PI / 2;
+      m.rotation.z = -Math.atan2(dir.y, dir.x);
+    }
+    g.add(fill, edge);
+    add(g, at.x, 0.1, at.y);
+    this.push(g, duration, (_f, k) => {
+      fill.scale.set(Math.max(0.01, k), 1, 1);
+      fillMat.opacity = 0.15 + 0.3 * k;
+    });
+  }
+
   burst(at: Vec2, color: string, n = 10, speed = 3, y = 0.8): void {
     const m = new THREE.MeshBasicMaterial({ color });
     for (let i = 0; i < n; i++) {

@@ -9,7 +9,8 @@ import { mat } from './models';
  * de outono e pedregulhos facetados. Mundo (x, y) -> Three (x, altura, y).
  */
 
-const GRASS = ['#8fa046', '#9aab4e', '#a5ad57', '#86983f', '#99a24a'];
+const GRASS_VALE = ['#8fa046', '#9aab4e', '#a5ad57', '#86983f', '#99a24a'];
+const GRASS_AUTUMN = ['#a9a24c', '#b4a653', '#9f9a46', '#b9ab5a', '#a39b45'];
 const PATH = ['#b49866', '#ab8f5e', '#bea36f'];
 const ROCK = '#bda882';
 const ROCK_DEEP = '#8c877b';
@@ -30,6 +31,7 @@ export function buildWorld(map: GameMap): WorldView {
   const { w, h } = map;
   const tile = (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? Tile.Tree : (map.tiles[Math.floor(y) * w + Math.floor(x)] as Tile));
   const gh = (x: number, y: number) => floorAt(map, x, y);
+  const GRASS = map.theme === 'autumn' ? GRASS_AUTUMN : GRASS_VALE;
 
   // -------------------------------------------------------------------------
   // Terreno: malha de 0,5 m, cor de cada face pela inclinação e pelo tipo de chão.
@@ -178,7 +180,9 @@ export function buildWorld(map: GameMap): WorldView {
         const sp = { x: x + 0.5 + rng.range(-0.25, 0.25), y: y + 0.5 + rng.range(-0.25, 0.25), s: rng.range(0.85, 1.4), v: rng.next(), base: 0 };
         sp.base = gh(sp.x, sp.y);
         const r = rng.next();
-        (r < 0.66 ? pines : r < 0.84 ? rounds : autumns).push(sp);
+        // No Vale dominam os pinheiros; em Varn, as árvores de outono.
+        const autumnTheme = map.theme === 'autumn';
+        (r < (autumnTheme ? 0.32 : 0.66) ? pines : r < (autumnTheme ? 0.5 : 0.84) ? rounds : autumns).push(sp);
       }
       if (t === Tile.Rock || (t === Tile.Cliff && rng.chance(0.18))) {
         const rx = x + 0.5 + rng.range(-0.25, 0.25);
@@ -292,97 +296,144 @@ export function buildWorld(map: GameMap): WorldView {
   const plank = mat('#9b6d43');
   const wood = mat('#5e4128');
   const ropeMat = mat('#c9b48a');
-  const zMid = (b.y0 + b.y1 + 1) / 2;
-  const xs = b.x0 - 0.5;
-  const xe = b.x1 + 1.5;
-  const sag = (x: number) => BRIDGE_DECK - Math.sin(((x - xs) / (xe - xs)) * Math.PI) * 0.3;
-  for (let x = xs; x <= xe; x += 0.42) {
-    const p = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 3.4), plank);
-    p.position.set(x, sag(x), zMid);
-    p.rotation.y = (rng.next() - 0.5) * 0.06;
-    p.castShadow = p.receiveShadow = true;
-    group.add(p);
-  }
-  for (const side of [-1, 1]) {
-    const z = zMid + side * 1.8;
-    for (const x of [xs - 0.3, xe + 0.3]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 1.6, 6), wood);
-      post.position.set(x, gh(x, z) + 0.7, z);
-      post.castShadow = true;
-      group.add(post);
+  if (b) {
+    const zMid = (b.y0 + b.y1 + 1) / 2;
+    const xs = b.x0 - 0.5;
+    const xe = b.x1 + 1.5;
+    const sag = (x: number) => BRIDGE_DECK - Math.sin(((x - xs) / (xe - xs)) * Math.PI) * 0.3;
+    for (let x = xs; x <= xe; x += 0.42) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 3.4), plank);
+      p.position.set(x, sag(x), zMid);
+      p.rotation.y = (rng.next() - 0.5) * 0.06;
+      p.castShadow = p.receiveShadow = true;
+      group.add(p);
     }
-    // Corda do corrimão (segmentos acompanhando a barriga).
-    const pts: THREE.Vector3[] = [];
-    for (let x = xs - 0.3; x <= xe + 0.31; x += 0.5) pts.push(new THREE.Vector3(x, sag(Math.min(xe, Math.max(xs, x))) + 0.95, z));
-    const curve = new THREE.CatmullRomCurve3(pts);
-    const rope = new THREE.Mesh(new THREE.TubeGeometry(curve, 40, 0.035, 5, false), ropeMat);
-    rope.castShadow = true;
-    group.add(rope);
-    // Cordas verticais.
-    for (let x = xs + 0.6; x < xe; x += 1.2) {
-      const v = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9, 4), ropeMat);
-      v.position.set(x, sag(x) + 0.5, z);
-      group.add(v);
+    for (const side of [-1, 1]) {
+      const z = zMid + side * 1.8;
+      for (const x of [xs - 0.3, xe + 0.3]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 1.6, 6), wood);
+        post.position.set(x, gh(x, z) + 0.7, z);
+        post.castShadow = true;
+        group.add(post);
+      }
+      const pts: THREE.Vector3[] = [];
+      for (let x = xs - 0.3; x <= xe + 0.31; x += 0.5) pts.push(new THREE.Vector3(x, sag(Math.min(xe, Math.max(xs, x))) + 0.95, z));
+      const rope = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.035, 5, false), ropeMat);
+      rope.castShadow = true;
+      group.add(rope);
+      for (let x = xs + 0.6; x < xe; x += 1.2) {
+        const v = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9, 4), ropeMat);
+        v.position.set(x, sag(x) + 0.5, z);
+        group.add(v);
+      }
     }
   }
 
   // -------------------------------------------------------------------------
-  // Santuário: anel de pilares e runa central.
+  // Lugar seguro: santuário (pilares e runa) no Vale; acampamento (tendas e fogueira) em Varn.
   // -------------------------------------------------------------------------
   const runes: THREE.Mesh[] = [];
   const s = map.sanctuary;
-  const stone = mat('#d4cab0');
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2 + 0.2;
-    if (Math.abs(Math.cos(a) - 1) < 0.15) continue; // abertura para a trilha (leste)
-    const ph = 2.2 + (i % 3) * 0.4;
-    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, ph, 6), stone);
-    const px = s.x + Math.cos(a) * (s.r - 0.4);
-    const pz = s.y + Math.sin(a) * (s.r - 0.4);
-    pillar.position.set(px, gh(px, pz) + ph / 2, pz);
-    pillar.castShadow = pillar.receiveShadow = true;
-    group.add(pillar);
-    const capStone = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.22, 0.8), stone);
-    capStone.position.set(px, gh(px, pz) + ph + 0.1, pz);
-    capStone.castShadow = true;
-    group.add(capStone);
-  }
   const runeMat = new THREE.MeshBasicMaterial({ color: '#7fe3ff', transparent: true, opacity: 0.7, side: THREE.DoubleSide });
-  const rune = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.62, 6), runeMat);
-  rune.rotation.x = -Math.PI / 2;
-  rune.position.set(s.x, gh(s.x, s.y) + 0.05, s.y);
-  const rune2 = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 3), runeMat);
-  rune2.rotation.x = -Math.PI / 2;
-  rune2.position.set(s.x, gh(s.x, s.y) + 0.05, s.y);
-  group.add(rune, rune2);
-  runes.push(rune, rune2);
-  const brazier = new THREE.PointLight('#8fe8ff', 2.5, 10, 1.4);
-  brazier.position.set(s.x, gh(s.x, s.y) + 4.5, s.y);
+  const spinners: THREE.Mesh[] = [];
+  let lightColor = '#8fe8ff';
+  let lightBase = 2.4;
+  if (map.theme === 'autumn') {
+    // Acampamento: tendas de lona, paliçada baixa e uma fogueira.
+    lightColor = '#ffae5a';
+    lightBase = 3.2;
+    const canvasMat = mat('#c9b38a');
+    const canvasMat2 = mat('#9e5a3a');
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.8;
+      const tx = s.x + Math.cos(a) * (s.r - 1.3);
+      const tz = s.y + Math.sin(a) * (s.r - 1.3);
+      const tent = new THREE.Mesh(new THREE.ConeGeometry(1.1, 1.7, 4), i % 2 ? canvasMat : canvasMat2);
+      tent.position.set(tx, gh(tx, tz) + 0.85, tz);
+      tent.rotation.y = a;
+      tent.castShadow = tent.receiveShadow = true;
+      group.add(tent);
+    }
+    for (let i = 0; i < 22; i++) {
+      const a = (i / 22) * Math.PI * 2;
+      if (Math.abs(Math.cos(a)) > 0.93) continue; // aberturas a leste e oeste (trilha)
+      const px = s.x + Math.cos(a) * (s.r + 0.2);
+      const pz = s.y + Math.sin(a) * (s.r + 0.2);
+      const stake = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 1.1, 5), wood);
+      stake.position.set(px, gh(px, pz) + 0.5, pz);
+      stake.rotation.z = Math.cos(a) * 0.15;
+      stake.castShadow = true;
+      group.add(stake);
+    }
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI;
+      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.9, 5), wood);
+      log.position.set(s.x, gh(s.x, s.y) + 0.12, s.y);
+      log.rotation.set(Math.PI / 2, 0, a);
+      group.add(log);
+    }
+    const fire = new THREE.Mesh(
+      new THREE.ConeGeometry(0.32, 0.8, 5),
+      new THREE.MeshBasicMaterial({ color: '#ffb347', transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    fire.position.set(s.x, gh(s.x, s.y) + 0.5, s.y);
+    group.add(fire);
+    spinners.push(fire);
+  } else {
+    const stone = mat('#d4cab0');
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + 0.2;
+      if (Math.abs(Math.cos(a) - 1) < 0.15) continue; // abertura para a trilha (leste)
+      const ph = 2.2 + (i % 3) * 0.4;
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, ph, 6), stone);
+      const px = s.x + Math.cos(a) * (s.r - 0.4);
+      const pz = s.y + Math.sin(a) * (s.r - 0.4);
+      pillar.position.set(px, gh(px, pz) + ph / 2, pz);
+      pillar.castShadow = pillar.receiveShadow = true;
+      group.add(pillar);
+      const capStone = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.22, 0.8), stone);
+      capStone.position.set(px, gh(px, pz) + ph + 0.1, pz);
+      capStone.castShadow = true;
+      group.add(capStone);
+    }
+    const rune = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.62, 6), runeMat);
+    rune.rotation.x = -Math.PI / 2;
+    rune.position.set(s.x, gh(s.x, s.y) + 0.05, s.y);
+    const rune2 = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 3), runeMat);
+    rune2.rotation.x = -Math.PI / 2;
+    rune2.position.set(s.x, gh(s.x, s.y) + 0.05, s.y);
+    group.add(rune, rune2);
+    runes.push(rune, rune2);
+  }
+  const brazier = new THREE.PointLight(lightColor, lightBase, 10, 1.4);
+  brazier.position.set(s.x, gh(s.x, s.y) + (map.theme === 'autumn' ? 1.6 : 4.5), s.y);
   group.add(brazier);
 
   // Arena do chefe: pilares quebrados.
   const ar = map.arena;
-  const darkStone = mat('#8a8274');
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2;
-    if (Math.cos(a) < -0.85) continue; // entrada a oeste
-    const hgt = 1 + ((i * 7) % 5) * 0.5;
-    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, hgt, 6), darkStone);
-    const ax = ar.x + Math.cos(a) * (ar.r + 0.3);
-    const az = ar.y + Math.sin(a) * (ar.r + 0.3);
-    pillar.position.set(ax, gh(ax, az) + hgt / 2 - 0.1, az);
-    pillar.rotation.z = ((i % 3) - 1) * 0.08;
-    pillar.castShadow = pillar.receiveShadow = true;
-    group.add(pillar);
+  if (ar) {
+    const darkStone = mat('#8a8274');
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      if (Math.abs(Math.cos(a)) > 0.85) continue; // entradas a oeste e a leste
+      const hgt = 1 + ((i * 7) % 5) * 0.5;
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, hgt, 6), darkStone);
+      const ax = ar.x + Math.cos(a) * (ar.r + 0.3);
+      const az = ar.y + Math.sin(a) * (ar.r + 0.3);
+      pillar.position.set(ax, gh(ax, az) + hgt / 2 - 0.1, az);
+      pillar.rotation.z = ((i % 3) - 1) * 0.08;
+      pillar.castShadow = pillar.receiveShadow = true;
+      group.add(pillar);
+    }
+    const arenaRune = new THREE.Mesh(
+      new THREE.RingGeometry(ar.r - 1.2, ar.r - 0.9, 10),
+      new THREE.MeshBasicMaterial({ color: '#4ab0ff', transparent: true, opacity: 0.25, side: THREE.DoubleSide }),
+    );
+    arenaRune.rotation.x = -Math.PI / 2;
+    arenaRune.position.set(ar.x, gh(ar.x, ar.y) + 0.04, ar.y);
+    group.add(arenaRune);
+    runes.push(arenaRune);
   }
-  const arenaRune = new THREE.Mesh(
-    new THREE.RingGeometry(ar.r - 1.2, ar.r - 0.9, 10),
-    new THREE.MeshBasicMaterial({ color: '#4ab0ff', transparent: true, opacity: 0.25, side: THREE.DoubleSide }),
-  );
-  arenaRune.rotation.x = -Math.PI / 2;
-  arenaRune.position.set(ar.x, gh(ar.x, ar.y) + 0.04, ar.y);
-  group.add(arenaRune);
-  runes.push(arenaRune);
 
   return {
     group,
@@ -391,10 +442,10 @@ export function buildWorld(map: GameMap): WorldView {
     update(t: number) {
       (water.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.22 + Math.sin(t * 1.3) * 0.05;
       water.position.y = waterLevel + Math.sin(t * 0.9) * 0.03;
-      rune.rotation.z = t * 0.15;
-      rune2.rotation.z = -t * 0.3;
+      runes.forEach((r, i) => (r.rotation.z = t * (i % 2 ? -0.3 : 0.15)));
       runeMat.opacity = 0.55 + Math.sin(t * 2) * 0.15;
-      brazier.intensity = 2.4 + Math.sin(t * 7) * 0.2 + Math.sin(t * 13) * 0.15;
+      for (const f of spinners) f.scale.set(1 + Math.sin(t * 11) * 0.12, 1 + Math.sin(t * 7) * 0.2, 1 + Math.cos(t * 9) * 0.12);
+      brazier.intensity = lightBase + Math.sin(t * 7) * 0.2 + Math.sin(t * 13) * 0.15;
     },
   };
 }

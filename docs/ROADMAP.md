@@ -24,7 +24,17 @@ Fonte de verdade do design: o GDD "Sistema de Aura, Psique e Maestria" (document
 - [x] Chefe com golpe pesado telegrafado; morte com penalidade por níveis e Eco
 - [x] Salvamento local com migração de saves antigos
 
+## v0.3 — segunda região
+
+- [x] Gerador de regiões genérico (relevo, penhascos, rampas, clareiras) com auditoria automática
+- [x] Planalto de Varn (tier 2): acampamento, Capitã Lys e o dilema do prisioneiro, floresta de outono
+- [x] Viagem entre regiões (passagem abre ao vencer o Guardião), exploração salva por região
+- [x] Lançador de Espinhos: mantém distância, avisa com linha no chão, projétil desviável
+- [x] Monstros: provocação, alerta à matilha, recuo imune quando inalcançáveis
+
 ## Próximo
+
+- Loot de equipamentos (armas e armaduras) e chance de perdê-los ao morrer
 
 - Sensação de jogo e equilíbrio: painel de debug para ajustar números ao vivo, impacto nos golpes (pausa no acerto, recuo), sons
 - Mais magias por afinidade e onde cada uma cai (tabela de drops por região)

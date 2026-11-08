@@ -229,7 +229,12 @@ export class Sfx {
           this.warn(ev.heavy);
           break;
         case 'telegraphArc':
+        case 'telegraphLine':
           this.warn(false);
+          break;
+        case 'shot':
+          this.noise(0.12, { freq: 2600, sweepTo: 900, q: 3, gain: 0.18 });
+          this.tone(500, 0.08, { type: 'square', to: 200, gain: 0.04 });
           break;
         case 'perfectTide':
           this.perfect();

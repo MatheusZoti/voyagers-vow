@@ -9,8 +9,8 @@ describe('Mapa', () => {
   it('início, ponte e arena são caminháveis', () => {
     const m = buildMap();
     expect(isBlocked(m, m.playerStart.x, m.playerStart.y)).toBe(false);
-    expect(isBlocked(m, m.bridge.x0 + 1, (m.bridge.y0 + m.bridge.y1) / 2)).toBe(false);
-    expect(isBlocked(m, m.arena.x, m.arena.y)).toBe(false);
+    expect(isBlocked(m, m.bridge!.x0 + 1, (m.bridge!.y0 + m.bridge!.y1) / 2)).toBe(false);
+    expect(isBlocked(m, m.arena!.x, m.arena!.y)).toBe(false);
   });
 });
 
@@ -41,7 +41,7 @@ describe('Simulação', () => {
 
   it('Maré deslocada para defesa no instante do golpe pesado gera Maré perfeita', () => {
     const sim = newSim();
-    sim.player.pos = { ...sim.map.arena };
+    sim.player.pos = { ...sim.map.arena! };
     sim.player.tide.value = 0.2;
     sim.player.tide.target = 0.2;
     sim.player.tide.lastDefenseShiftAt = sim.time;
@@ -51,7 +51,7 @@ describe('Simulação', () => {
     expect(sim.events.some((e) => e.t === 'perfectTide')).toBe(true);
 
     const sim2 = newSim();
-    sim2.player.pos = { ...sim2.map.arena };
+    sim2.player.pos = { ...sim2.map.arena! };
     const before2 = sim2.player.hp;
     sim2.damagePlayer(46, { heavy: true });
     expect(lostPerfect).toBeLessThan((before2 - sim2.player.hp) / 2);
@@ -84,7 +84,7 @@ describe('Simulação', () => {
   it('fugir do chefe com o juramento sela o Elo', () => {
     const sim = newSim();
     sim.c.elos[1]!.restrictions = ['neverFlee'];
-    sim.player.pos = { ...sim.map.arena };
+    sim.player.pos = { ...sim.map.arena! };
     sim.step(emptyInput());
     expect(sim.player.bossEngaged).toBe(true);
     sim.player.pos = { ...sim.map.playerStart };

@@ -43,12 +43,12 @@ describe('Relevo', () => {
     for (const s of m.spawns) expect(at(s.x + 0.5, s.y + 0.5), `spawn ${s.kind} ${s.x},${s.y}`).toBe(true);
     for (const n of m.npcs) expect(at(n.x, n.y), `npc ${n.id}`).toBe(true);
     for (const b of m.books) expect(at(b.x, b.y), `livro ${b.id}`).toBe(true);
-    expect(at(m.arena.x, m.arena.y), 'arena').toBe(true);
-    expect(at(m.bossSpawn.x, m.bossSpawn.y), 'chefe').toBe(true);
+    expect(at(m.arena!.x, m.arena!.y), 'arena').toBe(true);
+    expect(at(m.bossSpawn!.x, m.bossSpawn!.y), 'chefe').toBe(true);
   });
 
   it('o rio corre num desfiladeiro e a ponte fica acima dele', () => {
-    const b = m.bridge;
+    const b = m.bridge!;
     const mid = (b.y0 + b.y1 + 1) / 2;
     expect(floorAt(m, b.x0 + 2.5, mid)).toBeGreaterThan(0);
     let water = -1;

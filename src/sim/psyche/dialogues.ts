@@ -7,7 +7,7 @@ import type { TraitId, Traits, ValueId, Values } from './traits';
  * As direções (traços e valores) nunca aparecem para o jogador.
  */
 
-export type NpcId = 'oren' | 'kael' | 'traveler' | 'pilgrim' | 'herald' | 'huntress';
+export type NpcId = 'oren' | 'kael' | 'traveler' | 'pilgrim' | 'herald' | 'huntress' | 'lys';
 
 export interface NpcDef {
   id: NpcId;
@@ -23,6 +23,7 @@ export const NPCS: Record<NpcId, NpcDef> = {
   pilgrim: { id: 'pilgrim', name: 'Peregrina Ilsa', title: 'diante do altar', color: '#9a86c8' },
   herald: { id: 'herald', name: 'Arauto de Varn', title: 'mensageiro do Senhor do Vale', color: '#5a6a9a' },
   huntress: { id: 'huntress', name: 'Caçadora Mira', title: 'na mata', color: '#6a9a5a' },
+  lys: { id: 'lys', name: 'Capitã Lys', title: 'guarda do acampamento de Varn', color: '#c8843a' },
 };
 
 export interface DialogueOption {
@@ -43,7 +44,8 @@ export type DialogueId =
   | 'lostFight'
   | 'herald'
   | 'animal'
-  | 'bridge';
+  | 'bridge'
+  | 'prisoner';
 
 export interface DialogueDef {
   id: DialogueId;
@@ -154,6 +156,16 @@ export const DIALOGUES: Record<DialogueId, DialogueDef> = {
       o('Vamos cuidar dela.', 'Ela não vai esquecer. Elas nunca esquecem.', { empathy: 1 }, { nature: 1 }),
       o('Presa fácil. Eu fico com ela.', 'Rápido e limpo, pelo menos.', { greed: 1 }, { nature: -1 }),
       o('Antes, quero ver o que a feriu.', 'Boa pergunta. Pegadas grandes… vindas da ponte.', { curiosity: 1, courage: 1 }),
+    ],
+  },
+  prisoner: {
+    id: 'prisoner',
+    npc: 'lys',
+    text: 'Pegamos um batedor dos Lançadores rondando o acampamento. Ele se rendeu. A decisão é sua, forasteiro.',
+    options: [
+      o('Ele teria matado a gente. Que pague.', 'Feito. Os outros vão entender o recado.', { wrath: 1 }, { vengeance: 1, mercy: -1 }),
+      o('Soltem ele. Quem se rende merece viver.', 'Generoso. Espero que ele lembre disso.', { empathy: 1 }, { mercy: 1 }),
+      o('Primeiro quero saber o que ele viu.', 'Ele fala muito quando tem medo. Os ninhos ficam nas encostas.', { curiosity: 1, discipline: 1 }, { knowledge: 1 }),
     ],
   },
   bridge: {

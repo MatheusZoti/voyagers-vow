@@ -10,6 +10,7 @@ const IDLE_LINES: Record<NpcId, string> = {
   pilgrim: 'O altar guarda mais histórias do que moedas.',
   herald: 'O Senhor de Varn não esquece nomes.',
   huntress: 'As pegadas grandes continuam vindo da ponte.',
+  lys: 'Os Lançadores atiram de longe. Não fique parado na linha deles.',
 };
 
 /**

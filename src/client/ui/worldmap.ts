@@ -9,7 +9,7 @@ import { heightAt, Tile, type GameMap } from '../../sim/world/map';
  * arenito, rio azul no desfiladeiro, sombreamento de relevo com luz de noroeste e
  * curvas de nível discretas. A névoa cobre o que ainda não foi explorado.
  */
-const baseCache = new Map<number, HTMLCanvasElement>();
+const baseCache = new Map<string, HTMLCanvasElement>();
 
 const hex = (c: string): [number, number, number] => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
 const GRASS = hex('#a3ad55');
@@ -21,7 +21,8 @@ const ARENA = hex('#aaa290');
 const WATER = hex('#6f88c9');
 
 export function drawBase(map: GameMap, scale: number): HTMLCanvasElement {
-  const cached = baseCache.get(scale);
+  const key = `${map.id}:${scale}`;
+  const cached = baseCache.get(key);
   if (cached) return cached;
   const W = Math.round(map.w * scale);
   const H = Math.round(map.h * scale);
@@ -140,13 +141,31 @@ export function drawBase(map: GameMap, scale: number): HTMLCanvasElement {
   g.beginPath();
   g.arc(map.sanctuary.x * scale, map.sanctuary.y * scale, map.sanctuary.r * scale, 0, Math.PI * 2);
   g.stroke();
-  g.strokeStyle = 'rgba(170, 70, 50, 0.8)';
-  g.beginPath();
-  g.arc(map.arena.x * scale, map.arena.y * scale, map.arena.r * scale, 0, Math.PI * 2);
-  g.stroke();
+  if (map.arena) {
+    g.strokeStyle = 'rgba(170, 70, 50, 0.8)';
+    g.beginPath();
+    g.arc(map.arena.x * scale, map.arena.y * scale, map.arena.r * scale, 0, Math.PI * 2);
+    g.stroke();
+  }
+  // Saídas para outras regiões: seta na borda.
+  for (const e of map.exits) {
+    const cx = ((e.x0 + e.x1 + 1) / 2) * scale;
+    const cy = ((e.y0 + e.y1 + 1) / 2) * scale;
+    const dir = e.x0 > map.w / 2 ? 1 : -1;
+    g.fillStyle = 'rgba(255, 233, 160, 0.9)';
+    g.strokeStyle = 'rgba(40, 30, 12, 0.9)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(cx + dir * scale * 0.9, cy);
+    g.lineTo(cx - dir * scale * 0.3, cy - scale * 0.8);
+    g.lineTo(cx - dir * scale * 0.3, cy + scale * 0.8);
+    g.closePath();
+    g.fill();
+    g.stroke();
+  }
   g.setLineDash([]);
 
-  baseCache.set(scale, cv);
+  baseCache.set(key, cv);
   return cv;
 }
 

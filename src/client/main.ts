@@ -64,10 +64,21 @@ function hitstopFor(events: SimEvent[]): number {
   return h;
 }
 
-function startGame(c: Character): void {
+/** Cartão com o nome da região ao entrar nela. */
+function regionCard(name: string, tier: number): void {
+  const el = document.createElement('div');
+  el.className = 'region-card';
+  el.innerHTML = `<span>Tier ${tier}</span><b>${name}</b>`;
+  document.body.append(el);
+  setTimeout(() => el.classList.add('out'), 2200);
+  setTimeout(() => el.remove(), 3200);
+}
+
+function startGame(c: Character, arrive?: { x: number; y: number }): void {
   screenEl.className = 'screen';
   screenEl.innerHTML = '';
-  const sim = new Simulation(c);
+  const sim = new Simulation(c, 99, arrive);
+  regionCard(sim.map.name, sim.map.tier);
   const view = new GameView(gameEl, floatersEl, sim);
   const hud = new Hud(hudEl, sim);
   const panels = new Panels(screenEl, sim);
@@ -135,8 +146,8 @@ function startGame(c: Character): void {
     }
   };
 
-  hud.pushNotice('Bem-vindo ao Vale da Ponte. H mostra os controles.', 'info');
-  if (!c.dialogues.length) hud.pushNotice('Mestre Oren quer falar com você. Clique nele para conversar.', 'info');
+  if (c.region === 'vale') hud.pushNotice('Bem-vindo ao Vale da Ponte. H mostra os controles.', 'info');
+  if (c.region === 'vale' && !c.dialogues.length) hud.pushNotice('Mestre Oren quer falar com você. Clique nele para conversar.', 'info');
 
   let last = performance.now();
   let acc = 0;
@@ -144,6 +155,7 @@ function startGame(c: Character): void {
   let saveTimer = 0;
   let raf = 0;
   let running = true;
+  let travel: { to: 'vale' | 'varn'; arrive: { x: number; y: number } } | null = null;
   const frame = (now: number) => {
     if (!running) return;
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -165,7 +177,11 @@ function startGame(c: Character): void {
           view.handleEvents(events);
           hud.handleEvents(events);
           sfx.handle(events, c.affinity);
-          for (const ev of events) if (ev.t === 'dialogue') openDialogue(() => dialogue.show(ev.id));
+          for (const ev of events) {
+            if (ev.t === 'dialogue') openDialogue(() => dialogue.show(ev.id));
+            if (ev.t === 'travel') travel = { to: ev.to, arrive: ev.arrive };
+          }
+          if (travel) break;
           hitstop = Math.max(hitstop, hitstopFor(events));
           if (paused || hitstop > 0) break;
         }
@@ -180,6 +196,15 @@ function startGame(c: Character): void {
       view.render(paused ? 0 : dt);
     }
     hud.update();
+    if (travel) {
+      // Troca de região: salva, desmonta esta cena e monta a próxima.
+      const t = travel;
+      c.region = t.to;
+      stopGame?.();
+      stopGame = null;
+      startGame(c, t.arrive);
+      return;
+    }
     raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);

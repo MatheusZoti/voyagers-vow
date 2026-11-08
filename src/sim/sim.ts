@@ -54,8 +54,8 @@ import {
   type SpellId,
   type TechniqueId,
 } from './techniques';
-import { armorReduction, ENEMIES, SPELL_DROP_CHANCE, type AttackDef, type Echo, type Enemy, type EnemyKind, type SpellDrop, type Trap } from './world/entities';
-import { buildMap, inCircle, isBlocked, moveWithCollision, type GameMap } from './world/map';
+import { armorReduction, ENEMIES, SPELL_DROP_CHANCE, tierScale, type Projectile, type AttackDef, type Echo, type Enemy, type EnemyKind, type SpellDrop, type Trap } from './world/entities';
+import { buildRegion, exitAt, inCircle, isBlocked, moveWithCollision, REGION_NAMES, type GameMap, type RegionId } from './world/map';
 import { TUNING } from './tuning';
 
 export const TICK = 1 / 30;
@@ -124,6 +124,9 @@ export type SimEvent =
   | { t: 'mark'; id: number; color: string }
   | { t: 'learn'; spell: SpellId; x: number; y: number }
   | { t: 'dialogue'; id: DialogueId }
+  | { t: 'telegraphLine'; x: number; y: number; dir: Vec2; length: number; width: number; duration: number }
+  | { t: 'shot'; x: number; y: number }
+  | { t: 'travel'; to: RegionId; arrive: Vec2 }
   | { t: 'notice'; text: string; tone: NoticeTone };
 
 export interface PlayerState {
@@ -165,6 +168,10 @@ export class Simulation {
   traps: Trap[];
   echo: Echo | null = null;
   drops: SpellDrop[] = [];
+  /** projéteis inimigos em voo */
+  projectiles: Projectile[] = [];
+  private traveling = false;
+  private exitWarnAt = -99;
   events: SimEvent[] = [];
   mods: FlowMods;
   /** tempo desta sessão (s) */
@@ -184,11 +191,11 @@ export class Simulation {
   private exploredPosture: Posture | null = null;
   private bridgePrompted = false;
 
-  constructor(character: Character, seed = 99) {
+  constructor(character: Character, seed = 99, arrive?: Vec2) {
     this.c = character;
     this.rng = new Rng(seed);
-    this.map = buildMap();
-    const start = this.map.playerStart;
+    this.map = buildRegion(character.region ?? 'vale');
+    const start = arrive ?? this.map.playerStart;
     this.player = {
       pos: { ...start },
       facing: { x: 1, y: 0 },
@@ -217,11 +224,11 @@ export class Simulation {
       bossEngaged: false,
     };
     for (const s of this.map.spawns) this.spawn(s.kind, { x: s.x + 0.5, y: s.y + 0.5 });
-    this.spawn('boss', { ...this.map.bossSpawn });
+    if (this.map.bossSpawn) this.spawn('boss', { ...this.map.bossSpawn });
     this.traps = this.map.traps.map((p) => ({ pos: { ...p }, armed: true, revealed: false, rearmIn: 0 }));
     this.mods = computeFlowMods(character.psyche, 'veil');
     this.explored = new Uint8Array(this.map.w * this.map.h);
-    const saved = character.explored?.[REGION] ?? '';
+    const saved = character.explored?.[this.map.id] ?? '';
     for (let i = 0; i < saved.length && i < this.explored.length; i++) this.explored[i] = saved.charCodeAt(i) === 49 ? 1 : 0;
     this.explore();
     for (const m of Object.values(character.mastery)) m.sessionUses = 0;
@@ -280,7 +287,7 @@ export class Simulation {
     if (changed) {
       let s = '';
       for (let i = 0; i < this.explored.length; i++) s += this.explored[i] ? '1' : '0';
-      this.c.explored[REGION] = s;
+      this.c.explored[this.map.id] = s;
     }
   }
 
@@ -421,6 +428,7 @@ export class Simulation {
     for (const fx of this.pending.filter((x) => x.at <= this.time)) fx.run();
     this.pending = this.pending.filter((x) => x.at > this.time);
     this.updateEnemies(dt);
+    this.updateProjectiles(dt);
     this.updateTraps(dt);
     this.updateProgress(dt);
 
@@ -476,7 +484,7 @@ export class Simulation {
     const p = this.player;
     const elitesNear = this.enemies.filter((e) => e.def.elite && e.state !== 'dead' && e.aggro && dist(e.pos, p.pos) < 12).length;
     return riskFactor({
-      enemyLevelDiff: target ? target.def.level - this.c.level : 0,
+      enemyLevelDiff: target ? target.def.level + tierScale(this.map.tier).level - this.c.level : 0,
       hpFrac: p.hp / this.maxHp(),
       elitesNear,
       trivial: target ? false : !this.inCombat(),
@@ -628,6 +636,7 @@ export class Simulation {
     // Evento da ponte.
     const br = this.map.bridge;
     if (
+      br &&
       !this.bridgePrompted &&
       !c.dialogues.includes('bridge') &&
       p.pos.x >= br.x0 - 1 &&
@@ -652,9 +661,26 @@ export class Simulation {
     }
 
     // Arena do chefe e o juramento de nunca fugir.
+    // Saídas para outras regiões.
+    const exit = exitAt(this.map, p.pos);
+    if (exit && !this.traveling) {
+      if (exit.needsBoss && !c.bossDefeated) {
+        // Bloqueado: empurra de volta e avisa.
+        moveWithCollision(this.map, p.pos, exit.x0 > this.map.w / 2 ? -0.6 : 0.6, 0, 0.35);
+        if (this.time - this.exitWarnAt > 3) {
+          this.exitWarnAt = this.time;
+          this.notice('A passagem está selada. O Guardião da Ponte ainda vigia o vale.', 'warn');
+        }
+      } else {
+        this.traveling = true;
+        this.events.push({ t: 'travel', to: exit.to, arrive: { ...exit.arrive } });
+        this.notice(`Rumo a ${REGION_NAMES[exit.to]}…`, 'info');
+      }
+    }
+
     const boss = this.boss();
     const arena = this.map.arena;
-    if (boss && boss.state !== 'dead') {
+    if (boss && arena && boss.state !== 'dead') {
       if (!p.bossEngaged && inCircle(arena, p.pos, -1)) {
         p.bossEngaged = true;
         boss.aggro = true;
@@ -1072,7 +1098,7 @@ export class Simulation {
       this.notice(`${e.def.name} deixou cair um grimório.`, 'good');
     }
     p.needs.fight = clamp(p.needs.fight + 0.12, 0, 1);
-    this.gainXp(Math.round(e.def.xp * TUNING.xp), true);
+    this.gainXp(Math.round(e.def.xp * TUNING.xp * tierScale(this.map.tier).xp), true);
     p.killTimes = p.killTimes.filter((t) => this.time - t < 6);
     p.killTimes.push(this.time);
     if (e.def.boss) {
@@ -1180,6 +1206,7 @@ export class Simulation {
 
   private respawn(): void {
     const p = this.player;
+    this.projectiles = [];
     p.dead = false;
     p.pos = { ...this.map.playerStart };
     p.hp = this.maxHp();
@@ -1204,8 +1231,9 @@ export class Simulation {
       pos: { ...pos },
       home: { ...pos },
       facing: { x: -1, y: 0 },
-      hp: def.hp * TUNING.enemyHp,
-      maxHp: def.hp * TUNING.enemyHp,
+      hp: def.hp * TUNING.enemyHp * tierScale(this.map.tier).hp,
+      maxHp: def.hp * TUNING.enemyHp * tierScale(this.map.tier).hp,
+      power: tierScale(this.map.tier).power,
       windupTotal: 0,
       knock: { x: 0, y: 0 },
       state: 'idle',
@@ -1233,7 +1261,7 @@ export class Simulation {
   }
 
   private resetEnemy(e: Enemy): void {
-    e.maxHp = e.def.hp * TUNING.enemyHp;
+    e.maxHp = e.def.hp * TUNING.enemyHp * tierScale(this.map.tier).hp;
     e.hp = e.maxHp;
     e.aggro = false;
     e.state = 'return';
@@ -1277,7 +1305,7 @@ export class Simulation {
       if (e.state === 'dead') {
         e.respawnIn -= dt;
         if (e.respawnIn <= 0 && dist(e.home, p.pos) > 14) {
-          const maxHp = e.def.hp * TUNING.enemyHp;
+          const maxHp = e.def.hp * TUNING.enemyHp * tierScale(this.map.tier).hp;
           Object.assign(e, { hp: maxHp, maxHp, state: 'idle', pos: { ...e.home }, aggro: false, signatureHits: 0, phase: 1 });
         }
         continue;
@@ -1389,8 +1417,23 @@ export class Simulation {
               this.events.push({ t: 'telegraph', x: e.attackTarget.x, y: e.attackTarget.y, r: atk.radius, duration: windup, heavy: atk.heavy });
             else if (atk.type === 'charge')
               this.events.push({ t: 'telegraph', x: e.attackTarget.x, y: e.attackTarget.y, r: atk.radius, duration: windup, heavy: false });
+            else if (atk.type === 'shot')
+              this.events.push({ t: 'telegraphLine', x: e.pos.x, y: e.pos.y, dir: { ...e.facing }, length: atk.range, width: 0.7, duration: windup });
             else if (e.def.elite)
               this.events.push({ t: 'telegraphArc', x: e.pos.x, y: e.pos.y, dir: { ...e.facing }, range: atk.range + e.def.radius * 0.5, arc: (140 * Math.PI) / 180, duration: windup });
+          } else if (e.kind === 'slinger') {
+            // Atirador: mantém 5–8 m, recua se você chega perto, aproxima-se se não tem linha de tiro.
+            e.facing = normalize(toPlayer);
+            const lineOfFire = this.clearShot(e.pos, p.pos);
+            if (d < 4.5 && lineOfFire) {
+              // Recua direto para longe (desliza em paredes); encurralado, tenta de lado.
+              const away = normalize({ x: -toPlayer.x, y: -toPlayer.y });
+              const before = { ...e.pos };
+              this.moveEnemy(e, away, e.def.speed * 1.05 * dt);
+              if (dist(before, e.pos) < 0.01) this.moveEnemy(e, { x: -away.y, y: away.x }, e.def.speed * dt);
+            } else if (d > 8 || !lineOfFire) {
+              this.moveEnemy(e, this.pathDir(e.pos, p.pos), e.def.speed * dt);
+            }
           } else if (d > e.def.radius + 0.9) {
             e.facing = normalize(toPlayer);
             this.moveEnemy(e, this.pathDir(e.pos, p.pos), e.def.speed * speedMul * dt);
@@ -1407,7 +1450,7 @@ export class Simulation {
           const step = 13 * dt;
           this.moveEnemy(e, e.facing, step);
           if (!p.dead && dist(e.pos, p.pos) < e.def.radius + 0.6 && e.attack) {
-            this.damagePlayer(e.attack.damage, { heavy: false, source: e });
+            this.damagePlayer(e.attack.damage * e.power, { heavy: false, source: e });
             e.timer = 0;
           }
           if (e.timer <= 0) {
@@ -1426,6 +1469,41 @@ export class Simulation {
       }
     }
     this.separateEnemies();
+  }
+
+  /** Projéteis voam em linha reta; árvores, rochas e penhascos bloqueiam (a água não). */
+  private updateProjectiles(dt: number): void {
+    const p = this.player;
+    this.projectiles = this.projectiles.filter((pr) => {
+      const step = pr.speed * dt;
+      const n = Math.ceil(step / 0.25);
+      for (let i = 0; i < n; i++) {
+        pr.pos.x += (pr.dir.x * step) / n;
+        pr.pos.y += (pr.dir.y * step) / n;
+        pr.left -= step / n;
+        const t = this.map.tiles[Math.floor(pr.pos.y) * this.map.w + Math.floor(pr.pos.x)];
+        if (pr.left <= 0 || t === undefined || ((t === 1 || t === 2 || t === 8) && true)) return false;
+        if (!p.dead && dist(pr.pos, p.pos) < 0.6) {
+          const owner = this.enemies.find((e) => e.id === pr.owner);
+          this.damagePlayer(pr.damage, { heavy: false, source: owner });
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  /** Linha de tiro livre (para quem atira): árvores, rochas e penhascos bloqueiam. */
+  private clearShot(a: Vec2, b: Vec2): boolean {
+    const d = dist(a, b);
+    const n = Math.ceil(d / 0.4);
+    for (let i = 1; i < n; i++) {
+      const x = a.x + ((b.x - a.x) * i) / n;
+      const y = a.y + ((b.y - a.y) * i) / n;
+      const t = this.map.tiles[Math.floor(y) * this.map.w + Math.floor(x)];
+      if (t === 1 || t === 2 || t === 8) return false;
+    }
+    return true;
   }
 
   /** Começa uma perseguição do zero. */
@@ -1525,6 +1603,8 @@ export class Simulation {
     if (slam && this.rng.chance(e.def.boss ? 0.5 : 0.35)) return this.arm(e, slam);
     const charge = ready.find((a) => a.type === 'charge' && d > 5 && d < a.range);
     if (charge) return this.arm(e, charge);
+    const shot = ready.find((a) => a.type === 'shot' && d < a.range && d > 2.5 && this.clearShot(e.pos, this.player.pos));
+    if (shot) return this.arm(e, shot);
     const m = ready.find((a) => a.type === 'melee' && d < a.range + e.def.radius * 0.5);
     if (m) return this.arm(e, m);
     return null;
@@ -1544,15 +1624,31 @@ export class Simulation {
       e.timer = 0.6;
       return;
     }
+    if (a.type === 'shot') {
+      // Dispara na direção travada no começo do preparo: quem se moveu de lado escapa.
+      this.projectiles.push({
+        id: this.nextId++,
+        pos: { x: e.pos.x + e.facing.x * 0.6, y: e.pos.y + e.facing.y * 0.6 },
+        dir: { ...e.facing },
+        speed: 15,
+        left: a.range + 1,
+        damage: a.damage * e.power,
+        owner: e.id,
+      });
+      this.events.push({ t: 'shot', x: e.pos.x, y: e.pos.y });
+      e.state = 'recover';
+      e.timer = a.recover;
+      return;
+    }
     if (a.type === 'slam') {
       this.events.push({ t: 'quake', x: e.attackTarget.x, y: e.attackTarget.y, r: a.radius });
-      if (!p.dead && dist(p.pos, e.attackTarget) <= a.radius + 0.3) this.damagePlayer(a.damage, { heavy: a.heavy, source: e });
+      if (!p.dead && dist(p.pos, e.attackTarget) <= a.radius + 0.3) this.damagePlayer(a.damage * e.power, { heavy: a.heavy, source: e });
     } else {
       this.events.push({ t: 'enemySwing', id: e.id, dir: { ...e.facing }, range: a.range });
       const to = { x: p.pos.x - e.pos.x, y: p.pos.y - e.pos.y };
       const d = Math.hypot(to.x, to.y);
       if (!p.dead && d <= a.range + 0.35 + e.def.radius * 0.5 && angleBetween(to, e.facing) < (70 * Math.PI) / 180)
-        this.damagePlayer(a.damage, { heavy: a.heavy, source: e });
+        this.damagePlayer(a.damage * e.power, { heavy: a.heavy, source: e });
     }
     e.state = 'recover';
     e.timer = a.recover;
@@ -1643,7 +1739,8 @@ export class Simulation {
     step *= TUNING.enemySpeed;
     moveWithCollision(this.map, e.pos, dir.x * step, dir.y * step, Math.min(0.45, e.def.radius * 0.6));
     // Inimigos não entram no santuário; o chefe não sai da arena.
-    if (inCircle(this.map.sanctuary, e.pos, 1) || (e.def.boss && !inCircle(this.map.arena, e.pos, 0))) e.pos = before;
+    const arena = this.map.arena;
+    if (inCircle(this.map.sanctuary, e.pos, 1) || (e.def.boss && arena && !inCircle(arena, e.pos, 0))) e.pos = before;
   }
 
   private separateEnemies(): void {

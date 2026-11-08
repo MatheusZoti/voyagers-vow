@@ -14,6 +14,7 @@ import {
   buildBrute,
   buildGrunt,
   buildPlayer,
+  buildSlinger,
   buildStalker,
   flash,
   mat,
@@ -76,6 +77,9 @@ export class GameView {
   private npcs: Array<{ id: NpcId; rig: Rig; label: HTMLDivElement }> = [];
   private books: Array<{ id: string; group: THREE.Group; glow: THREE.Object3D }> = [];
   private dropMeshes = new Map<number, THREE.Group>();
+  private projMeshes = new Map<number, THREE.Mesh>();
+  private thornGeo = new THREE.ConeGeometry(0.09, 0.7, 4);
+  private thornMat = mat('#f0dcae', { emissive: '#ff8a3a', emissiveIntensity: 0.6 });
   private hoverNpc: NpcId | null = null;
   private playerHurt = 0;
 
@@ -272,7 +276,15 @@ export class GameView {
     let v = this.enemies.get(e.id);
     if (v) return v;
     const rig =
-      e.kind === 'grunt' ? buildGrunt() : e.kind === 'stalker' ? buildStalker() : e.kind === 'brute' ? buildBrute() : buildBoss();
+      e.kind === 'grunt'
+        ? buildGrunt()
+        : e.kind === 'slinger'
+          ? buildSlinger()
+          : e.kind === 'stalker'
+            ? buildStalker()
+            : e.kind === 'brute'
+              ? buildBrute()
+              : buildBoss();
     rememberEmissive(rig);
     const bar = new THREE.Group();
     const bg = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.12), new THREE.MeshBasicMaterial({ color: '#1a1010', depthTest: false, transparent: true, opacity: 0.8 }));
@@ -326,6 +338,9 @@ export class GameView {
             this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range, '#fff4d0', (150 * Math.PI) / 180);
             this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range * 0.7, POSTURES[sim.player.posture].color, (130 * Math.PI) / 180);
           } else this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range, POSTURES[sim.player.posture].color);
+          break;
+        case 'telegraphLine':
+          this.fx.lineTelegraph({ x: ev.x, y: ev.y }, ev.dir, ev.length, ev.width, ev.duration);
           break;
         case 'telegraphArc':
           this.fx.arcTelegraph({ x: ev.x, y: ev.y }, ev.dir, ev.range, ev.arc, ev.duration);
@@ -628,6 +643,27 @@ export class GameView {
         this.dropMeshes.delete(id);
       }
     }
+    // Espinhos em voo.
+    for (const pr of sim.projectiles) {
+      let m = this.projMeshes.get(pr.id);
+      if (!m) {
+        m = new THREE.Mesh(this.thornGeo, this.thornMat);
+        m.castShadow = true;
+        this.scene.add(m);
+        this.projMeshes.set(pr.id, m);
+      }
+      m.position.set(pr.pos.x, this.gh(pr.pos.x, pr.pos.y) + 1.1, pr.pos.y);
+      // Cone aponta no eixo Y: deita na direção do voo.
+      m.rotation.set(Math.PI / 2, Math.atan2(pr.dir.x, pr.dir.y), 0, 'YXZ');
+      m.visible = sim.isVisible(pr.pos);
+    }
+    for (const [id, m] of this.projMeshes) {
+      if (!sim.projectiles.some((p) => p.id === id)) {
+        this.scene.remove(m);
+        this.projMeshes.delete(id);
+      }
+    }
+
     // Estados dos inimigos: preso por Correntes, sob Discórdia.
     for (const e of sim.enemies) {
       const v = this.enemies.get(e.id);

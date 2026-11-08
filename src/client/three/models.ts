@@ -122,6 +122,28 @@ export function buildGrunt(): Rig {
   return { root, body, legL, legR, armL, armR, head, materials: collect(root), height: 1.4, walk: 0 };
 }
 
+/** Lançador de Espinhos: Carniçal ferrugem, corcunda espinhosa e uma funda no braço. */
+export function buildSlinger(): Rig {
+  const rig = buildGrunt();
+  const rust = mat('#9a5a32');
+  const thorn = mat('#e8d4a8');
+  for (const m of rig.materials) {
+    if (m.color.getHexString() === '7d8f4e') m.color.set('#8f6a3e');
+  }
+  for (let i = 0; i < 5; i++) {
+    const spike = mesh(new THREE.ConeGeometry(0.06, 0.4, 4), thorn, -0.2 + i * 0.1, 1.1 + (i % 2) * 0.08, -0.25);
+    spike.rotation.x = -0.7;
+    rig.body.add(spike);
+  }
+  const pouch = mesh(new THREE.DodecahedronGeometry(0.16, 0), rust, 0, -0.75, 0.05);
+  rig.armR.add(pouch);
+  const quiver = mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.55, 5), rust, 0.18, 1.0, -0.3);
+  quiver.rotation.x = 0.4;
+  rig.body.add(quiver);
+  rig.materials = collect(rig.root);
+  return rig;
+}
+
 export function buildStalker(): Rig {
   const root = new THREE.Group();
   const body = new THREE.Group();

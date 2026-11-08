@@ -3,6 +3,7 @@ import { newSlot, type EloSlot } from './elos';
 import { newMastery, type MasteryRecord } from './mastery';
 import { clamp, Rng } from './math';
 import type { DialogueId } from './psyche/dialogues';
+import type { RegionId } from './world/map';
 import { createPsyche, type PsycheState } from './psyche/psyche';
 import { neutralTraits, neutralValues, TRAIT_IDS } from './psyche/traits';
 import { isSpell, MASTERY_IDS, sanitizeSlot, STARTER_SPELLS, type MasteryId, type SpellId } from './techniques';
@@ -15,6 +16,8 @@ export interface Character {
   psyche: PsycheState;
   /** escolhida pelo jogador na criação */
   affinity: Affinity;
+  /** região onde o personagem está */
+  region: RegionId;
   level: number;
   xp: number;
   mastery: Record<MasteryId, MasteryRecord>;
@@ -73,6 +76,7 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
     seed,
     psyche: createPsyche(traits, neutralValues()),
     affinity,
+    region: 'vale',
     level: 1,
     xp: 0,
     mastery: Object.fromEntries(MASTERY_IDS.map((id) => [id, newMastery()])) as Record<MasteryId, MasteryRecord>,
@@ -104,6 +108,7 @@ export function migrateCharacter(raw: unknown): Character | null {
   const c = raw as Record<string, unknown> & Partial<Character>;
   if (c.version === 2) {
     if (!c.explored) c.explored = {};
+    if (!c.region) c.region = 'vale';
     ensureMastery(c as Character);
     return c as Character;
   }
@@ -132,6 +137,7 @@ export function migrateCharacter(raw: unknown): Character | null {
     ...old,
     version: 2,
     affinity,
+    region: 'vale',
     knownSpells: [...known],
     dialogues: [],
     booksRead: [],

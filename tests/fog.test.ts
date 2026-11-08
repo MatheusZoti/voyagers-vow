@@ -7,14 +7,14 @@ describe('Névoa de guerra', () => {
     const c = createCharacter('Teste', 'vigor', 3);
     const sim = new Simulation(c, 5);
     expect(sim.isExplored(sim.map.playerStart.x, sim.map.playerStart.y)).toBe(true);
-    expect(sim.isExplored(sim.map.arena.x, sim.map.arena.y)).toBe(false);
-    sim.player.pos = { ...sim.map.arena };
+    expect(sim.isExplored(sim.map.arena!.x, sim.map.arena!.y)).toBe(false);
+    sim.player.pos = { ...sim.map.arena! };
     sim.step(emptyInput());
-    expect(sim.isExplored(sim.map.arena.x, sim.map.arena.y)).toBe(true);
+    expect(sim.isExplored(sim.map.arena!.x, sim.map.arena!.y)).toBe(true);
     // Persistência: um novo Simulation com o mesmo personagem lembra.
     expect(c.explored[REGION]).toBeTruthy();
     const again = new Simulation(c, 5);
-    expect(again.isExplored(sim.map.arena.x, sim.map.arena.y)).toBe(true);
+    expect(again.isExplored(sim.map.arena!.x, sim.map.arena!.y)).toBe(true);
   });
 
   it('o Olhar enxerga mais longe', () => {

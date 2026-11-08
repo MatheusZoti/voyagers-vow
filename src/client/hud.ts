@@ -250,7 +250,7 @@ export class Hud {
       let hint = '';
       if (p.dead) hint = 'Você caiu… renascendo no santuário.';
       else if (sim.meditating()) hint = c.elos.some((e) => e.sealed) ? 'Cumprindo a penitência…' : 'Meditando. O estresse cai e a Calma chega.';
-      else if (sim.inSanctuary()) hint = 'Santuário: <b>2</b> Silêncio para meditar · <b>K</b> Grade de Elos · <b>C</b> Ficha';
+      else if (sim.inSanctuary()) hint = `${sim.map.safeName}: <b>2</b> Silêncio para meditar · <b>K</b> Grade de Elos · <b>C</b> Ficha`;
       this.hint.innerHTML = hint;
       this.hint.classList.toggle('show', !!hint);
     }

@@ -78,7 +78,7 @@ export class DebugPanel {
         <button data-a="level">+1 nível</button>
         <button data-a="spells">Todas as magias</button>
         <button data-a="boss">Ir ao chefe</button>
-        <button data-a="home">Santuário</button>
+        <button data-a="home">Lugar seguro</button>
         <button data-a="calm">Zerar estresse</button>
       </div>
       <div class="dbg-actions">
@@ -113,9 +113,11 @@ export class DebugPanel {
         case 'spells':
           sim.c.knownSpells = [...SPELL_IDS];
           return;
-        case 'boss':
-          p.pos = { x: sim.map.arena.x - sim.map.arena.r - 3, y: sim.map.arena.y };
+        case 'boss': {
+          const ar = sim.map.arena;
+          if (ar) p.pos = { x: ar.x - ar.r - 3, y: ar.y };
           return;
+        }
         case 'home':
           p.pos = { ...sim.map.playerStart };
           return;

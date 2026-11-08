@@ -170,7 +170,7 @@ describe('Personalidade por diálogos e ações', () => {
 
   it('a ponte dispara o evento de diálogo uma vez', () => {
     const sim = new Simulation(createCharacter('Teste', 'vigor', 3), 5);
-    const b = sim.map.bridge;
+    const b = sim.map.bridge!;
     sim.player.pos = { x: b.x0 + 1, y: (b.y0 + b.y1) / 2 };
     const ev1 = sim.step(emptyInput());
     const ev2 = sim.step(emptyInput());

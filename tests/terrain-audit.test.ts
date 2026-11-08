@@ -42,7 +42,7 @@ describe('Auditoria do terreno', () => {
   });
 
   it('a ponte é contínua de margem a margem, sobre o desfiladeiro', () => {
-    const b = m.bridge;
+    const b = m.bridge!;
     for (let y = b.y0; y <= b.y1; y++) {
       expect(walk(b.x0 - 1, y) || walk(b.x0 - 1, y + 1) || walk(b.x0 - 1, y - 1), `margem oeste ${y}`).toBe(true);
       for (let x = b.x0; x <= b.x1; x++) expect(floorAt(m, x + 0.5, y + 0.5)).toBe(BRIDGE_DECK);
