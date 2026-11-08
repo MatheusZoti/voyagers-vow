@@ -8,7 +8,7 @@ import {
   xpToNext,
   type Character,
 } from './character';
-import { equipError, evaluateSlot, PACTS, type EffectiveInfo, type EloSlot } from './elos';
+import { equipError, evaluateSlot, PACTS, trimMods, type EffectiveInfo, type EloSlot } from './elos';
 import { AFFINITY_COLORS, AFFINITY_NAMES } from './flow/affinity';
 import {
   BASE_FLOW_MAX,
@@ -61,6 +61,12 @@ import { TUNING } from './tuning';
 export const TICK = 1 / 30;
 /** Chave da região atual (para salvar a exploração). */
 export const REGION = 'vale';
+/** Quanto tempo um inimigo atingido sabe onde você está. */
+export const PROVOKE_S = 8;
+/** Raio em que a matilha é avisada. */
+export const PACK_RADIUS = 7;
+/** Distância máxima de casa antes de o inimigo desistir e recuar. */
+export const LEASH = 26;
 
 export interface PlayerInput {
   /** direção de movimento no plano do mundo (não precisa ser normalizada) */
@@ -89,6 +95,8 @@ export type SimEvent =
       crit?: boolean;
       pierce?: boolean;
       immune?: boolean;
+      /** o inimigo está recuando (imune) */
+      evade?: boolean;
       /** golpe pesado (finalizador do combo, magia): pausa maior no acerto */
       big?: boolean;
     }
@@ -224,6 +232,9 @@ export class Simulation {
         slot.technique = null;
         sanitizeSlot(slot);
       }
+      // Custos de forja podem mudar entre versões: remove o que passou do orçamento.
+      const info = this.slotInfo(slot);
+      if (info && slot.technique) trimMods(slot, info, modifierDiscount(character.mastery[slot.technique as MasteryId]));
     }
   }
 
@@ -764,6 +775,7 @@ export class Simulation {
 
   /** Acerto de magia num inimigo, respeitando "só contra elites" e a forja. Retorna se valeu. */
   private spellHit(spell: SpellDef, slot: EloSlot, e: Enemy, dmg: number, pierce = false): boolean {
+    if (!this.isVisible(e.pos)) return false;
     if (slot.restrictions.includes('eliteOnly') && !e.def.elite) {
       this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: 0, target: 'enemy', id: e.id, immune: true });
       return false;
@@ -819,7 +831,8 @@ export class Simulation {
 
   private castSpell(spell: SpellDef, slot: EloSlot, info: EffectiveInfo): void {
     const p = this.player;
-    const range = spell.range * (1 + 0.25 * (slot.mods.range ?? 0));
+    // Alcance: +12% por ponto, nunca além do raio de visão (não se atira no escuro).
+    const range = Math.min(spell.range * (1 + 0.12 * (slot.mods.range ?? 0)), this.visionRadius());
     const radius = spell.radius * (1 + 0.3 * (slot.mods.area ?? 0));
     const dmg = this.spellDamage(spell, slot, info);
     const color = AFFINITY_COLORS[spell.affinity];
@@ -846,6 +859,7 @@ export class Simulation {
         const dir = { ...p.facing };
         let len = 0;
         while (len < range && !isBlocked(this.map, from.x + dir.x * (len + 0.3), from.y + dir.y * (len + 0.3))) len += 0.3;
+        len = Math.min(len, range);
         const to = { x: from.x + dir.x * len, y: from.y + dir.y * len };
         this.events.push({ t: 'beam', from, to, width: radius, color: beyond ? '#ffd84a' : color });
         for (const e of this.live()) {
@@ -982,6 +996,15 @@ export class Simulation {
 
   private hitEnemy(e: Enemy, raw: number, opts: { ignoreArmor: boolean; source: 'basic' | 'spell'; knock?: number; big?: boolean }): void {
     const p = this.player;
+    if (e.evading) {
+      this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: 0, target: 'enemy', id: e.id, immune: true, evade: true });
+      return;
+    }
+    if (!e.def.boss) {
+      if (e.state === 'idle' || e.state === 'return') this.startChase(e);
+      e.provokedUntil = this.time + PROVOKE_S;
+      this.alertPack(e, PROVOKE_S * 0.6);
+    }
     let dmg = raw * TUNING.playerDamage;
     // Recuo: empurra para longe do jogador (elites resistem, o chefe não se move).
     if (opts.knock && !e.def.boss) {
@@ -1200,6 +1223,10 @@ export class Simulation {
       hurtAgo: 99,
       rootUntil: -1,
       charmedUntil: -1,
+      provokedUntil: -1,
+      evading: false,
+      stuck: 0,
+      bestDist: Infinity,
     };
     this.enemies.push(e);
     return e;
@@ -1223,6 +1250,9 @@ export class Simulation {
     if (p.dead || this.inSanctuary()) return false;
     const d = dist(e.pos, p.pos);
     if (e.def.boss) return p.bossEngaged;
+    if (e.evading) return false;
+    // Atingido: sabe de onde veio o golpe e vem atrás, mesmo de longe.
+    if (this.time < e.provokedUntil) return true;
     if (p.posture === 'silence' && !e.def.elite) {
       // Quem já te viu não é enganado: só te perde se você se afastar bastante.
       if (e.aggro) return d < e.def.aggroRadius * 1.5;
@@ -1298,21 +1328,52 @@ export class Simulation {
 
       switch (e.state) {
         case 'idle':
-          if (sees) e.state = 'chase';
+          if (sees) {
+            this.startChase(e);
+            this.alertPack(e, 5);
+          }
           break;
         case 'return': {
           const back = { x: e.home.x - e.pos.x, y: e.home.y - e.pos.y };
           if (Math.hypot(back.x, back.y) < 0.5) {
             e.state = 'idle';
             e.hp = e.maxHp;
-          } else this.moveEnemy(e, this.pathDir(e.pos, e.home), e.def.speed * 1.3 * dt);
-          if (sees && !e.def.boss) e.state = 'chase';
+            e.evading = false;
+          } else this.moveEnemy(e, this.pathDir(e.pos, e.home), e.def.speed * (e.evading ? 1.8 : 1.3) * dt);
+          // Recuando cura aos poucos; quem está recuando não volta a perseguir até chegar.
+          if (e.evading) {
+            e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.25 * dt);
+            e.stuck += dt;
+            // Salvaguarda: se não acha o caminho de casa, reaparece lá.
+            if (e.stuck > 12) {
+              e.pos = { ...e.home };
+              e.knock = { x: 0, y: 0 };
+            }
+          }
+          else if (sees && !e.def.boss) this.startChase(e);
           break;
         }
         case 'chase': {
           if (!sees || p.dead) {
             e.aggro = false;
             e.state = 'return';
+            break;
+          }
+          // Coleira: puxado longe demais de casa, desiste e recua.
+          if (!e.def.boss && dist(e.pos, e.home) > LEASH) {
+            this.evade(e);
+            break;
+          }
+          // Sem caminho até o alvo (outro lado do desfiladeiro, alto de um penhasco) ou sem
+          // conseguir se aproximar: recua em vez de ficar parado levando tiro.
+          if (d < e.bestDist - 0.4) {
+            e.bestDist = d;
+            e.stuck = 0;
+          } else if (d > e.def.radius + 2.5) {
+            e.stuck += dt * (this.pathReachable(e.pos, p.pos) ? 1 : 2.5);
+          }
+          if (!e.def.boss && e.stuck > 4) {
+            this.evade(e);
             break;
           }
           const atk = this.chooseAttack(e, d);
@@ -1365,6 +1426,44 @@ export class Simulation {
       }
     }
     this.separateEnemies();
+  }
+
+  /** Começa uma perseguição do zero. */
+  private startChase(e: Enemy): void {
+    e.state = 'chase';
+    e.aggro = true;
+    e.stuck = 0;
+    e.bestDist = dist(e.pos, this.player.pos);
+  }
+
+  /** Avisa os vizinhos: a matilha vem junto. */
+  private alertPack(e: Enemy, seconds: number): void {
+    for (const o of this.enemies) {
+      if (o === e || o.state === 'dead' || o.def.boss || o.evading || this.time < o.charmedUntil) continue;
+      if (dist(o.pos, e.pos) > PACK_RADIUS) continue;
+      o.provokedUntil = Math.max(o.provokedUntil, this.time + seconds);
+      if (o.state === 'idle' || o.state === 'return') this.startChase(o);
+    }
+  }
+
+  /** Desiste da luta: recua para casa imune e volta com a vida cheia. */
+  private evade(e: Enemy): void {
+    e.evading = true;
+    e.aggro = false;
+    e.provokedUntil = -1;
+    e.stuck = 0;
+    e.bestDist = Infinity;
+    e.state = 'return';
+    this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: 0, target: 'enemy', id: e.id, immune: true, evade: true });
+  }
+
+  /** Existe caminho a pé de um ponto ao outro? */
+  pathReachable(from: Vec2, to: Vec2): boolean {
+    if (this.clearLine(from, to)) return true;
+    const field = this.distField(to);
+    const m = this.map;
+    const i = Math.max(0, Math.min(m.h - 1, Math.floor(from.y))) * m.w + Math.max(0, Math.min(m.w - 1, Math.floor(from.x)));
+    return field[i]! >= 0;
   }
 
   /** Marca da Discórdia: o inimigo ataca o aliado mais próximo. */

@@ -160,6 +160,14 @@ export interface Enemy {
   windupTotal: number;
   /** recuo pendente ao ser atingido (m/s, decai rápido) */
   knock: { x: number; y: number };
+  /** atingido: sabe onde você está até este tempo, mesmo de longe */
+  provokedUntil: number;
+  /** recuando (imune) para casa: alvo inalcançável ou puxado longe demais */
+  evading: boolean;
+  /** tempo sem conseguir se aproximar do alvo */
+  stuck: number;
+  /** menor distância ao alvo nesta perseguição */
+  bestDist: number;
   /** preso por Correntes até este tempo (pode atacar, não anda) */
   rootUntil: number;
   /** sob a Marca da Discórdia até este tempo (luta contra os aliados) */

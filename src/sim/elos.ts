@@ -134,7 +134,7 @@ export interface ModDef {
 export const MODS: Record<ModId, ModDef> = {
   damage: { name: 'Dano', cost: 1, max: 6, desc: '+20% de dano por ponto' },
   area: { name: 'Área', cost: 2, max: 3, desc: '+30% de raio do impacto' },
-  range: { name: 'Alcance', cost: 1, max: 3, desc: '+25% de alcance' },
+  range: { name: 'Alcance', cost: 2, max: 3, desc: '+12% de alcance (nunca além do seu raio de visão)' },
   cadence: { name: 'Cadência', cost: 2, max: 3, desc: '-12% de recarga' },
   restore: { name: 'Restaurar', cost: 3, max: 1, desc: 'Cura 6% da vida máxima ao acertar' },
   stun: { name: 'Abalo', cost: 3, max: 1, desc: 'Atordoa por 0,8 s' },

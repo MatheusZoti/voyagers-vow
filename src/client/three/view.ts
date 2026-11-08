@@ -411,7 +411,8 @@ export class GameView {
               }
               at.y = (v?.rig.height ?? 2) + 0.2;
             }
-            if (ev.immune) this.floater(at, 'imune', 'imm');
+            if (ev.evade) this.floater(at, 'recuando', 'imm');
+            else if (ev.immune) this.floater(at, 'imune', 'imm');
             else this.floater(at, String(ev.amount), ev.crit ? 'crit' : ev.pierce ? 'pierce' : 'hit');
             if (!ev.immune) this.fx.burst({ x: ev.x, y: ev.y }, ev.crit ? '#ffffff' : '#ffd08a', ev.crit ? 12 : 4, 2.5, 1);
             if (ev.crit) this.shake = Math.max(this.shake, 0.3);
@@ -538,6 +539,8 @@ export class GameView {
       v.rig.body.scale.set(1 + sq, 1 - sq, 1 + sq);
       let opacity = dead ? Math.max(0, 1 - Math.max(0, v.dead - 1.2) / 0.8) : 1;
       if (e.def.shadowed && !dead) opacity = e.revealed ? 0.8 : 0;
+      // Recuando (imune): meio transparente.
+      if (e.evading && !dead) opacity = Math.min(opacity, 0.45);
       // Névoa de guerra: fora da vista, o inimigo some.
       if (!sim.isVisible(e.pos)) opacity = 0;
       setOpacity(v.rig, opacity);
