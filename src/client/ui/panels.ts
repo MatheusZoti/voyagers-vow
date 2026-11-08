@@ -69,6 +69,9 @@ const MASTERY_EFFECT: Record<MasteryId, string> = {
   capacity: '+4 de reserva de Fluxo por nível. Sobe sustentando a Maré no ataque.',
 };
 
+/** "?" no título de um card: explicação no hover (ou foco pelo teclado). */
+const tip = (text: string) => `<span class="hint-i" tabindex="0" role="note" aria-label="${escapeHtml(text)}">?<span class="tip">${escapeHtml(text)}</span></span>`;
+
 /** Janela do personagem (abas) e menus de ajuda e pausa. O jogo pausa enquanto ela está aberta. */
 export class Panels {
   current: PanelId | null = null;
@@ -80,6 +83,7 @@ export class Panels {
   /** Grade de Elos: o Elo, ou o catálogo para escolher a magia / uma Restrição */
   private eloView: 'elo' | CatalogKind = 'elo';
   private codexKind: CatalogKind = 'spells';
+  private memTab: 'recent' | 'long' = 'recent';
   /** estado próprio de cada catálogo: a busca do Elo não vaza para o Grimório */
   private pickCat = new CatalogState();
   private codexCat = new CatalogState();
@@ -90,7 +94,28 @@ export class Panels {
   constructor(
     private root: HTMLElement,
     private sim: Simulation,
-  ) {}
+  ) {
+    root.addEventListener('mouseover', (e) => this.placeTip(e));
+    root.addEventListener('focusin', (e) => this.placeTip(e));
+  }
+
+  /** O balão do "?" vira para dentro quando encostaria na borda da janela. */
+  private placeTip(e: Event): void {
+    const hint = (e.target as HTMLElement).closest?.<HTMLElement>('.hint-i');
+    const tipEl = hint?.querySelector<HTMLElement>('.tip');
+    const win = this.root.querySelector<HTMLElement>('.win');
+    if (!hint || !tipEl || !win) return;
+    tipEl.classList.remove('left', 'up');
+    // Mede com o balão visível (escondido ele fica fora do layout).
+    tipEl.style.display = 'block';
+    const tw = tipEl.offsetWidth;
+    const th = tipEl.offsetHeight;
+    tipEl.style.display = '';
+    const h = hint.getBoundingClientRect();
+    const w = win.getBoundingClientRect();
+    if (h.left + tw > w.right - 12) tipEl.classList.add('left');
+    if (h.bottom + 8 + th > w.bottom - 12) tipEl.classList.add('up');
+  }
 
   toggle(id: PanelId): void {
     if (this.current === id) this.close();
@@ -147,7 +172,7 @@ export class Panels {
     const kept = new Map<string, number>();
     if (prev?.dataset.cur === tab) prev.querySelectorAll<HTMLElement>('[data-keep-scroll]').forEach((el) => kept.set(el.dataset.keepScroll!, el.scrollTop));
     const searching = (document.activeElement as HTMLElement | null)?.matches?.('[data-search]') ?? false;
-    const fill = tab === 'elos' || tab === 'codex';
+    const fill = tab === 'elos' || tab === 'codex' || tab === 'psyche';
     this.root.className = 'screen overlay';
     this.root.innerHTML = `
       <div class="win ${prev ? '' : 'enter'}" data-cur="${tab}" style="--aff:${aff}">
@@ -221,7 +246,7 @@ export class Panels {
 
   private onClick(e: MouseEvent): void {
     const t = (e.target as HTMLElement).closest<HTMLElement>(
-      '[data-tab],[data-a],[data-elo],[data-mod],[data-node],[data-open],[data-open-pact],[data-rm-pact],[data-codex],[data-pick],[data-cat-act],[data-f-aff],[data-f-level],[data-f-kind],[data-goto-pact],[data-goto-spell]',
+      '[data-tab],[data-a],[data-mem],[data-elo],[data-mod],[data-node],[data-open],[data-open-pact],[data-rm-pact],[data-codex],[data-pick],[data-cat-act],[data-f-aff],[data-f-level],[data-f-kind],[data-goto-pact],[data-goto-spell]',
     );
     if (!t) return;
     const c = this.sim.c;
@@ -229,6 +254,10 @@ export class Panels {
     if (t.dataset.tab) return this.open(t.dataset.tab as TabId);
     if (t.dataset.node) {
       this.selectedNode = t.dataset.node as MasteryId;
+      return this.render();
+    }
+    if (t.dataset.mem) {
+      this.memTab = t.dataset.mem as 'recent' | 'long';
       return this.render();
     }
     if (t.dataset.elo) {
@@ -361,9 +390,14 @@ export class Panels {
             )
             .join('')}</ol>`
         : `<p class="empty-note">${long ? 'Eventos fortes ou repetidos viram memórias marcantes — e mudam quem você é.' : 'Nada marcante ainda.'}</p>`;
+    const memTab = this.memTab;
+    const memCount = (n: number) => `<small>${n}</small>`;
     return `<div class="grid psy">
+      <div class="psy-col">
       <section class="card wheel-card">
-        <h4>Agora</h4>
+        <h4>Agora ${tip(
+          'Suas emoções do momento e o estresse (no centro). Cada emoção muda o Fluxo em combate: Fúria fortalece o Ímpeto e deixa a Maré lenta para voltar à defesa; Medo fortalece o Véu e encarece o Ímpeto; Calma acelera a Maré e a regeneração; Euforia barateia as magias, mas faz a barra de Fluxo mentir; Luto encolhe a reserva; Orgulho fortalece a Assinatura e impede o Silêncio; Vergonha a enfraquece. Estresse alto vira Crise: medite em Silêncio no santuário para baixar.',
+        )}</h4>
         ${emotionWheel(p.emotions, p.stress)}
         ${crisis}
         <div class="emo-legend">${
@@ -376,23 +410,39 @@ export class Panels {
         }</div>
       </section>
       <section class="card radar-card">
-        <h4>Afinidade <em>${AFFINITY_NAMES[c.affinity]}</em></h4>
-        <p class="card-sub">${AFFINITY_DESC[c.affinity]} Técnicas de outras afinidades perdem nível pela distância no hexágono.</p>
+        <h4>Afinidade <em>${AFFINITY_NAMES[c.affinity]}</em> ${tip(
+          `${AFFINITY_DESC[c.affinity]} Magias da sua afinidade entram em qualquer Elo sem perder nível. As das outras perdem 1 nível efetivo por passo de distância no pentágono e pedem Elos mais altos (o rótulo de cada ponta mostra a partir de qual). A forma colorida mostra quanto a sua personalidade puxa para cada afinidade.`,
+        )}</h4>
         ${affinityRadar(c)}
       </section>
+      </div>
+      <div class="psy-col">
       <section class="card traits-card">
-        <h4>Personalidade <span class="hint-i" title="Passe o mouse em cada linha para ler a frase. Memórias marcantes deslocam os traços aos poucos.">?</span></h4>
+        <h4>Personalidade ${tip(
+          '16 traços, cada um entre dois polos. Eles decidem sua afinidade e a ressonância das magias: as que combinam com você ganham Maestria mais rápido. Mudam devagar com o que você faz e com memórias marcantes. Os traços mais fortes aparecem destacados; passe o mouse numa linha para ler a frase.',
+        )}</h4>
         <div class="tgrid">${groups}</div>
       </section>
+      <div class="psy-row">
       <section class="card values-card">
-        <h4>Valores</h4>
-        <p class="card-sub">Agir a favor de um valor traz emoção boa; contra, culpa ou raiva. Valores fortes reforçam Pactos alinhados.</p>
+        <h4>Valores ${tip(
+          'O que você defende, de contra (−) a favor (+). Agir a favor de um valor traz emoção boa; agir contra traz culpa ou raiva. Um valor forte (dourado) dá +1 nível à primeira Restrição alinhada a ele em cada Elo. Usar uma Restrição contra os seus valores soma estresse a cada uso.',
+        )}</h4>
         ${valuesEqualizer(p.values)}
       </section>
       <section class="card mem-card">
-        <h4>Memórias</h4>
-        <div class="mem-cols"><div><h6>Recentes</h6>${memList(p.shortMemory, false)}</div><div><h6>Marcantes</h6>${memList(p.longMemory, true)}</div></div>
+        <h4>Memórias ${tip(
+          'Recentes: os últimos 8 eventos que mexeram com você (×N = quantas vezes). Marcantes: eventos muito fortes ou repetidos ficam para sempre e, ao entrar aqui, deslocam sua personalidade um pouco. Cada cor é a emoção que o evento despertou.',
+        )}
+          <span class="segs mini">
+            <button class="seg ${memTab === 'recent' ? 'on' : ''}" data-mem="recent">Recentes ${memCount(p.shortMemory.length)}</button>
+            <button class="seg ${memTab === 'long' ? 'on' : ''}" data-mem="long">Marcantes ${memCount(p.longMemory.length)}</button>
+          </span>
+        </h4>
+        <div class="mem-scroll" data-keep-scroll="mem">${memTab === 'recent' ? memList(p.shortMemory, false) : memList(p.longMemory, true)}</div>
       </section>
+      </div>
+      </div>
     </div>`;
   }
 
