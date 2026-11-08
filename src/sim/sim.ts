@@ -1247,7 +1247,7 @@ export class Simulation {
           if (Math.hypot(back.x, back.y) < 0.5) {
             e.state = 'idle';
             e.hp = e.maxHp;
-          } else this.moveEnemy(e, normalize(back), e.def.speed * 1.3 * dt);
+          } else this.moveEnemy(e, this.pathDir(e.pos, e.home), e.def.speed * 1.3 * dt);
           if (sees && !e.def.boss) e.state = 'chase';
           break;
         }
@@ -1274,7 +1274,7 @@ export class Simulation {
               this.events.push({ t: 'telegraphArc', x: e.pos.x, y: e.pos.y, dir: { ...e.facing }, range: atk.range + e.def.radius * 0.5, arc: (140 * Math.PI) / 180, duration: windup });
           } else if (d > e.def.radius + 0.9) {
             e.facing = normalize(toPlayer);
-            this.moveEnemy(e, e.facing, e.def.speed * speedMul * dt);
+            this.moveEnemy(e, this.pathDir(e.pos, p.pos), e.def.speed * speedMul * dt);
           }
           break;
         }
@@ -1346,7 +1346,7 @@ export class Simulation {
       e.windupTotal = e.timer;
     } else {
       e.state = 'chase';
-      this.moveEnemy(e, e.facing, e.def.speed * dt);
+      this.moveEnemy(e, this.pathDir(e.pos, foe.pos), e.def.speed * dt);
     }
   }
 
@@ -1399,6 +1399,85 @@ export class Simulation {
     }
     e.state = 'recover';
     e.timer = a.recover;
+  }
+
+  // -------------------------------------------------------------------------
+  // Caminhos: com penhascos, ninguém pode andar só em linha reta.
+  // -------------------------------------------------------------------------
+
+  private fields = new Map<number, { at: number; dist: Int32Array }>();
+
+  /** Distância em passos (BFS, 8 vizinhos) de cada tile livre até o tile do alvo. */
+  private distField(to: Vec2): Int32Array {
+    const m = this.map;
+    const tx = Math.max(0, Math.min(m.w - 1, Math.floor(to.x)));
+    const ty = Math.max(0, Math.min(m.h - 1, Math.floor(to.y)));
+    const key = ty * m.w + tx;
+    const hit = this.fields.get(key);
+    if (hit && this.time - hit.at < 0.5) return hit.dist;
+    if (this.fields.size > 16) this.fields.clear();
+    const dist = new Int32Array(m.w * m.h).fill(-1);
+    const free = (x: number, y: number) => x >= 0 && y >= 0 && x < m.w && y < m.h && !isBlocked(m, x + 0.5, y + 0.5);
+    const q = new Int32Array(m.w * m.h);
+    let head = 0;
+    let tail = 0;
+    dist[key] = 0;
+    q[tail++] = key;
+    while (head < tail) {
+      const i = q[head++]!;
+      const x = i % m.w;
+      const y = (i / m.w) | 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (!free(nx, ny)) continue;
+          // Diagonal só se as duas laterais estiverem livres (não corta quina de penhasco).
+          if (dx && dy && (!free(x + dx, y) || !free(x, y + dy))) continue;
+          const j = ny * m.w + nx;
+          if (dist[j] !== -1) continue;
+          dist[j] = dist[i]! + 1;
+          q[tail++] = j;
+        }
+    }
+    this.fields.set(key, { at: this.time, dist });
+    return dist;
+  }
+
+  /** Há caminho livre em linha reta entre dois pontos? */
+  private clearLine(a: Vec2, b: Vec2): boolean {
+    const d = dist(a, b);
+    const n = Math.ceil(d / 0.4);
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      if (isBlocked(this.map, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) return false;
+    }
+    return true;
+  }
+
+  /** Direção para ir de `from` até `to`, contornando penhascos, árvores e água. */
+  pathDir(from: Vec2, to: Vec2): Vec2 {
+    if (this.clearLine(from, to)) return normalize({ x: to.x - from.x, y: to.y - from.y });
+    const m = this.map;
+    const field = this.distField(to);
+    const fx = Math.floor(from.x);
+    const fy = Math.floor(from.y);
+    let best: Vec2 | null = null;
+    let bestD = Infinity;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = fx + dx;
+        const ny = fy + dy;
+        if (nx < 0 || ny < 0 || nx >= m.w || ny >= m.h) continue;
+        const d = field[ny * m.w + nx]!;
+        if (d < 0 || d >= bestD) continue;
+        if (dx && dy && (isBlocked(m, fx + dx + 0.5, fy + 0.5) || isBlocked(m, fx + 0.5, fy + dy + 0.5))) continue;
+        bestD = d;
+        best = { x: nx + 0.5, y: ny + 0.5 };
+      }
+    if (!best) return normalize({ x: to.x - from.x, y: to.y - from.y });
+    return normalize({ x: best.x - from.x, y: best.y - from.y });
   }
 
   private moveEnemy(e: Enemy, dir: Vec2, step: number): void {

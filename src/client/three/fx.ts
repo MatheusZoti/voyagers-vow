@@ -17,8 +17,10 @@ interface Particle {
   life: number;
 }
 
+/** Altura do chão usada pelos efeitos (o relevo é definido no construtor). */
+let ground: (x: number, y: number) => number = () => 0;
 const add = (o: THREE.Object3D, x: number, y: number, z: number) => {
-  o.position.set(x, y, z);
+  o.position.set(x, y + ground(x, z), z);
   return o;
 };
 
@@ -27,7 +29,12 @@ export class Effects {
   private particles: Particle[] = [];
   private partGeo = new THREE.TetrahedronGeometry(0.09, 0);
 
-  constructor(private scene: THREE.Scene) {}
+  constructor(
+    private scene: THREE.Scene,
+    groundFn: (x: number, y: number) => number = () => 0,
+  ) {
+    ground = groundFn;
+  }
 
   private groundMat(color: string, opacity: number, additive = true) {
     return new THREE.MeshBasicMaterial({
@@ -123,7 +130,7 @@ export class Effects {
     const m = new THREE.MeshBasicMaterial({ color });
     for (let i = 0; i < n; i++) {
       const mesh = new THREE.Mesh(this.partGeo, m);
-      mesh.position.set(at.x, y, at.y);
+      mesh.position.set(at.x, y + ground(at.x, at.y), at.y);
       const a = Math.random() * Math.PI * 2;
       const v = speed * (0.4 + Math.random() * 0.8);
       this.scene.add(mesh);
@@ -156,7 +163,7 @@ export class Effects {
     const core = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, len, 6, 1, true), coreMat);
     const glow = new THREE.Mesh(new THREE.CylinderGeometry(width * 0.6, width * 0.6, len, 8, 1, true), glowMat);
     g.add(core, glow);
-    g.position.set((from.x + to.x) / 2, 1.1, (from.y + to.y) / 2);
+    g.position.set((from.x + to.x) / 2, 1.1 + ground((from.x + to.x) / 2, (from.y + to.y) / 2), (from.y + to.y) / 2);
     g.rotation.z = Math.PI / 2;
     g.rotation.y = -Math.atan2(dy, dx);
     // Cilindros nascem no eixo Y: deita no plano e aponta na direção do disparo.
@@ -181,11 +188,13 @@ export class Effects {
         const t = k / n;
         const jx = jagged && k > 0 ? (Math.random() - 0.5) * 0.6 : 0;
         const jy = jagged && k > 0 ? (Math.random() - 0.5) * 0.5 : 0;
-        pts.push(new THREE.Vector3(a.x + (b.x - a.x) * t + jx, y + jy, a.y + (b.y - a.y) * t + jx));
+        const px = a.x + (b.x - a.x) * t + jx;
+        const pz = a.y + (b.y - a.y) * t + jy;
+        pts.push(new THREE.Vector3(px, y + jy + ground(px, pz), pz));
       }
     }
     const last = points[points.length - 1]!;
-    pts.push(new THREE.Vector3(last.x, y, last.y));
+    pts.push(new THREE.Vector3(last.x, y + ground(last.x, last.y), last.y));
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
     const m = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
     const line = new THREE.Line(geo, m);
@@ -242,8 +251,9 @@ export class Effects {
       p.mesh.position.addScaledVector(p.vel, dt);
       p.mesh.rotation.x += dt * 8;
       p.mesh.rotation.y += dt * 6;
-      if (p.mesh.position.y < 0.05) {
-        p.mesh.position.y = 0.05;
+      const floor = ground(p.mesh.position.x, p.mesh.position.z) + 0.05;
+      if (p.mesh.position.y < floor) {
+        p.mesh.position.y = floor;
         p.vel.multiplyScalar(0.5);
         p.vel.y = Math.abs(p.vel.y) * 0.3;
       }

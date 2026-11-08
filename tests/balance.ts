@@ -36,7 +36,7 @@ function botInput(sim: Simulation, ids: Set<number>, skill: number): PlayerInput
     input.tideSteps = Math.round((0.5 - p.tide.target) * 10);
   } else {
     if (skill > 0) input.tideSteps = Math.round((0.5 - p.tide.target) * 10);
-    if (d > 1.6) input.move = normalize({ x: target.pos.x - p.pos.x, y: target.pos.y - p.pos.y });
+    if (d > 1.6) input.move = sim.pathDir(p.pos, target.pos);
   }
   input.basic = d < 2.1;
 
@@ -86,7 +86,7 @@ export function runScenario(
   const chosen: Enemy[] = [];
   for (const { kind, n } of scenario.kinds) chosen.push(...sim.enemies.filter((e) => e.kind === kind && !chosen.includes(e)).slice(0, n));
   const arena = scenario.kinds.some((k) => k.kind === 'boss');
-  const center = arena ? { ...sim.map.arena } : { x: 30, y: 24 };
+  const center = arena ? { ...sim.map.arena } : { x: 24, y: 22 };
   for (const e of sim.enemies) if (!chosen.includes(e)) Object.assign(e, { state: 'dead', respawnIn: Infinity });
   chosen.forEach((e, i) => {
     if (!arena) e.pos = { x: center.x + 3 + (i % 3) * 1.2, y: center.y - 1 + Math.floor(i / 3) * 1.2 };

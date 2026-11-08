@@ -6,6 +6,7 @@ import { POSTURES, type Posture } from '../../sim/flow/flow';
 import type { Vec2 } from '../../sim/math';
 import type { SimEvent, Simulation } from '../../sim/sim';
 import type { Enemy } from '../../sim/world/entities';
+import { floorAt } from '../../sim/world/map';
 import { Effects } from './fx';
 import {
   animateRig,
@@ -90,12 +91,12 @@ export class GameView {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.appendChild(this.renderer.domElement);
 
-    this.scene.background = new THREE.Color('#9fd3ee');
-    this.scene.fog = new THREE.Fog('#9fd3ee', 28, 62);
+    this.scene.background = new THREE.Color('#d8cfae');
+    this.scene.fog = new THREE.Fog('#d8cfae', 30, 70);
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 200);
 
-    this.scene.add(new THREE.HemisphereLight('#dff3ff', '#4c6b2e', 1.1));
-    this.sun = new THREE.DirectionalLight('#fff0d4', 2.4);
+    this.scene.add(new THREE.HemisphereLight('#fff2d8', '#6b5a38', 1.15));
+    this.sun = new THREE.DirectionalLight('#ffeccb', 2.7);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     const sc = this.sun.shadow.camera;
@@ -111,7 +112,7 @@ export class GameView {
 
     this.world = buildWorld(sim.map);
     this.scene.add(this.world.group);
-    this.fx = new Effects(this.scene);
+    this.fx = new Effects(this.scene, (x, y) => floorAt(sim.map, x, y));
 
     this.player = buildPlayer(AFFINITY_COLORS[sim.c.affinity]);
     rememberEmissive(this.player);
@@ -173,7 +174,7 @@ export class GameView {
         spike.position.set(Math.cos(a) * 0.25, 0.15, Math.sin(a) * 0.25);
         g.add(spike);
       }
-      g.position.set(t.pos.x, 0.03, t.pos.y);
+      g.position.set(t.pos.x, this.gh(t.pos.x, t.pos.y) + 0.03, t.pos.y);
       g.visible = false;
       this.scene.add(g);
       this.trapMeshes.push(g);
@@ -195,7 +196,7 @@ export class GameView {
       const def = NPCS[n.id];
       const rig = buildPlayer(def.color);
       rememberEmissive(rig);
-      rig.root.position.set(n.x, 0, n.y);
+      rig.root.position.set(n.x, this.gh(n.x, n.y), n.y);
       rig.body.rotation.y = Math.atan2(sim.map.playerStart.x - n.x, sim.map.playerStart.y - n.y);
       this.scene.add(rig.root);
       const label = document.createElement('div');
@@ -222,7 +223,7 @@ export class GameView {
       light.position.y = 1.6;
       glow.add(book, light);
       g.add(post, top, glow);
-      g.position.set(b.x, 0, b.y);
+      g.position.set(b.x, this.gh(b.x, b.y), b.y);
       this.scene.add(g);
       this.books.push({ id: b.id, group: g, glow });
     }
@@ -232,6 +233,11 @@ export class GameView {
     const p = sim.player.pos;
     this.camTarget.set(p.x, 0, p.y);
     this.playerLast.set(p.x, 0, p.y);
+  }
+
+  /** Altura do chão (relevo) num ponto do mundo. */
+  private gh(x: number, y: number): number {
+    return floorAt(this.sim.map, x, y);
   }
 
   resize(): void {
@@ -248,7 +254,13 @@ export class GameView {
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
     const hit = new THREE.Vector3();
-    if (!this.raycaster.ray.intersectPlane(this.groundPlane, hit)) return null;
+    // Com relevo: intersecta o plano na altura do chão e refina algumas vezes.
+    let y = this.player.root.position.y;
+    for (let i = 0; i < 4; i++) {
+      this.groundPlane.constant = -y;
+      if (!this.raycaster.ray.intersectPlane(this.groundPlane, hit)) return null;
+      y = this.gh(hit.x, hit.z);
+    }
     return { x: hit.x, y: hit.z };
   }
 
@@ -295,7 +307,7 @@ export class GameView {
     detectRing.position.y = 0.06;
     detectRing.visible = false;
     rig.root.add(markRing, rootRing, detectRing);
-    v = { rig, markRing, rootRing, detectRing, bar, barFill: fill, last: new THREE.Vector3(e.pos.x, 0, e.pos.y), dead: 0, hurt: 0, attack: 0, punch: 0 };
+    v = { rig, markRing, rootRing, detectRing, bar, barFill: fill, last: new THREE.Vector3(e.pos.x, this.gh(e.pos.x, e.pos.y), e.pos.y), dead: 0, hurt: 0, attack: 0, punch: 0 };
     rig.root.position.copy(v.last);
     this.enemies.set(e.id, v);
     return v;
@@ -442,6 +454,7 @@ export class GameView {
     el.textContent = text;
     this.floaterLayer.appendChild(el);
     pos.x += (Math.random() - 0.5) * 0.4;
+    pos.y += this.gh(pos.x, pos.z);
     this.floaters.push({ el, pos, age: 0, life: cls === 'perfect' ? 1.4 : 0.9 });
   }
 
@@ -452,7 +465,7 @@ export class GameView {
     this.world.update(this.time);
 
     // Jogador.
-    const target = new THREE.Vector3(p.pos.x, 0, p.pos.y);
+    const target = new THREE.Vector3(p.pos.x, this.gh(p.pos.x, p.pos.y), p.pos.y);
     const prev = this.player.root.position.clone();
     const snap = prev.distanceTo(target) > 3;
     this.player.root.position.lerp(target, snap ? 1 : Math.min(1, dt * 18));
@@ -504,9 +517,9 @@ export class GameView {
       if (dead) v.dead += dt;
       else if (v.dead > 0) {
         v.dead = 0;
-        v.rig.root.position.set(e.pos.x, 0, e.pos.y);
+        v.rig.root.position.set(e.pos.x, this.gh(e.pos.x, e.pos.y), e.pos.y);
       }
-      const t = new THREE.Vector3(e.pos.x, 0, e.pos.y);
+      const t = new THREE.Vector3(e.pos.x, this.gh(e.pos.x, e.pos.y), e.pos.y);
       const before = v.rig.root.position.clone();
       v.rig.root.position.lerp(t, Math.min(1, dt * 15));
       const sp = dead ? 0 : before.distanceTo(v.rig.root.position) / Math.max(dt, 1e-4);
@@ -547,7 +560,7 @@ export class GameView {
     });
     if (sim.echo) {
       this.echoMesh.visible = true;
-      this.echoMesh.position.set(sim.echo.pos.x, Math.sin(this.time * 2) * 0.15, sim.echo.pos.y);
+      this.echoMesh.position.set(sim.echo.pos.x, this.gh(sim.echo.pos.x, sim.echo.pos.y) + Math.sin(this.time * 2) * 0.15, sim.echo.pos.y);
     } else this.echoMesh.visible = false;
 
     // NPCs: respiração leve, nome e "!" quando há conversa nova.
@@ -588,11 +601,11 @@ export class GameView {
         halo.position.y = -0.75;
         const light = new THREE.PointLight(color, 3, 4, 2);
         g.add(book, halo, light);
-        g.position.set(d.pos.x, 0.9, d.pos.y);
+        g.position.set(d.pos.x, this.gh(d.pos.x, d.pos.y) + 0.9, d.pos.y);
         this.scene.add(g);
         this.dropMeshes.set(d.id, g);
       }
-      g.position.y = 0.9 + Math.sin(this.time * 3 + d.id) * 0.12;
+      g.position.y = this.gh(d.pos.x, d.pos.y) + 0.9 + Math.sin(this.time * 3 + d.id) * 0.12;
       g.children[0]!.rotation.y += dt * 2;
     }
     for (const [id, g] of this.dropMeshes) {
@@ -652,7 +665,7 @@ export class GameView {
 
   /** Projeta um ponto do mundo para a tela (para marcadores do HUD). */
   project(p: Vec2, height = 0): { x: number; y: number; visible: boolean } {
-    const v = new THREE.Vector3(p.x, height, p.y).project(this.camera);
+    const v = new THREE.Vector3(p.x, height + this.gh(p.x, p.y), p.y).project(this.camera);
     return {
       x: ((v.x + 1) / 2) * this.renderer.domElement.clientWidth,
       y: ((1 - v.y) / 2) * this.renderer.domElement.clientHeight,

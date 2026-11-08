@@ -179,3 +179,116 @@
   padding: 6px 12px;
   font-size: 12px;
 }
+
+/* =========================================================================
+   Minimapa e mapa da região
+   ========================================================================= */
+.minimap {
+  position: absolute;
+  top: 92px;
+  right: 14px;
+  width: 216px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #121418;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.minimap canvas {
+  display: block;
+  width: 216px;
+  height: 144px;
+}
+.minimap .mm-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 9px;
+  font: 600 11px Inter, sans-serif;
+  color: #c9cfdd;
+  background: rgba(16, 18, 26, 0.92);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.minimap:hover {
+  border-color: rgba(226, 182, 90, 0.6);
+}
+.notices {
+  top: 280px;
+}
+.grid.mapg {
+  grid-template-columns: 1fr 240px;
+  align-items: start;
+}
+.map-card {
+  padding: 10px;
+}
+.bigmap {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+.map-legend {
+  list-style: none;
+  padding: 0 !important;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.map-legend i {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+}
+.lg-you {
+  background: #ffe9a0;
+  clip-path: polygon(0 10%, 100% 50%, 0 90%, 25% 50%);
+  border-radius: 0 !important;
+}
+.lg-npc {
+  background: #ffd84a;
+}
+.lg-foe {
+  background: #ff5a4a;
+}
+.lg-boss {
+  background: #ff5a4a;
+  border-radius: 2px !important;
+  transform: rotate(45deg) scale(0.85);
+  outline: 1.5px solid #ffd0c8;
+}
+.lg-book {
+  background: #b48cff;
+  border-radius: 2px !important;
+}
+.lg-drop {
+  background: #e8b04a;
+  outline: 1.5px solid #fff;
+}
+.lg-echo {
+  background: #a8e6ff;
+  outline: 1.5px solid #fff;
+}
+@media (max-width: 1000px) {
+  .grid.mapg {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .minimap {
+    width: 150px;
+  }
+  .minimap canvas {
+    width: 150px;
+    height: 100px;
+  }
+}

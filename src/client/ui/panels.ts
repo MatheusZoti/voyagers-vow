@@ -33,14 +33,16 @@ import {
   valuesEqualizer,
 } from './charts';
 import { icon } from './icons';
+import { drawBase, drawMarkers } from './minimap';
 
-export type TabId = 'psyche' | 'elos' | 'mastery';
+export type TabId = 'psyche' | 'elos' | 'mastery' | 'map';
 export type PanelId = TabId | 'help' | 'pause';
 
 const TABS: Array<{ id: TabId; name: string; key: string }> = [
   { id: 'psyche', name: 'Psique', key: 'C' },
   { id: 'elos', name: 'Grade de Elos', key: 'K' },
   { id: 'mastery', name: 'Maestria', key: 'M' },
+  { id: 'map', name: 'Mapa', key: 'N' },
 ];
 
 const GROUP_COLORS: Record<string, string> = {
@@ -112,7 +114,8 @@ export class Panels {
   private renderWindow(tab: TabId): void {
     const c = this.sim.c;
     const aff = AFFINITY_COLORS[c.affinity];
-    const body = tab === 'psyche' ? this.psycheTab() : tab === 'elos' ? this.elosTab() : this.masteryTab();
+    const body =
+      tab === 'psyche' ? this.psycheTab() : tab === 'elos' ? this.elosTab() : tab === 'mastery' ? this.masteryTab() : this.mapTab();
     const prev = this.root.querySelector<HTMLElement>('.win:not(.small)');
     const scroll = prev?.dataset.cur === tab ? (prev.querySelector('.win-body')?.scrollTop ?? 0) : 0;
     this.root.className = 'screen overlay';
@@ -135,6 +138,43 @@ export class Panels {
       if (e.target === this.root) this.close();
     };
     this.root.onclick = (e) => this.onClick(e);
+    if (tab === 'map') this.drawMap();
+  }
+
+  // -------------------------------------------------------------------------
+  // Mapa da região
+  // -------------------------------------------------------------------------
+
+  private mapTab(): string {
+    const legend: Array<[string, string]> = [
+      ['you', 'Você'],
+      ['npc', 'Pessoa (! = conversa nova)'],
+      ['foe', 'Inimigo (forte = te perseguindo)'],
+      ['boss', 'Guardião da Ponte'],
+      ['book', 'Livro antigo'],
+      ['drop', 'Grimório caído'],
+      ['echo', 'Seu Eco'],
+    ];
+    return `<div class="grid mapg">
+      <section class="card map-card"><canvas class="bigmap"></canvas></section>
+      <section class="card map-side">
+        <h4>Vale da Ponte</h4>
+        <p class="card-sub">Região de tier 1, Santuário: sem PvP. Cada linha clara é um degrau de 0,5 m de relevo.</p>
+        <ul class="map-legend">${legend.map(([k, t]) => `<li><i class="lg-${k}"></i>${t}</li>`).join('')}</ul>
+      </section>
+    </div>`;
+  }
+
+  private drawMap(): void {
+    const cv = this.root.querySelector<HTMLCanvasElement>('canvas.bigmap');
+    if (!cv) return;
+    const scale = 12;
+    const map = this.sim.map;
+    cv.width = map.w * scale;
+    cv.height = map.h * scale;
+    const g = cv.getContext('2d')!;
+    g.drawImage(drawBase(map, scale), 0, 0);
+    drawMarkers(g, this.sim, scale, true);
   }
 
   private onClick(e: MouseEvent): void {
@@ -447,7 +487,7 @@ export class Panels {
       ['Clique num NPC', 'Conversar'],
       ['1 2 3 4', 'Posturas: Véu, Silêncio, Ímpeto, Olhar'],
       ['Roda do mouse · Z / X', 'Maré: mais defesa / mais ataque'],
-      ['C · K · M', 'Psique · Grade de Elos · Maestria'],
+      ['C · K · M · N', 'Psique · Grade de Elos · Maestria · Mapa'],
       ['H · Esc', 'Ajuda · Pausa'],
     ];
     this.small(
