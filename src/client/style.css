@@ -57,6 +57,7 @@ body {
 #screen.title,
 #screen.rite,
 #screen.reveal,
+#screen.create,
 #screen.overlay {
   pointer-events: auto;
 }
