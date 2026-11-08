@@ -126,7 +126,8 @@ export function buildMap(seed = 1337): GameMap {
   const sanctuary: Circle = { x: 9, y: 24, r: 5 };
   const arena: Circle = { x: 60, y: 24, r: 9 };
   const riverX = 47;
-  const bridge = { x0: riverX - 2, x1: riverX + 3, y0: 22, y1: 26 };
+  // A ponte vai de borda a borda do desfiladeiro (o rio ocupa riverX-1 .. riverX+2).
+  const bridge = { x0: riverX - 3, x1: riverX + 3, y0: 22, y1: 26 };
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -247,7 +248,8 @@ export function buildMap(seed = 1337): GameMap {
   ];
   const W1 = w + 1;
   const heights = new Float32Array(W1 * (h + 1));
-  const riverCenter = (cy: number) => riverX + Math.round(Math.sin(cy * 0.22) * 1.5) + 0.5;
+  // Centro real do leito: os tiles de água vão de cx-1 a cx+2, então o meio é cx+1.
+  const riverCenter = (cy: number) => riverX + Math.round(Math.sin(cy * 0.22) * 1.5) + 1;
   for (let cy = 0; cy <= h; cy++)
     for (let cx = 0; cx <= w; cx++) {
       const edge = Math.min(cx, cy, w - cx, h - cy);
@@ -271,20 +273,145 @@ export function buildMap(seed = 1337): GameMap {
       heights[cy * W1 + cx] = hgt;
     }
 
-  // Encostas íngremes viram penhasco (bloqueiam), exceto onde o caminho tem que passar.
-  const clear = (x: number, y: number) =>
-    Math.hypot(x + 0.5 - sanctuary.x, y + 0.5 - sanctuary.y) < sanctuary.r + 1.5 ||
-    Math.hypot(x + 0.5 - arena.x, y + 0.5 - arena.y) < arena.r + 1 ||
-    Math.abs(y + 0.5 - pathY(x + 0.5)) < 2 ||
-    (x >= bridge.x0 - 2 && x <= bridge.x1 + 2 && y >= bridge.y0 - 1 && y <= bridge.y1 + 1) ||
-    [...spawns, ...npcs, ...books].some((q) => Math.hypot(x + 0.5 - q.x, y + 0.5 - q.y) < 2.2);
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      const t = get(x, y);
-      if (t === Tile.Water || t === Tile.Bridge || clear(x, y)) continue;
-      const c = [heights[y * W1 + x]!, heights[y * W1 + x + 1]!, heights[(y + 1) * W1 + x]!, heights[(y + 1) * W1 + x + 1]!];
-      if (Math.max(...c) - Math.min(...c) > 0.95) set(x, y, Tile.Cliff);
+  // Pontos de interesse (spawns, pessoas, livros, armadilhas) ficam em pequenas clareiras planas.
+  const pois = [
+    ...spawns.map((q) => ({ x: q.x + 0.5, y: q.y + 0.5 })),
+    ...npcs,
+    ...books,
+    ...traps,
+  ];
+  for (const q of pois) {
+    const qx = Math.round(q.x);
+    const qy = Math.round(q.y);
+    const target = heights[qy * W1 + qx]!;
+    for (let cy = qy - 3; cy <= qy + 3; cy++)
+      for (let cx = qx - 3; cx <= qx + 3; cx++) {
+        if (cx < 0 || cy < 0 || cx > w || cy > h) continue;
+        const k = 1 - smooth((Math.hypot(cx - q.x, cy - q.y) - 1.4) / 1.4);
+        const i = cy * W1 + cx;
+        if (heights[i]! > -0.3) heights[i] = heights[i]! + (target - heights[i]!) * k;
+      }
+  }
+
+  // Encostas íngremes e a borda do desfiladeiro viram penhasco (bloqueiam).
+  const corners = (x: number, y: number) => [heights[y * W1 + x]!, heights[y * W1 + x + 1]!, heights[(y + 1) * W1 + x]!, heights[(y + 1) * W1 + x + 1]!];
+  const markCliffs = () => {
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const t = get(x, y);
+        if (t === Tile.Water || t === Tile.Bridge || t === Tile.Cliff) continue;
+        const c = corners(x, y);
+        if (Math.max(...c) - Math.min(...c) > 0.9 || Math.min(...c) < -0.3) set(x, y, Tile.Cliff);
+      }
+  };
+  markCliffs();
+
+  // Rampas: todo platô caminhável precisa de acesso. Para cada região desconectada,
+  // abre uma rampa pelo caminho que cruza menos penhasco e regradeia a altura ao longo dela.
+  const N4 = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const;
+  const walkable = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && !BLOCKING.has(get(x, y));
+  const startIdx = Math.floor(sanctuary.y) * w + Math.floor(sanctuary.x);
+  for (let iter = 0; iter < 12; iter++) {
+    const reach = new Uint8Array(w * h);
+    const stack = [startIdx];
+    reach[startIdx] = 1;
+    while (stack.length) {
+      const i = stack.pop()!;
+      for (const [dx, dy] of N4) {
+        const nx = (i % w) + dx;
+        const ny = ((i / w) | 0) + dy;
+        if (!walkable(nx, ny) || reach[ny * w + nx]) continue;
+        reach[ny * w + nx] = 1;
+        stack.push(ny * w + nx);
+      }
     }
+    // Maior região caminhável ainda isolada (ignora bolsões minúsculos).
+    const comp = new Int32Array(w * h).fill(-1);
+    let bestComp = -1;
+    let bestSize = 7;
+    for (let i = 0; i < w * h; i++) {
+      if (reach[i] || comp[i] !== -1 || !walkable(i % w, (i / w) | 0)) continue;
+      const st = [i];
+      comp[i] = i;
+      let size = 0;
+      while (st.length) {
+        const j = st.pop()!;
+        size++;
+        for (const [dx, dy] of N4) {
+          const nx = (j % w) + dx;
+          const ny = ((j / w) | 0) + dy;
+          if (!walkable(nx, ny) || reach[ny * w + nx] || comp[ny * w + nx] !== -1) continue;
+          comp[ny * w + nx] = i;
+          st.push(ny * w + nx);
+        }
+      }
+      if (size > bestSize) {
+        bestSize = size;
+        bestComp = i;
+      }
+    }
+    if (bestComp < 0) break;
+    // 0-1 BFS: andar no caminhável custa 0, atravessar penhasco custa 1.
+    const cost = new Int32Array(w * h).fill(1e9);
+    const prev = new Int32Array(w * h).fill(-1);
+    const dq: number[] = [];
+    for (let i = 0; i < w * h; i++)
+      if (reach[i]) {
+        cost[i] = 0;
+        dq.push(i);
+      }
+    let goal = -1;
+    while (dq.length) {
+      const i = dq.shift()!;
+      if (comp[i] === bestComp) {
+        goal = i;
+        break;
+      }
+      for (const [dx, dy] of N4) {
+        const nx = (i % w) + dx;
+        const ny = ((i / w) | 0) + dy;
+        if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
+        const t = get(nx, ny);
+        const step = walkable(nx, ny) ? 0 : t === Tile.Cliff ? 1 : -1;
+        if (step < 0) continue;
+        const j = ny * w + nx;
+        if (cost[i]! + step >= cost[j]!) continue;
+        cost[j] = cost[i]! + step;
+        prev[j] = i;
+        if (step === 0) dq.unshift(j);
+        else dq.push(j);
+      }
+    }
+    if (goal < 0) break;
+    const path: number[] = [];
+    for (let i = goal; i !== -1; i = prev[i]!) path.unshift(i);
+    // Começa no último tile alcançável antes dos penhascos.
+    let first = 0;
+    for (let k = 0; k < path.length; k++) if (reach[path[k]!]) first = k;
+    const ramp = path.slice(first);
+    const centerH = (i: number) => corners(i % w, (i / w) | 0).reduce((a, b) => a + b, 0) / 4;
+    const h0 = centerH(ramp[0]!);
+    const h1 = centerH(ramp[ramp.length - 1]!);
+    ramp.forEach((i, k) => {
+      const x = i % w;
+      const y = (i / w) | 0;
+      if (get(x, y) === Tile.Cliff) set(x, y, Tile.Grass);
+      const v = h0 + ((h1 - h0) * k) / Math.max(1, ramp.length - 1);
+      for (const [cx, cy] of [
+        [x, y],
+        [x + 1, y],
+        [x, y + 1],
+        [x + 1, y + 1],
+      ] as const)
+        heights[cy * W1 + cx] = v;
+    });
+    markCliffs();
+  }
 
   const places = [
     { name: 'Santuário', x: sanctuary.x, y: sanctuary.y - sanctuary.r - 1.5 },
