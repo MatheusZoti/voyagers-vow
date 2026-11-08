@@ -205,7 +205,9 @@ export function traitSliders(traits: Traits, ids: TraitId[], color: string): str
     })
     .join('');
   return `<svg class="traits" viewBox="0 0 ${W} ${H}" role="img">
-    <defs><filter id="${glow}" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="7"/></filter></defs>
+    <!-- Área do filtro em unidades do SVG: em % ela segue a caixa da linha, que é estreita quando
+         os traços estão alinhados, e o brilho saía cortado num retângulo. -->
+    <defs><filter id="${glow}" filterUnits="userSpaceOnUse" x="-40" y="-40" width="${W + 80}" height="${H + 80}"><feGaussianBlur stdDeviation="7"/></filter></defs>
     <path d="${smoothOpen(pts)}" stroke="${color}" stroke-width="16" fill="none" opacity=".55" filter="url(#${glow})" stroke-linecap="round"/>
     <path d="${smoothOpen(pts)}" stroke="${color}" stroke-width="1.2" fill="none" opacity=".5"/>
     ${rows}${dots}
