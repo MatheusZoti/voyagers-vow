@@ -2,10 +2,11 @@ import './style.css';
 import './ui/panels.css';
 import './ui/world-ui.css';
 import './ui/feel.css';
-import { createCharacter, type Character } from '../sim/character';
+import { createCharacter, createGmCharacter, prepareGm, type Character } from '../sim/character';
 import { Simulation, TICK, type SimEvent } from '../sim/sim';
 import { Hud } from './hud';
 import { InputController } from './input';
+import { loadGmOverrides } from './gm';
 import { deleteCharacter, loadCharacter, saveCharacter } from './save';
 import { Sfx } from './sfx';
 import { GameView } from './three/view';
@@ -28,6 +29,8 @@ window.addEventListener('pointerdown', unlockAudio);
 window.addEventListener('keydown', unlockAudio);
 
 loadTuning();
+// Ajustes do Mestre nos dados de magias e Restrições (valem para todos neste navegador).
+loadGmOverrides();
 
 let stopGame: (() => void) | null = null;
 
@@ -46,6 +49,11 @@ function showTitle(): void {
         saveCharacter(c);
         startGame(c);
       }),
+    onGm: () => {
+      const gm = prepareGm(loadCharacter('gm') ?? createGmCharacter());
+      saveCharacter(gm);
+      startGame(gm);
+    },
   });
 }
 

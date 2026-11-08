@@ -44,6 +44,10 @@ npm run build
 | Ajuda · Pausa (volume) | H · Esc |
 | Painel de playtest | ` (crase) ou F2 |
 
+## Mestre (GM)
+
+Na tela de título, **Entrar como Mestre (GM)** abre um personagem de teste separado (não mexe no seu) com todas as magias e os 8 Elos abertos. No **Grimório (G)** ele edita os valores do jogo na hora: dano base, alcance, raio e nível mínimo das magias, quais Restrições cada magia aceita e o nível de cada Restrição. Os ajustes ficam salvos no navegador e valem para todos os personagens dele; **Copiar** gera um JSON para virar padrão no código e **Restaurar** volta ao valor original.
+
 ## Balanceamento
 
 `npm test` roda um bot que joga cenários fixos (Carniçais, matilha, Bruto, Guardião) com as cinco afinidades e imprime tempo de luta e vida perdida. Por enquanto o Guardião no nível 4 é difícil de propósito (o balanceamento virá com equipamentos, níveis e atributos); o teste falha se usar a Maré deixar de fazer diferença clara contra ele. Para ver a tabela:

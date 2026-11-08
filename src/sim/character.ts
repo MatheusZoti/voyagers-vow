@@ -6,7 +6,7 @@ import type { DialogueId } from './psyche/dialogues';
 import type { RegionId } from './world/map';
 import { createPsyche, type PsycheState } from './psyche/psyche';
 import { neutralTraits, neutralValues, TRAIT_IDS } from './psyche/traits';
-import { isSpell, MASTERY_IDS, sanitizeSlot, STARTER_SPELLS, type MasteryId, type SpellId } from './techniques';
+import { isSpell, MASTERY_IDS, sanitizeSlot, SPELL_IDS, STARTER_SPELLS, type MasteryId, type SpellId } from './techniques';
 
 /** Personagem persistente: o que o servidor guardaria entre sessões. */
 export interface Character {
@@ -41,6 +41,8 @@ export interface Character {
   bossDefeated: boolean;
   /** perda de vida máxima pelo Pacto "Pago com a minha vida" */
   lifeCostLost: number;
+  /** Mestre (GM): personagem de teste que edita os dados no Grimório */
+  gm?: boolean;
 }
 
 export const xpToNext = (level: number) => Math.round(100 * Math.pow(level, 1.6));
@@ -97,6 +99,28 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
   elos[0]!.technique = first;
   elos[1]!.technique = second;
   return c;
+}
+
+export const GM_LEVEL = 10;
+
+/**
+ * Mestre (GM): conhece todas as magias e tem os 8 Elos abertos, para testar e
+ * ajustar os dados. Chamado também ao carregar, para receber magias novas do jogo.
+ */
+export function prepareGm(c: Character): Character {
+  c.gm = true;
+  for (const id of SPELL_IDS) if (!c.knownSpells.includes(id)) c.knownSpells.push(id);
+  for (const slot of c.elos) slot.unlocked = true;
+  if (c.level < GM_LEVEL) {
+    c.level = GM_LEVEL;
+    c.xp = 0;
+  }
+  ensureMastery(c);
+  return c;
+}
+
+export function createGmCharacter(affinity: Affinity = 'vigor'): Character {
+  return prepareGm(createCharacter('Mestre', affinity, 4242));
 }
 
 /**
