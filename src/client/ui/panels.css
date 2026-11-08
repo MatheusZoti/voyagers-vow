@@ -318,9 +318,29 @@ kbd {
 .psy-col > .card {
   min-height: 0;
 }
-.wheel-card,
-.traits-card {
+.wheel-card {
   flex: none;
+}
+/* Personalidade e a fileira Valores/Memórias dividem a altura: a Personalidade
+   encolhe (os gráficos mantêm a proporção) e a fileira de baixo nunca some. */
+.traits-card {
+  flex: 0 1 430px;
+  display: flex;
+  flex-direction: column;
+}
+.traits-card .tgrid {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+}
+.traits-card .tgroup {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.traits-card .traits {
+  flex: 1 1 0;
+  min-height: 70px;
 }
 .radar-card {
   flex: 1;
@@ -333,8 +353,8 @@ kbd {
   height: 100%;
 }
 .psy-row {
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 200px;
+  min-height: 200px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
@@ -344,11 +364,6 @@ kbd {
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-.values-card .values {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
 }
 .mem-card h4 {
   flex-wrap: wrap;
@@ -534,44 +549,114 @@ kbd {
   stroke: rgba(255, 255, 255, 0.35);
 }
 
-.values {
+/* Valores (pílulas em HTML, ver valuesEqualizer): largura do card toda,
+   altura flexível e texto em tamanho fixo. */
+.vals {
+  --vlbl-h: 68px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 6px;
+}
+.vals-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  /* alinha com o topo e o fim das pílulas (o rodapé é a faixa dos rótulos) */
+  padding: 2px 0 calc(var(--vlbl-h) + 2px);
+  font: 700 13px Inter, sans-serif;
+  color: #6c7184;
+}
+.vals-cols {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 2px;
+}
+.vcol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+  cursor: help;
+}
+.vpill {
+  position: relative;
+  flex: 1;
+  min-height: 64px;
+  max-height: 220px;
+  width: clamp(18px, 46%, 28px);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+  transition: border-color 0.15s;
+}
+.vcol:hover .vpill {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.vmark {
+  position: absolute;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+}
+.vfill {
+  position: absolute;
+  left: 50%;
+  width: 52%;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.vdot {
+  position: absolute;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: #cfd3de;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25);
+}
+.vcol.strong .vdot {
+  background: var(--gold);
+  box-shadow: 0 0 10px rgba(226, 182, 90, 0.7);
+}
+.vcol.strong .vfill {
+  background: rgba(226, 182, 90, 0.32);
+}
+.vcol.strong.neg .vdot {
+  background: #ff8a7a;
+  box-shadow: 0 0 10px rgba(255, 106, 90, 0.6);
+}
+.vcol.strong.neg .vfill {
+  background: rgba(255, 106, 90, 0.28);
+}
+.vlbl {
+  position: relative;
   width: 100%;
-  height: auto;
-  display: block;
+  height: var(--vlbl-h);
+  flex: none;
 }
-.eq-pill {
-  fill: rgba(255, 255, 255, 0.035);
-  stroke: rgba(255, 255, 255, 0.12);
+.vlbl span {
+  position: absolute;
+  top: 6px;
+  right: 50%;
+  transform-origin: right center;
+  transform: rotate(-52deg);
+  white-space: nowrap;
+  font: 600 11px Inter, sans-serif;
+  color: #aab0c0;
 }
-.eq-mark {
-  fill: rgba(255, 255, 255, 0.14);
+.vcol.strong .vlbl span {
+  color: var(--gold);
 }
-.eq-fill {
-  fill: rgba(255, 255, 255, 0.16);
-}
-.eq-dot {
-  fill: #cfd3de;
-}
-.eq-col.strong .eq-dot {
-  fill: var(--gold);
-  filter: drop-shadow(0 0 6px rgba(226, 182, 90, 0.7));
-}
-.eq-col.strong .eq-fill {
-  fill: rgba(226, 182, 90, 0.3);
-}
-.eq-label {
-  font: 600 9.5px Inter, sans-serif;
-  fill: #aab0c0;
-}
-.eq-star {
-  fill: var(--gold);
-}
-.eq-col.strong .eq-label {
-  fill: var(--gold);
-}
-.eq-axis {
-  font: 600 12px Inter, sans-serif;
-  fill: #6c7184;
+.vcol.strong.neg .vlbl span {
+  color: #ff9a8a;
 }
 
 .timeline {
@@ -1179,7 +1264,7 @@ kbd {
 }
 
 /* Janela estreita ou baixa: a Psique empilha e a página volta a rolar. */
-@media (max-width: 820px), (max-height: 600px) {
+@media (max-width: 820px), (max-height: 660px) {
   .win-body.fill:has(> .grid.psy) {
     display: block;
     overflow: auto;

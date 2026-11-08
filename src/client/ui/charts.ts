@@ -218,33 +218,34 @@ export function traitSliders(traits: Traits, ids: TraitId[], color: string): str
 // Valores como equalizador (referência: equalizador com pílulas)
 // ---------------------------------------------------------------------------
 
+/**
+ * Valores em pílulas de equalizador, em HTML: as colunas ocupam a largura do card,
+ * as pílulas esticam na altura disponível e o texto mantém tamanho fixo e legível
+ * (o SVG antigo encolhia inteiro, texto junto, em telas menores).
+ */
 export function valuesEqualizer(values: Values): string {
-  const W = 400;
-  const H = 210;
-  const colW = W / VALUE_IDS.length;
-  const top = 14;
-  const bottom = 132;
-  const mid = (top + bottom) / 2;
-  const cols = VALUE_IDS.map((id, i) => {
-    const v = values[id];
-    const cx = colW * i + colW / 2;
-    const y = mid - (v / 50) * ((bottom - top) / 2 - 10);
-    const strong = Math.abs(v) >= 25;
-    const phrase = valuePhrase(id, v);
-    const marks = [-1, -0.5, 0, 0.5, 1].map((t) => `<circle cx="${f(cx)}" cy="${f(mid - t * ((bottom - top) / 2 - 10))}" r="2.2" class="eq-mark"/>`).join('');
-    return `<g class="eq-col ${strong ? 'strong' : ''}"><title>${escapeHtml(phrase ? phrase.charAt(0).toUpperCase() + phrase.slice(1) : `Neutro quanto a ${VALUE_NAMES[id]}`)}</title>
-      <rect x="${f(cx - 13)}" y="${top}" width="26" height="${bottom - top}" rx="13" class="eq-pill"/>
-      ${marks}
-      ${Math.abs(v) > 1 ? `<rect x="${f(cx - 7)}" y="${f(Math.min(y, mid))}" width="14" height="${f(Math.abs(y - mid))}" rx="7" class="eq-fill"/>` : ''}
-      <circle cx="${f(cx)}" cy="${f(y)}" r="9" class="eq-dot"/>
-      <text x="${f(cx + 4)}" y="${bottom + 16}" text-anchor="end" class="eq-label" transform="rotate(-38 ${f(cx + 4)} ${bottom + 16})">${VALUE_NAMES[id]}</text>
-      ${strong ? `<circle cx="${f(cx)}" cy="${top - 6}" r="2.5" class="eq-star"><title>${v > 0 ? 'valor forte' : 'rejeita'}</title></circle>` : ''}
-    </g>`;
+  const cols = VALUE_IDS.map((id) => {
+    const v = Math.max(-50, Math.min(50, values[id])) / 50; // −1 … 1
+    const strong = Math.abs(values[id]) >= 25;
+    const phrase = valuePhrase(id, values[id]);
+    const tip = phrase ? phrase.charAt(0).toUpperCase() + phrase.slice(1) : `Neutro quanto a ${VALUE_NAMES[id]}`;
+    // O ponto anda 40% da pílula para cada lado do centro.
+    const dot = 50 - v * 40;
+    const fillTop = Math.min(dot, 50);
+    const fillH = Math.abs(dot - 50);
+    return `<div class="vcol ${strong ? 'strong' : ''} ${v < 0 ? 'neg' : ''}" title="${escapeHtml(tip)}${strong ? (v > 0 ? ' · valor forte' : ' · rejeita') : ''}">
+      <div class="vpill">
+        <i class="vmark" style="top:10%"></i><i class="vmark" style="top:30%"></i><i class="vmark mid" style="top:50%"></i><i class="vmark" style="top:70%"></i><i class="vmark" style="top:90%"></i>
+        ${Math.abs(v) > 0.02 ? `<i class="vfill" style="top:${f(fillTop)}%;height:${f(fillH)}%"></i>` : ''}
+        <i class="vdot" style="top:${f(dot)}%"></i>
+      </div>
+      <div class="vlbl"><span>${VALUE_NAMES[id]}</span></div>
+    </div>`;
   }).join('');
-  return `<svg class="values" viewBox="0 0 ${W} ${H}" role="img">
-    <text x="2" y="${top + 6}" class="eq-axis">+</text><text x="2" y="${bottom}" class="eq-axis">−</text>
-    ${cols}
-  </svg>`;
+  return `<div class="vals" role="img" aria-label="Valores">
+    <div class="vals-axis" aria-hidden="true"><span>+</span><span>−</span></div>
+    <div class="vals-cols">${cols}</div>
+  </div>`;
 }
 
 // ---------------------------------------------------------------------------
