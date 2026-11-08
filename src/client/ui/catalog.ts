@@ -1,9 +1,9 @@
 import { AFFINITY_COLORS, AFFINITY_NAMES, AFFINITY_RING, affinityPenalty, minSlotFor, type Affinity } from '../../sim/flow/affinity';
-import { canAddRestriction, MODS, PACT_IDS, PACTS, type EloSlot, type PactId } from '../../sim/elos';
-import { displayLevel } from '../../sim/mastery';
+import { canAddRestriction, ELO_TABLE, MOD_IDS, MODS, PACT_IDS, PACTS, type EloSlot, type ModId, type PactId } from '../../sim/elos';
+import { displayLevel, masteryCostMult, modifierDiscount } from '../../sim/mastery';
 import { STRONG_VALUE, VALUE_IDS, VALUE_NAMES, type ValueId } from '../../sim/psyche/traits';
 import type { Simulation } from '../../sim/sim';
-import { NATURE_NAMES, resonance, SPELLS, type SpellId } from '../../sim/techniques';
+import { NATURE_NAMES, resonance, SPELL_RULES, SPELLS, type SpellDef, type SpellId } from '../../sim/techniques';
 import { escapeHtml } from '../util';
 import { pactPips } from './charts';
 import { icon } from './icons';
@@ -258,6 +258,173 @@ function pactRow(e: Entry<PactId>, sel: boolean): string {
 
 const stat = (k: string, v: string, s = '') => `<div class="stat"><span>${k}</span><b>${v}</b>${s ? `<small>${s}</small>` : ''}</div>`;
 
+// ---------------------------------------------------------------------------
+// Ficha detalhada da magia: tudo vem dos dados que a simulação usa
+// (SpellDef, fx, SPELL_RULES, MODS, ELO_TABLE), para o texto nunca mentir.
+// ---------------------------------------------------------------------------
+
+const num = (v: number, d = 2) => v.toLocaleString('pt-BR', { maximumFractionDigits: d });
+const sec = (v: number) => `${num(v)} s`;
+const met = (v: number) => `${num(v)} m`;
+const pct = (v: number) => `${num(v * 100, 0)}%`;
+
+/** Como a magia escolhe e atinge os alvos, com os números reais. */
+function howItWorks(s: SpellDef): string[] {
+  const fx = s.fx;
+  const R = SPELL_RULES;
+  switch (fx.shape) {
+    case 'dash':
+      return [
+        `Você avança até <b>${met(s.range)}</b> na direção da mira; para ao bater numa parede.`,
+        `Ao chegar, atinge todos num raio de <b>${met(s.radius)}</b> logo à sua frente.`,
+        `A cada <b>${fx.pierceEvery}</b> acertos no mesmo inimigo, o golpe ignora a armadura dele (a contagem fica guardada em cada inimigo).`,
+      ];
+    case 'charge':
+      return [
+        `Não causa dano sozinho: carrega o <b>próximo golpe</b> (básico ou magia) dado em até <b>${sec(fx.chargeS!)}</b>.`,
+        `O golpe carregado vira crítico: <b>×${num(fx.critBase!)}</b> +${num(fx.critPerMastery!)} por nível de Maestria, vezes (70% + 30% da potência do Elo), vezes +20% por ponto de Dano na forja.`,
+        `Por <b>${sec(fx.defenseZeroS!)}</b> você fica com <b>defesa zero</b>: a Maré e o Véu não reduzem nada do dano que você recebe.`,
+        `Com a Restrição "Só contra elites", a carga espera um alvo de elite e não se gasta em inimigos comuns.`,
+        `Abalo, Restaurar e Quebra-Guarda da forja agem no golpe crítico.`,
+      ];
+    case 'beam':
+      return [
+        `Dispara em linha reta até <b>${met(s.range)}</b> na direção da mira; para na primeira parede.`,
+        `Atravessa e atinge <b>todos</b> os inimigos no caminho, numa faixa de <b>${met(s.radius * 2)}</b> de largura.`,
+      ];
+    case 'delayed':
+      return [
+        `Marca um ponto na direção da mira: onde está o cursor, até <b>${met(s.range)}</b> de você.`,
+        `<b>${sec(fx.delayS!)}</b> depois, atinge todos num raio de <b>${met(s.radius)}</b>. Dá tempo de o alvo sair: mire onde ele vai estar.`,
+      ];
+    case 'cone':
+      return [
+        `Atinge os inimigos até <b>${met(s.range)}</b> num cone de <b>${num(fx.coneHalfDeg! * 2, 0)}°</b> à sua frente (quem está colado em você, a menos de 0,8 m, sempre é pego).`,
+        `Puxa cada um até ficar a cerca de <b>1 m</b> de você. Elites vêm só ${pct(R.eliteShoveMult)} do caminho; o chefe não se move.`,
+        `Todos os puxados passam a perseguir você.`,
+      ];
+    case 'chain': {
+      const seq = Array.from({ length: fx.jumps! + 1 }, (_, i) => pct(Math.pow(fx.jumpFalloff!, i))).join(' → ');
+      return [
+        `Acerta primeiro o inimigo visível mais próximo da mira, até <b>${met(s.range)}</b> de você (inimigos em Sombra só com o Olhar).`,
+        `Depois salta <b>${fx.jumps}</b> vezes, sempre para o inimigo mais próximo do último atingido, até <b>${met(s.radius)}</b> de distância.`,
+        `Cada salto causa ${pct(1 - fx.jumpFalloff!)} a menos: <b>${seq}</b> do dano.`,
+        `Sem alvo ao alcance, o raio sai no vazio e conta como erro.`,
+      ];
+    }
+    case 'targetArea':
+      return [
+        `Brotam no ponto mirado (até <b>${met(s.range)}</b>), num raio de <b>${met(s.radius)}</b>.`,
+        `Prendem no lugar por <b>${sec(fx.rootS!)}</b> (chefe: <b>${sec(fx.rootBossS!)}</b>). Funcionam em elites.`,
+        `Presos não andam, mas ainda atacam quem estiver ao alcance deles.`,
+      ];
+    case 'arc':
+      return [
+        `Corta em <b>${num(fx.arcDeg!, 0)}°</b> à sua frente, até <b>${met(s.range)}</b> (quem está colado em você, a menos de 0,6 m, sempre é pego).`,
+        `Atinge todos os inimigos dentro do arco de uma vez.`,
+      ];
+    case 'aura':
+      return [
+        `Atinge todos ao seu redor num raio de <b>${met(s.radius)}</b>; não precisa mirar.`,
+        `Empurra cada um <b>${met(fx.pushM!)}</b> para longe (elites, ${pct(R.eliteShoveMult)}; o chefe não se move).`,
+        `Atordoa por <b>${sec(fx.stunS!)}</b> (chefe: ${sec(fx.stunS! * R.bossStunMult)}). Atordoar durante o preparo cancela o golpe do inimigo.`,
+      ];
+    case 'mark':
+      return [
+        `Marca o inimigo <b>comum</b> (não elite) visível mais próximo da mira, até <b>${met(s.range)}</b>.`,
+        `Por <b>${sec(fx.charmS!)}</b> ele luta do seu lado: ataca o aliado dele mais próximo (até ${met(fx.charmSeekM!)}) com <b>${pct(fx.charmDamageMult!)}</b> do dano normal; a armadura do alvo conta.`,
+        `Não causa dano direto. Sem inimigo comum ao alcance, o Fluxo é gasto mesmo assim.`,
+      ];
+  }
+}
+
+/** O que cada modificador faz nesta magia em particular. */
+function modEffect(s: SpellDef, id: ModId): string {
+  const R = SPELL_RULES;
+  const crit = s.fx.shape === 'charge' ? ' no golpe crítico' : '';
+  switch (id) {
+    case 'damage':
+      return `+20% de dano${crit} por ponto`;
+    case 'area':
+      if (s.fx.shape === 'chain') return '+1 salto e +30% de distância de salto por ponto';
+      if (s.fx.shape === 'beam') return '+30% de largura da faixa por ponto';
+      return '+30% de raio do impacto por ponto';
+    case 'range':
+      if (s.fx.shape === 'dash') return '+12% de distância do avanço por ponto (até o seu raio de visão)';
+      return '+12% de alcance por ponto (nunca além do seu raio de visão)';
+    case 'cadence':
+      return '−12% de recarga por ponto';
+    case 'restore':
+      return `Cura ${pct(R.restoreFrac)} da sua vida máxima${s.fx.shape === 'charge' ? ' no golpe crítico' : ' se acertar alguém'}`;
+    case 'stun':
+      return crit ? `Atordoa ${sec(R.stunModS)} o alvo do golpe crítico (vale cheio até no chefe)` : `Atordoa ${sec(R.stunModS)} cada alvo atingido (chefe: ${sec(R.stunModS * R.bossStunMult)})`;
+    case 'shatter':
+      return `Ignora a armadura${crit || ' sempre'}`;
+  }
+}
+
+/** Rótulos dos números principais, que mudam de sentido conforme a forma da magia. */
+function headlineStats(sim: Simulation, s: SpellDef): string {
+  const fx = s.fx;
+  const need = spellNeed(sim, s.id);
+  const reach =
+    fx.shape === 'charge' || fx.shape === 'aura'
+      ? stat('Alcance', fx.shape === 'aura' ? 'ao redor' : '—')
+      : stat(fx.shape === 'dash' ? 'Avanço' : 'Alcance', met(s.range));
+  const size =
+    fx.shape === 'beam'
+      ? stat('Largura', met(s.radius * 2))
+      : fx.shape === 'chain'
+        ? stat('Salto', met(s.radius), `${fx.jumps} saltos`)
+        : fx.shape === 'cone'
+          ? stat('Cone', `${num(fx.coneHalfDeg! * 2, 0)}°`)
+          : fx.shape === 'arc'
+            ? stat('Arco', `${num(fx.arcDeg!, 0)}°`)
+            : s.radius
+              ? stat('Raio', met(s.radius))
+              : stat('Alvo', fx.shape === 'mark' ? '1 inimigo' : 'você');
+  const power = fx.shape === 'charge' ? stat('Crítico base', `×${num(fx.critBase!)}`, 'no próximo golpe') : stat('Dano base', s.baseDamage ? `${s.baseDamage}` : '—');
+  return `<div class="stats">${power}${reach}${size}${stat('Elo mínimo', `${need}`, 'para você')}</div>`;
+}
+
+/** Números no personagem atual: no Elo onde a magia está ou no Elo mínimo, sem Restrições nem forja. */
+function nowBlock(sim: Simulation, s: SpellDef): string {
+  const c = sim.c;
+  const where = whereEquipped(sim, s.id);
+  const need = spellNeed(sim, s.id);
+  if (!where && need > 8) return '';
+  const slot: EloSlot = where ?? { level: need, unlocked: true, technique: s.id, restrictions: [], mods: {}, sealed: false };
+  const pv = sim.spellPreview(slot);
+  if (!pv) return '';
+  const label = where ? `No Elo ${where.level}, como está configurada` : `No Elo ${need} (o mínimo), sem Restrições nem forja`;
+  let main: string;
+  if (s.fx.shape === 'charge') {
+    const pm = displayLevel(c.mastery.point);
+    const mult = (s.fx.critBase! + s.fx.critPerMastery! * pm) * (0.7 + 0.3 * pv.info.power) * (1 + 0.2 * (slot.mods.damage ?? 0));
+    main = stat('Crítico', `×${num(mult)}`, 'no próximo golpe');
+  } else main = stat('Dano por alvo', pv.damage ? num(pv.damage, 0) : '—', pv.damage ? 'antes da armadura' : 'sem dano direto');
+  return `<div class="cd-now">
+    <div class="pv-main"><span>${label}</span><b>nível ${pv.info.effective}</b>${pv.info.beyondLimit ? '<em>Além-limite</em>' : ''}</div>
+    <div class="pv-stats">${main}${stat('Potência', `×${num(pv.info.power)}`)}${stat('Custo', `${num(pv.cost, 0)}`, `Fluxo · ${pv.info.costPct}% da reserva`)}${stat('Recarga', sec(pv.cooldown))}</div>
+    <p class="cd-note">Com a sua Maré, emoções, nível e Maestria de agora.</p>
+  </div>`;
+}
+
+/** Regras que valem para toda magia, com os números da simulação. */
+function commonRules(): string {
+  const R = SPELL_RULES;
+  const rows = [
+    `<b>Custo e recarga vêm do Elo</b>, não da magia: Elo 1 custa ${ELO_TABLE[1]!.cost}% da reserva e recarrega em ${sec(ELO_TABLE[1]!.cooldown)}; Elo 8 custa ${ELO_TABLE[8]!.cost}% e recarrega em ${sec(ELO_TABLE[8]!.cooldown)}. O Fluxo é pago ao lançar, mesmo se errar.`,
+    `<b>Potência</b>: cada nível efetivo acima do 1 soma +30% de dano. Restrições sobem o nível efetivo; magias de outra afinidade perdem nível pela distância no pentágono.`,
+    `<b>Dano final</b> = dano base × potência × forja × Maré × emoções × Afiação × Maestria (+${pct(R.masteryPerLevel)} por nível) × nível do personagem (+4% por nível) × Foco (+10%).`,
+    `<b>Só atinge o que você vê</b>: inimigos fora do seu raio de visão (10 m; 14 m com o Olhar) são ignorados.`,
+    `<b>Armadura</b> do inimigo reduz o dano, a menos que a magia a ignore (Quebra-Guarda, Punho do Voto a cada ${SPELLS.votePunch.fx.pierceEvery} acertos).`,
+    `<b>Recuo</b>: cada acerto empurra o inimigo um pouco (elites, ${pct(R.eliteKnockMult)}; o chefe não se move) e o faz perseguir você.`,
+    `<b>Chefes</b> sofrem só ${pct(R.bossStunMult)} de qualquer atordoamento e não são puxados nem empurrados.`,
+  ];
+  return `<details class="cd-rules"><summary>Regras de todas as magias</summary><ul>${rows.map((r) => `<li>${r}</li>`).join('')}</ul></details>`;
+}
+
 function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): string {
   const c = sim.c;
   const s = SPELLS[id];
@@ -267,7 +434,17 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
   const where = whereEquipped(sim, id);
   const res = resonance(s.tags, c.psyche.traits);
   const resText =
-    res > 1 ? 'Forte: combina com quem você é, a Maestria sobe mais rápido.' : res < 1 ? 'Fraca: vai contra quem você é, a Maestria sobe devagar.' : 'Neutra.';
+    res > 1
+      ? `<span class="good">Forte</span>: combina com quem você é. Custa ${pct(1 - 1 / res)} menos Fluxo e a Maestria sobe ${pct(res - 1)} mais rápido.`
+      : res < 1
+        ? `<span class="bad">Fraca</span>: vai contra quem você é. Custa ${pct(1 / Math.max(0.5, res) - 1)} mais Fluxo e a Maestria sobe ${pct(1 - res)} mais devagar.`
+        : 'Neutra: sem efeito no custo nem na Maestria.';
+  const rec = c.mastery[id];
+  const lvl = displayLevel(rec);
+  const masteryText =
+    s.fx.shape === 'charge'
+      ? `Nível ${lvl}: crítico +${num(s.fx.critPerMastery! * lvl)}, custo −${pct(1 - masteryCostMult(rec))}${modifierDiscount(rec) ? `, forja −${modifierDiscount(rec)} por modificador` : ''}.`
+      : `Nível ${lvl}: +${pct(SPELL_RULES.masteryPerLevel * (lvl - 1))} de dano, custo −${pct(1 - masteryCostMult(rec))}${modifierDiscount(rec) ? `, forja −${modifierDiscount(rec)} por modificador` : ''}. Sobe usando a magia em lutas de verdade.`;
 
   let preview = '';
   let action = '';
@@ -277,11 +454,11 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
     if (!blocked) {
       const kept = slot.restrictions.filter((p) => s.pacts.includes(p));
       const temp: EloSlot = { ...slot, technique: id, restrictions: kept, mods: slot.technique === id ? slot.mods : {} };
-      const info = sim.slotInfo(temp)!;
+      const pv = sim.spellPreview(temp)!;
       const lost = slot.restrictions.length - kept.length;
       preview = `<div class="cd-preview">
-        <div class="pv-main"><span>No Elo ${slot.level}</span><b>nível ${info.effective}</b>${info.beyondLimit ? '<em>Além-limite</em>' : ''}</div>
-        <div class="pv-stats">${stat('Potência', `×${info.power.toFixed(2)}`)}${stat('Custo', `${Math.round(sim.slotCost(temp, info))}`, 'Fluxo')}${stat('Recarga', `${sim.slotCooldown(temp, info).toFixed(1)} s`)}${stat('Forja', `${info.points}`, 'pontos')}</div>
+        <div class="pv-main"><span>No Elo ${slot.level}</span><b>nível ${pv.info.effective}</b>${pv.info.beyondLimit ? '<em>Além-limite</em>' : ''}</div>
+        <div class="pv-stats">${stat('Dano por alvo', pv.damage ? num(pv.damage, 0) : '—')}${stat('Custo', `${num(pv.cost, 0)}`, 'Fluxo')}${stat('Recarga', sec(pv.cooldown))}${stat('Forja', `${pv.info.points}`, 'pontos')}</div>
         ${lost ? `<p class="pv-warn">${lost} Restrição(ões) do Elo não combinam com ${s.name} e sairão.</p>` : ''}
         ${slot.technique && slot.technique !== id && Object.keys(slot.mods).length ? '<p class="pv-warn">A forja deste Elo será zerada.</p>' : ''}
       </div>`;
@@ -301,23 +478,36 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
         : `<button class="mchip link ${d.oath ? 'oath' : ''}" data-goto-pact="${p}">+${d.level} ${d.name}</button>`;
     })
     .join('');
+  const missing = PACT_IDS.filter((p) => !s.pacts.includes(p));
+  const mods = s.mods
+    .map(
+      (m) => `<li><span class="md-ic">${icon(m, 15)}</span><span class="md-txt"><b>${MODS[m].name}</b><small>${modEffect(s, m)}</small></span>
+        <span class="md-cost" title="Custo em pontos de forja · máximo de pontos">${MODS[m].cost} pt · máx ${MODS[m].max}</span></li>`,
+    )
+    .join('');
   return `<div class="cd-head" style="--c:${color}">
       <span class="cd-art">${icon(s.icon, 40)}</span>
-      <div><h3>${s.name}</h3><p>${s.role} · <b style="color:${color}">${AFFINITY_NAMES[s.affinity]}</b>${s.tags.length ? ` · ${s.tags.map((t) => NATURE_NAMES[t]).join(', ')}` : ''}</p></div>
+      <div><h3>${s.name}</h3><p>${s.role} · <b style="color:${color}">${AFFINITY_NAMES[s.affinity]}</b>${s.tags.length ? ` · natureza ${s.tags.map((t) => NATURE_NAMES[t]).join(' e ')}` : ''}</p></div>
     </div>
     <p class="cd-desc">${s.desc}</p>
-    <div class="stats">${stat('Dano base', s.baseDamage ? `${s.baseDamage}` : '—')}${stat('Alcance', s.range ? `${s.range} m` : '—')}${stat('Raio', s.radius ? `${s.radius} m` : '—')}${stat('Elo mínimo', `${need}`, 'para você')}</div>
+    ${preview || (ctx ? '' : nowBlock(sim, s))}
+    ${headlineStats(sim, s)}
+    <h6 class="cd-sub">Como funciona</h6>
+    <ul class="cd-how" style="--c:${color}">${howItWorks(s)
+      .map((l) => `<li>${l}</li>`)
+      .join('')}</ul>
+    <h6 class="cd-sub">Forja nesta magia <small>${s.mods.length} de ${MOD_IDS.length} modificadores</small></h6>
+    <ul class="cd-mods">${mods}</ul>
     <dl class="cd-facts">
-      <div><dt>Afinidade</dt><dd>${pen ? `Fora da sua: −${pen} no nível efetivo` : 'A sua: sem penalidade'}</dd></div>
-      <div><dt>Maestria</dt><dd>Nível ${displayLevel(c.mastery[id])}</dd></div>
-      <div><dt>Ressonância</dt><dd>${resText}</dd></div>
+      <div><dt>Afinidade</dt><dd>${pen ? `Fora da sua: −${pen} no nível efetivo e pede Elo ${need}+.` : 'A sua: sem penalidade, entra no Elo 1.'}</dd></div>
       <div><dt>Equipada</dt><dd>${where ? `Elo ${where.level}` : 'Não'}</dd></div>
+      <div><dt>Maestria</dt><dd>${masteryText}</dd></div>
+      <div><dt>Ressonância</dt><dd>${resText}</dd></div>
     </dl>
-    ${preview}
-    <h6 class="cd-sub">Forja <small>${s.mods.length} modificadores</small></h6>
-    <div class="cd-chips">${s.mods.map((m) => `<span class="mchip" title="${escapeHtml(MODS[m].desc)}">${icon(m, 13)}${MODS[m].name}</span>`).join('')}</div>
-    <h6 class="cd-sub">Restrições compatíveis <small>${s.pacts.length}</small></h6>
+    <h6 class="cd-sub">Restrições compatíveis <small>${s.pacts.length} de ${PACT_IDS.length}</small></h6>
     <div class="cd-chips">${pacts}</div>
+    ${missing.length ? `<p class="cd-note">Não aceita: ${missing.map((p) => PACTS[p].name).join(', ')}.</p>` : ''}
+    ${commonRules()}
     <div class="cd-spacer"></div>
     ${action ? `<div class="cd-actions">${action}</div>` : ''}`;
 }

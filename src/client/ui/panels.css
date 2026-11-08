@@ -2117,7 +2117,7 @@ kbd {
 }
 .pv-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
   gap: 6px;
 }
 .pv-stats .stat {
@@ -2244,4 +2244,128 @@ button.mchip:hover {
   font-size: 10.5px;
   margin-left: 6px;
   white-space: nowrap;
+}
+
+/* Ficha da magia: "agora", como funciona, forja e regras comuns */
+.cd-now {
+  margin: 0 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.cd-now .pv-main b {
+  color: var(--txt);
+}
+.cd-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--mut);
+  line-height: 1.45;
+}
+.cd-how {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cd-how li {
+  position: relative;
+  padding-left: 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #cfd3df;
+}
+.cd-how li::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0.62em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c, var(--cy));
+  box-shadow: 0 0 6px var(--c, var(--cy));
+}
+.cd-how b {
+  color: var(--txt);
+}
+.cd-mods {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
+  gap: 6px;
+}
+.cd-mods li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+}
+.md-ic {
+  color: var(--gold);
+  line-height: 0;
+}
+.md-txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.md-txt b {
+  font-size: 12.5px;
+}
+.md-txt small {
+  font-size: 11px;
+  color: var(--mut);
+}
+.md-cost {
+  flex: none;
+  font-size: 10px;
+  color: var(--mut);
+  white-space: nowrap;
+}
+.cd-rules {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.14);
+}
+.cd-rules summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  font: 600 11px Inter, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mut);
+}
+.cd-rules summary:hover {
+  color: var(--txt);
+}
+.cd-rules ul {
+  margin: 0;
+  padding: 0 14px 10px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #c3c8d6;
+}
+.cd-rules b {
+  color: var(--txt);
+}
+.cd-facts .good {
+  color: var(--good);
+}
+.cd-facts .bad {
+  color: var(--bad);
 }

@@ -43,6 +43,32 @@ describe('Catálogo de magias', () => {
     },
   );
 
+  it('cada magia tem os números que a sua forma pede (o Grimório mostra todos)', () => {
+    const need: Record<string, string[]> = {
+      dash: ['pierceEvery'],
+      charge: ['chargeS', 'defenseZeroS', 'critBase', 'critPerMastery'],
+      beam: [],
+      delayed: ['delayS'],
+      cone: ['coneHalfDeg'],
+      chain: ['jumps', 'jumpFalloff'],
+      targetArea: ['rootS', 'rootBossS'],
+      arc: ['arcDeg'],
+      aura: ['pushM', 'stunS'],
+      mark: ['charmS', 'charmDamageMult', 'charmSeekM'],
+    };
+    for (const id of SPELL_IDS) {
+      const fx = SPELLS[id].fx as unknown as Record<string, unknown>;
+      for (const k of need[SPELLS[id].fx.shape]!) expect(typeof fx[k], `${id}.fx.${k}`).toBe('number');
+    }
+  });
+
+  it('a simulação usa os números da ficha (Correntes prendem pelo tempo do fx)', () => {
+    const { sim, target } = castOn('chains');
+    const left = target.rootUntil - sim.time;
+    // castOn avança 25 ticks depois do lançamento.
+    expect(left + 25 * TICK).toBeCloseTo(SPELLS.chains.fx.rootS!, 5);
+  });
+
   it('Correntes prendem o alvo (não anda)', () => {
     const { sim, target } = castOn('chains');
     expect(target.rootUntil).toBeGreaterThan(sim.time);

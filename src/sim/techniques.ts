@@ -53,7 +53,62 @@ export interface SpellDef {
   pacts: PactId[];
   /** Modificadores de forja com efeito nesta magia. */
   mods: ModId[];
+  /** Números de comportamento próprios da magia: a simulação lê daqui e o Grimório mostra. */
+  fx: SpellFx;
 }
+
+/** Como a magia escolhe e atinge os alvos. */
+export type SpellShape = 'dash' | 'charge' | 'beam' | 'delayed' | 'cone' | 'chain' | 'targetArea' | 'arc' | 'aura' | 'mark';
+
+export interface SpellFx {
+  shape: SpellShape;
+  /** atraso entre lançar e atingir (s) */
+  delayS?: number;
+  /** meia-abertura do cone (graus) */
+  coneHalfDeg?: number;
+  /** abertura do golpe em arco (graus) */
+  arcDeg?: number;
+  /** saltos extras do raio depois do primeiro alvo */
+  jumps?: number;
+  /** dano mantido a cada salto (0,85 = −15% por salto) */
+  jumpFalloff?: number;
+  /** prende no lugar (s); chefes ficam menos */
+  rootS?: number;
+  rootBossS?: number;
+  /** atordoamento próprio da magia (s) */
+  stunS?: number;
+  /** empurrão (m) */
+  pushM?: number;
+  /** a cada N acertos no mesmo alvo, ignora a armadura */
+  pierceEvery?: number;
+  /** duração do controle da mente (s) e dano do controlado contra aliados */
+  charmS?: number;
+  charmDamageMult?: number;
+  charmSeekM?: number;
+  /** Ponto: janela da carga, defesa zero e multiplicadores do crítico */
+  chargeS?: number;
+  defenseZeroS?: number;
+  critBase?: number;
+  critPerMastery?: number;
+}
+
+/** Regras comuns a todas as magias (a simulação lê daqui; o Grimório mostra). */
+export const SPELL_RULES = {
+  /** recuo de cada acerto de magia (m/s de impulso) */
+  knockback: 4,
+  /** elites sofrem só 35% do recuo; o chefe não se move */
+  eliteKnockMult: 0.35,
+  /** puxões e empurrões movem elites pela metade */
+  eliteShoveMult: 0.5,
+  /** chefes sofrem 40% de qualquer atordoamento */
+  bossStunMult: 0.4,
+  /** Abalo: atordoa por 0,8 s ao acertar */
+  stunModS: 0.8,
+  /** Restaurar: cura 6% da vida máxima se acertar alguém */
+  restoreFrac: 0.06,
+  /** Maestria da magia: +2% de efeito por nível */
+  masteryPerLevel: 0.02,
+} as const;
 
 const ALL_PACTS: PactId[] = ['eliteOnly', 'recentlyHit', 'lowFlow', 'missLock', 'neverFlee', 'lifeCost', 'bloodOath'];
 const NO_MISS: PactId[] = ['eliteOnly', 'recentlyHit', 'lowFlow', 'neverFlee', 'lifeCost', 'bloodOath'];
@@ -74,6 +129,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     icon: 'signature',
     pacts: ALL_PACTS,
     mods: ['damage', 'area', 'range', 'cadence', 'restore', 'stun', 'shatter'],
+    fx: { shape: 'dash', pierceEvery: 3 },
   },
   point: {
     id: 'point',
@@ -90,6 +146,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     // Ponto não é um golpe em si (carrega o próximo): "se errar" não se aplica.
     pacts: NO_MISS,
     mods: ['damage', 'cadence', 'restore', 'stun', 'shatter'],
+    fx: { shape: 'charge', chargeS: 4, defenseZeroS: 2, critBase: 2.5, critPerMastery: 0.1 },
   },
   // ----- Projeção
   flowLance: {
@@ -106,6 +163,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     icon: 'lance',
     pacts: ALL_PACTS,
     mods: ['damage', 'area', 'range', 'cadence', 'restore', 'stun', 'shatter'],
+    fx: { shape: 'beam' },
   },
   orbRain: {
     id: 'orbRain',
@@ -121,6 +179,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     icon: 'orbs',
     pacts: ALL_PACTS,
     mods: ['damage', 'area', 'range', 'cadence', 'stun', 'shatter'],
+    fx: { shape: 'delayed', delayS: 0.6 },
   },
   // ----- Mutação
   elasticPull: {
@@ -137,6 +196,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     icon: 'pull',
     pacts: NO_MISS,
     mods: ['damage', 'range', 'cadence', 'stun', 'restore'],
+    fx: { shape: 'cone', coneHalfDeg: 40 },
   },
   discharge: {
     id: 'discharge',
@@ -152,6 +212,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     icon: 'bolt',
     pacts: ALL_PACTS,
     mods: ['damage', 'area', 'range', 'cadence', 'stun', 'shatter'],
+    fx: { shape: 'chain', jumps: 3, jumpFalloff: 0.85 },
   },
   // ----- Forja
   chains: {
@@ -168,6 +229,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     icon: 'chains',
     pacts: NO_MISS,
     mods: ['damage', 'area', 'range', 'cadence', 'stun'],
+    fx: { shape: 'targetArea', rootS: 2.5, rootBossS: 1.2 },
   },
   conjuredBlade: {
     id: 'conjuredBlade',
@@ -183,6 +245,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     icon: 'blade',
     pacts: ALL_PACTS,
     mods: ['damage', 'range', 'cadence', 'restore', 'stun', 'shatter'],
+    fx: { shape: 'arc', arcDeg: 180 },
   },
   // ----- Domínio
   repel: {
@@ -199,6 +262,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     icon: 'repel',
     pacts: NO_MISS,
     mods: ['damage', 'area', 'cadence', 'stun', 'restore'],
+    fx: { shape: 'aura', pushM: 3, stunS: 0.6 },
   },
   discord: {
     id: 'discord',
@@ -215,6 +279,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     // Só funciona em comuns: "só contra elites" não faz sentido.
     pacts: ['recentlyHit', 'lowFlow', 'neverFlee', 'lifeCost', 'bloodOath'],
     mods: ['range', 'cadence'],
+    fx: { shape: 'mark', charmS: 6, charmDamageMult: 1.5, charmSeekM: 12 },
   },
 };
 

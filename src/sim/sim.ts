@@ -49,6 +49,7 @@ import {
   resonance,
   sanitizeSlot,
   SPELL_IDS,
+  SPELL_RULES,
   SPELLS,
   TECHNIQUES,
   type MasteryId,
@@ -399,6 +400,19 @@ export class Simulation {
       ((info.costPct / 100) * this.flowMax() * masteryCostMult(this.c.mastery[tech.id]) * this.mods.techniqueCost * TUNING.spellCost) /
       Math.max(0.5, res)
     );
+  }
+
+  /** Prévia de uma magia num Elo, sem lançar: nível efetivo, dano por alvo agora, custo e recarga. */
+  spellPreview(slot: EloSlot): { info: EffectiveInfo; damage: number; cost: number; cooldown: number } | null {
+    const info = this.slotInfo(slot);
+    if (!info || !slot.technique) return null;
+    const spell = SPELLS[slot.technique as SpellId];
+    return {
+      info,
+      damage: spell.baseDamage ? this.spellDamage(spell, slot, info) : 0,
+      cost: this.slotCost(slot, info),
+      cooldown: this.slotCooldown(slot, info),
+    };
   }
 
   slotCooldown(slot: EloSlot, info: EffectiveInfo): number {
@@ -818,7 +832,7 @@ export class Simulation {
       this.outgoingMult() *
       this.mods.signature *
       sharpnessMult(r.sharpness) *
-      (1 + 0.02 * (displayLevel(r) - 1))
+      (1 + SPELL_RULES.masteryPerLevel * (displayLevel(r) - 1))
     );
   }
 
@@ -829,16 +843,16 @@ export class Simulation {
       this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: 0, target: 'enemy', id: e.id, immune: true });
       return false;
     }
-    if (slot.mods.stun) this.stunEnemy(e, 0.8);
+    if (slot.mods.stun) this.stunEnemy(e, SPELL_RULES.stunModS);
     this.train(spell.id, 10, this.currentRisk(e));
-    if (dmg > 0) this.hitEnemy(e, dmg, { ignoreArmor: pierce || !!slot.mods.shatter, source: 'spell', knock: 4, big: true });
+    if (dmg > 0) this.hitEnemy(e, dmg, { ignoreArmor: pierce || !!slot.mods.shatter, source: 'spell', knock: SPELL_RULES.knockback, big: true });
     return true;
   }
 
   /** Depois da magia: Restaurar cura se acertou; "se errar" pune se não acertou ninguém. */
   private afterSpell(slot: EloSlot, hits: number): void {
     const p = this.player;
-    if (hits > 0 && slot.mods.restore) this.healPlayer(this.maxHp() * 0.06);
+    if (hits > 0 && slot.mods.restore) this.healPlayer(this.maxHp() * SPELL_RULES.restoreFrac);
     if (hits === 0 && slot.restrictions.includes('missLock')) {
       p.flow = 0;
       p.flowLockUntil = this.time + 20;
@@ -847,7 +861,7 @@ export class Simulation {
   }
 
   private stunEnemy(e: Enemy, s: number): void {
-    if (e.def.boss) s *= 0.4;
+    if (e.def.boss) s *= SPELL_RULES.bossStunMult;
     e.stun = Math.max(e.stun, s);
     if (e.state === 'windup' || e.state === 'charging') e.state = 'stunned';
   }
@@ -868,7 +882,7 @@ export class Simulation {
   /** Puxa/empurra um inimigo ao longo de `dir` por `amount` metros, com colisão. */
   private shove(e: Enemy, dir: Vec2, amount: number): void {
     if (e.def.boss) return;
-    const k = e.def.elite ? 0.5 : 1;
+    const k = e.def.elite ? SPELL_RULES.eliteShoveMult : 1;
     const steps = 6;
     for (let i = 0; i < steps; i++) moveWithCollision(this.map, e.pos, (dir.x * amount * k) / steps, (dir.y * amount * k) / steps, Math.min(0.45, e.def.radius * 0.6));
     if (inCircle(this.map.sanctuary, e.pos, 1)) {
@@ -897,7 +911,7 @@ export class Simulation {
         for (const e of this.live()) {
           if (dist(e.pos, center) > radius + e.def.radius) continue;
           e.signatureHits += 1;
-          if (this.spellHit(spell, slot, e, dmg, e.signatureHits % 3 === 0)) hits++;
+          if (this.spellHit(spell, slot, e, dmg, e.signatureHits % spell.fx.pierceEvery! === 0)) hits++;
         }
         return this.afterSpell(slot, hits);
       }
@@ -923,9 +937,9 @@ export class Simulation {
       }
       case 'orbRain': {
         const at = this.aimPoint(range);
-        this.events.push({ t: 'spellMark', x: at.x, y: at.y, r: radius, duration: 0.6, color });
+        this.events.push({ t: 'spellMark', x: at.x, y: at.y, r: radius, duration: spell.fx.delayS!, color });
         this.pending.push({
-          at: this.time + 0.6,
+          at: this.time + spell.fx.delayS!,
           run: () => {
             let h = 0;
             this.events.push({ t: 'impact', x: at.x, y: at.y, r: radius, color: beyond ? '#ffd84a' : color });
@@ -940,7 +954,7 @@ export class Simulation {
         for (const e of this.live()) {
           const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
           const d = Math.hypot(to.x, to.y);
-          if (d > range || (d > 0.8 && angleBetween(to, p.facing) > (40 * Math.PI) / 180)) continue;
+          if (d > range || (d > 0.8 && angleBetween(to, p.facing) > (spell.fx.coneHalfDeg! * Math.PI) / 180)) continue;
           if (!this.spellHit(spell, slot, e, dmg)) continue;
           hits++;
           targets.push({ ...e.pos });
@@ -960,7 +974,7 @@ export class Simulation {
           return this.afterSpell(slot, 0);
         }
         const chain: Enemy[] = [first];
-        const jumps = 3 + (slot.mods.area ?? 0);
+        const jumps = spell.fx.jumps! + (slot.mods.area ?? 0);
         while (chain.length <= jumps) {
           const last = chain[chain.length - 1]!;
           const next = this.live()
@@ -971,7 +985,7 @@ export class Simulation {
         }
         this.events.push({ t: 'chain', points: [{ ...p.pos }, ...chain.map((e) => ({ ...e.pos }))], color: beyond ? '#ffd84a' : color });
         chain.forEach((e, i) => {
-          if (e.state !== 'dead' && this.spellHit(spell, slot, e, dmg * Math.pow(0.85, i))) hits++;
+          if (e.state !== 'dead' && this.spellHit(spell, slot, e, dmg * Math.pow(spell.fx.jumpFalloff!, i))) hits++;
         });
         return this.afterSpell(slot, hits);
       }
@@ -982,17 +996,18 @@ export class Simulation {
           if (dist(e.pos, at) > radius + e.def.radius) continue;
           if (!this.spellHit(spell, slot, e, dmg)) continue;
           hits++;
-          e.rootUntil = this.time + (e.def.boss ? 1.2 : 2.5);
+          e.rootUntil = this.time + (e.def.boss ? spell.fx.rootBossS! : spell.fx.rootS!);
           e.aggro = true;
         }
         return this.afterSpell(slot, hits);
       }
       case 'conjuredBlade': {
-        this.events.push({ t: 'slash', x: p.pos.x, y: p.pos.y, dir: { ...p.facing }, range, arc: Math.PI, color: beyond ? '#ffd84a' : color });
+        const arc = (spell.fx.arcDeg! * Math.PI) / 180;
+        this.events.push({ t: 'slash', x: p.pos.x, y: p.pos.y, dir: { ...p.facing }, range, arc, color: beyond ? '#ffd84a' : color });
         for (const e of this.live()) {
           const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
           const d = Math.hypot(to.x, to.y);
-          if (d > range + e.def.radius || (d > 0.6 && angleBetween(to, p.facing) > Math.PI / 2)) continue;
+          if (d > range + e.def.radius || (d > 0.6 && angleBetween(to, p.facing) > arc / 2)) continue;
           if (this.spellHit(spell, slot, e, dmg)) hits++;
         }
         return this.afterSpell(slot, hits);
@@ -1004,8 +1019,8 @@ export class Simulation {
           if (Math.hypot(to.x, to.y) > radius + e.def.radius) continue;
           if (!this.spellHit(spell, slot, e, dmg)) continue;
           hits++;
-          this.shove(e, normalize(to), 3);
-          this.stunEnemy(e, 0.6);
+          this.shove(e, normalize(to), spell.fx.pushM!);
+          this.stunEnemy(e, spell.fx.stunS!);
         }
         return this.afterSpell(slot, hits);
       }
@@ -1018,7 +1033,7 @@ export class Simulation {
           this.notice('Marca da Discórdia: nenhum inimigo comum ao alcance.', 'warn');
           return this.afterSpell(slot, 0);
         }
-        target.charmedUntil = this.time + 6;
+        target.charmedUntil = this.time + spell.fx.charmS!;
         target.aggro = true;
         target.state = 'chase';
         this.train(spell.id, 10, this.currentRisk(target));
@@ -1030,8 +1045,9 @@ export class Simulation {
 
   private castPoint(info: EffectiveInfo): void {
     const p = this.player;
-    p.pointUntil = this.time + 4;
-    p.defenseZeroUntil = this.time + 2;
+    const fx = SPELLS.point.fx;
+    p.pointUntil = this.time + fx.chargeS!;
+    p.defenseZeroUntil = this.time + fx.defenseZeroS!;
     this.events.push({ t: 'pointCharge' });
     this.notice(`Ponto: o próximo golpe é um crítico (nível ${info.effective}). Defesa zero por 2 s.`, 'info');
   }
@@ -1058,7 +1074,7 @@ export class Simulation {
     // Recuo: empurra para longe do jogador (elites resistem, o chefe não se move).
     if (opts.knock && !e.def.boss) {
       const away = normalize({ x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y });
-      const k = opts.knock * TUNING.knockback * (e.def.elite ? 0.35 : 1);
+      const k = opts.knock * TUNING.knockback * (e.def.elite ? SPELL_RULES.eliteKnockMult : 1);
       e.knock = { x: e.knock.x + away.x * k, y: e.knock.y + away.y * k };
     }
     let crit = false;
@@ -1071,7 +1087,7 @@ export class Simulation {
       const pm = this.c.mastery.point;
       const mods = pointSlot.mods;
       dmg *=
-        (2.5 + 0.1 * displayLevel(pm)) *
+        (SPELLS.point.fx.critBase! + SPELLS.point.fx.critPerMastery! * displayLevel(pm)) *
         (0.7 + 0.3 * (info?.power ?? 1)) *
         (1 + 0.2 * (mods.damage ?? 0)) *
         sharpnessMult(pm.sharpness);
@@ -1079,10 +1095,10 @@ export class Simulation {
       p.pointUntil = -1;
       if (mods.shatter) ignoreArmor = true;
       if (mods.stun) {
-        e.stun = 0.8;
+        e.stun = SPELL_RULES.stunModS;
         if (e.state === 'windup' || e.state === 'charging') e.state = 'stunned';
       }
-      if (mods.restore) this.healPlayer(this.maxHp() * 0.06);
+      if (mods.restore) this.healPlayer(this.maxHp() * SPELL_RULES.restoreFrac);
       this.train('point', 8, this.currentRisk(e));
     }
     if (!ignoreArmor) dmg = Math.max(1, dmg * (1 - armorReduction(e.def.armor)));
@@ -1569,7 +1585,7 @@ export class Simulation {
   /** Marca da Discórdia: o inimigo ataca o aliado mais próximo. */
   private updateCharmed(e: Enemy, dt: number): void {
     const foe = this.live()
-      .filter((x) => x !== e && this.time >= x.charmedUntil && dist(x.pos, e.pos) < 12)
+      .filter((x) => x !== e && this.time >= x.charmedUntil && dist(x.pos, e.pos) < SPELLS.discord.fx.charmSeekM!)
       .sort((a, b) => dist(a.pos, e.pos) - dist(b.pos, e.pos))[0];
     const atk = e.def.attacks.find((a) => a.type === 'melee')!;
     if (!foe) {
@@ -1584,7 +1600,7 @@ export class Simulation {
       if (e.timer <= 0) {
         this.events.push({ t: 'enemySwing', id: e.id, dir: { ...e.facing }, range: atk.range });
         if (d <= atk.range + foe.def.radius + 0.3) {
-          const dmg = Math.max(1, Math.round(atk.damage * 1.5 * (1 - armorReduction(foe.def.armor))));
+          const dmg = Math.max(1, Math.round(atk.damage * SPELLS.discord.fx.charmDamageMult! * (1 - armorReduction(foe.def.armor))));
           foe.hp -= dmg;
           foe.hurtAgo = 0;
           this.events.push({ t: 'damage', x: foe.pos.x, y: foe.pos.y, amount: dmg, target: 'enemy', id: foe.id });
