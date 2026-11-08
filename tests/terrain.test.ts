@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BLOCKING, buildMap, floorAt, Tile, type GameMap } from '../src/sim/world/map';
+import { BLOCKING, floorAt, Tile, type GameMap } from '../src/sim/world/map';
+import { buildRegion } from '../src/sim/world/regions';
 
 /** Tiles alcançáveis a pé a partir do santuário (vizinhança de 4). */
 function reachable(m: GameMap): Uint8Array {
@@ -29,7 +30,7 @@ function reachable(m: GameMap): Uint8Array {
 }
 
 describe('Relevo', () => {
-  const m = buildMap();
+  const m = buildRegion('vale');
   const ok = reachable(m);
   const at = (x: number, y: number) => ok[Math.floor(y) * m.w + Math.floor(x)] === 1;
 

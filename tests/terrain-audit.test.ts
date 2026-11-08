@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BLOCKING, BRIDGE_DECK, buildMap, floorAt, isBlocked, Tile } from '../src/sim/world/map';
+import { BLOCKING, BRIDGE_DECK, floorAt, isBlocked, Tile } from '../src/sim/world/map';
+import { buildRegion } from '../src/sim/world/regions';
 
 /** Auditoria do relevo: procura lugares onde o chão e a colisão discordam. */
 describe('Auditoria do terreno', () => {
-  const m = buildMap();
+  const m = buildRegion('vale');
   const walk = (x: number, y: number) => x >= 0 && y >= 0 && x < m.w && y < m.h && !BLOCKING.has(m.tiles[y * m.w + x] as Tile);
   const fl = (x: number, y: number) => floorAt(m, x + 0.5, y + 0.5);
 

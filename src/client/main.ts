@@ -6,7 +6,9 @@ import { createCharacter, type Character } from '../sim/character';
 import { Simulation, TICK, type SimEvent } from '../sim/sim';
 import { Hud } from './hud';
 import { InputController } from './input';
-import { deleteCharacter, loadCharacter, saveCharacter } from './save';
+import { deleteCharacter, disableSaving, loadCharacter, saveCharacter } from './save';
+import { registerMap } from '../sim/world/regions';
+import type { MapData } from '../sim/world/terrain';
 import { Sfx } from './sfx';
 import { GameView } from './three/view';
 import { DebugPanel, loadTuning } from './ui/debug';
@@ -157,7 +159,7 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
   let saveTimer = 0;
   let raf = 0;
   let running = true;
-  let travel: { to: 'vale' | 'varn'; arrive: { x: number; y: number } } | null = null;
+  let travel: { to: string; arrive: { x: number; y: number } } | null = null;
   const frame = (now: number) => {
     if (!running) return;
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -230,4 +232,27 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
   };
 }
 
-showTitle();
+/** `?playtest=1`: abre o mapa que está no editor com um personagem descartável (nada é salvo). */
+function startPlaytest(): boolean {
+  if (!new URLSearchParams(location.search).has('playtest')) return false;
+  let d: MapData | null = null;
+  try {
+    d = JSON.parse(localStorage.getItem('voyagers-vow/editor/playtest') ?? 'null') as MapData | null;
+  } catch {
+    d = null;
+  }
+  if (!d) return false;
+  disableSaving();
+  registerMap(d);
+  const c = createCharacter('Teste', 'vigor');
+  c.region = d.id;
+  const tag = document.createElement('div');
+  tag.className = 'region-card';
+  tag.style.cssText = 'top:auto;bottom:90px;opacity:.85';
+  tag.innerHTML = `<span>Teste de mapa · nada é salvo</span><b>${d.name}</b>`;
+  document.body.append(tag);
+  startGame(c);
+  return true;
+}
+
+if (!startPlaytest()) showTitle();

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createCharacter } from '../src/sim/character';
 import { Simulation } from '../src/sim/sim';
-import { BLOCKING, buildRegion, FLOOR_H, floorLevel, moveWithCollision, REGION_IDS, Tile, type GameMap } from '../src/sim/world/map';
+import { BLOCKING, FLOOR_H, floorLevel, moveWithCollision, Tile, type GameMap } from '../src/sim/world/map';
+import { REGION_IDS, buildRegion } from '../src/sim/world/regions';
 
 /** Componentes caminháveis (vizinhança de 4), com o tamanho de cada um. */
 function components(m: GameMap): { id: Int32Array; size: Map<number, number> } {

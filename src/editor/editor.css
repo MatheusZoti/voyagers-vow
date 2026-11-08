@@ -1,0 +1,417 @@
+:root {
+  --bg: #0f1016;
+  --glass: rgba(24, 26, 36, 0.94);
+  --card: linear-gradient(180deg, rgba(42, 45, 60, 0.55), rgba(26, 28, 39, 0.55));
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.13);
+  --txt: #e9eaf0;
+  --mut: #8d92a6;
+  --gold: #e2b65a;
+  --cy: #6fd0ff;
+  --bad: #ff6a5a;
+  --warn: #ffbf5a;
+  --good: #7ed37a;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--txt);
+  font: 13px/1.45 Inter, system-ui, sans-serif;
+}
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+#editor {
+  display: grid;
+  grid-template-columns: 216px 1fr 300px;
+  grid-template-rows: 52px 1fr 28px;
+  grid-template-areas:
+    'top top top'
+    'tools stage side'
+    'status status status';
+  height: 100%;
+}
+
+/* ---------- barra superior ---------- */
+.top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--glass);
+  border-bottom: 1px solid var(--line-2);
+}
+.brand {
+  font: 700 15px Cinzel, serif;
+  color: var(--gold);
+  letter-spacing: 0.04em;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.top .grow {
+  flex: 1;
+}
+.btn {
+  border: 1px solid var(--line-2);
+  background: var(--card);
+  border-radius: 10px;
+  padding: 6px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.btn:hover {
+  border-color: rgba(111, 208, 255, 0.45);
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.btn.primary {
+  border-color: rgba(226, 182, 90, 0.55);
+  background: linear-gradient(180deg, rgba(226, 182, 90, 0.28), rgba(226, 182, 90, 0.12));
+}
+.btn.on {
+  border-color: var(--cy);
+  background: rgba(111, 208, 255, 0.16);
+}
+.btn kbd,
+.tool kbd {
+  font: 600 10px Inter, sans-serif;
+  color: var(--mut);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-left: 6px;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--mut);
+}
+.seg button.on {
+  background: rgba(111, 208, 255, 0.16);
+  color: var(--txt);
+}
+select.map-select,
+.field input,
+.field select {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 5px 8px;
+  min-width: 0;
+}
+.dirty-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--good);
+  display: inline-block;
+}
+.dirty-dot.dirty {
+  background: var(--warn);
+  box-shadow: 0 0 8px var(--warn);
+}
+
+/* ---------- ferramentas ---------- */
+.tools {
+  grid-area: tools;
+  background: var(--glass);
+  border-right: 1px solid var(--line-2);
+  overflow-y: auto;
+  padding: 10px 10px 16px;
+}
+.group-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mut);
+  margin: 12px 4px 6px;
+}
+.group-title:first-child {
+  margin-top: 2px;
+}
+.tool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.tool {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 9px;
+  padding: 6px 7px;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+.tool span.lbl {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool:hover {
+  border-color: var(--line-2);
+}
+.tool.on {
+  border-color: var(--cy);
+  background: rgba(111, 208, 255, 0.14);
+  box-shadow: 0 0 0 1px rgba(111, 208, 255, 0.2) inset;
+}
+.sw {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex: none;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+.opts {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip {
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  padding: 2px 8px;
+  cursor: pointer;
+  background: transparent;
+  min-width: 26px;
+}
+.chip.on {
+  border-color: var(--cy);
+  background: rgba(111, 208, 255, 0.16);
+}
+.opt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--mut);
+}
+
+/* ---------- palco ---------- */
+.stage {
+  grid-area: stage;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.03), transparent 60%),
+    #0b0c11;
+}
+.stage canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.stage canvas.c2d {
+  cursor: crosshair;
+}
+.stage.panning canvas.c2d {
+  cursor: grabbing;
+}
+.hint {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  background: rgba(10, 11, 16, 0.78);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  padding: 6px 10px;
+  color: var(--mut);
+  pointer-events: none;
+  max-width: 70%;
+}
+.hint b {
+  color: var(--txt);
+}
+.banner {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  background: var(--glass);
+  border: 1px solid rgba(255, 191, 90, 0.5);
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 3;
+}
+.toast {
+  position: absolute;
+  right: 14px;
+  top: 12px;
+  background: var(--glass);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  padding: 8px 14px;
+  z-index: 4;
+  transition: opacity 0.3s;
+}
+.toast.good {
+  border-color: rgba(126, 211, 122, 0.55);
+}
+.toast.bad {
+  border-color: rgba(255, 106, 90, 0.6);
+}
+
+/* ---------- painel lateral ---------- */
+.side {
+  grid-area: side;
+  background: var(--glass);
+  border-left: 1px solid var(--line-2);
+  overflow-y: auto;
+  padding: 10px 12px 18px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.card h3 {
+  margin: 0 0 8px;
+  font: 600 12px Inter, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.field {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.field label {
+  color: var(--mut);
+}
+.field.two {
+  grid-template-columns: 92px 1fr 1fr;
+}
+.muted {
+  color: var(--mut);
+}
+.issues {
+  display: grid;
+  gap: 4px;
+}
+.issue {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.18);
+}
+.issue.erro {
+  border-left-color: var(--bad);
+}
+.issue:hover {
+  border-color: var(--line-2);
+}
+.ok-line {
+  color: var(--good);
+}
+.legend {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  align-items: center;
+  color: var(--mut);
+}
+.keys {
+  color: var(--mut);
+  line-height: 1.7;
+}
+.keys kbd {
+  font: 600 10.5px Inter, sans-serif;
+  color: var(--txt);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* ---------- barra de status ---------- */
+.status {
+  grid-area: status;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--glass);
+  border-top: 1px solid var(--line-2);
+  color: var(--mut);
+  font-size: 12px;
+}
+.status b {
+  color: var(--txt);
+  font-weight: 500;
+}
+
+/* ---------- diálogo ---------- */
+.modal-back {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+}
+.modal {
+  width: 360px;
+  background: var(--glass);
+  border: 1px solid var(--line-2);
+  border-radius: 18px;
+  padding: 16px 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.modal h2 {
+  margin: 0 0 12px;
+  font: 700 17px Cinzel, serif;
+  color: var(--gold);
+}
+.modal .row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}

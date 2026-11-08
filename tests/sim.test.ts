@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createCharacter } from '../src/sim/character';
 import { emptyInput, Simulation, TICK } from '../src/sim/sim';
-import { buildMap, isBlocked } from '../src/sim/world/map';
+import { isBlocked } from '../src/sim/world/map';
+import { buildRegion } from '../src/sim/world/regions';
 
 const newSim = () => new Simulation(createCharacter('Teste', 'vigor', 3), 5);
 
 describe('Mapa', () => {
   it('início, ponte e arena são caminháveis', () => {
-    const m = buildMap();
+    const m = buildRegion('vale');
     expect(isBlocked(m, m.playerStart.x, m.playerStart.y)).toBe(false);
     expect(isBlocked(m, m.bridge!.x0 + 1, (m.bridge!.y0 + m.bridge!.y1) / 2)).toBe(false);
     expect(isBlocked(m, m.arena!.x, m.arena!.y)).toBe(false);

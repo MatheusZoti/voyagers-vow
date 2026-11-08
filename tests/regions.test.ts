@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createCharacter } from '../src/sim/character';
 import { emptyInput, Simulation, TICK } from '../src/sim/sim';
-import { BLOCKING, buildRegion, floorAt, isBlocked, REGION_IDS, Tile, type GameMap } from '../src/sim/world/map';
+import { BLOCKING, floorAt, isBlocked, Tile, type GameMap } from '../src/sim/world/map';
+import { REGION_IDS, buildRegion } from '../src/sim/world/regions';
 
 function reachable(m: GameMap): Uint8Array {
   const seen = new Uint8Array(m.w * m.h);

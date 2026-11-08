@@ -58,7 +58,8 @@ import {
   type TechniqueId,
 } from './techniques';
 import { armorReduction, ENEMIES, SPELL_DROP_CHANCE, tierScale, type Projectile, type AttackDef, type Echo, type Enemy, type EnemyKind, type SpellDrop, type Trap } from './world/entities';
-import { buildRegion, exitAt, inCircle, isBlocked, moveWithCollision, REGION_NAMES, type GameMap, type RegionId } from './world/map';
+import { exitAt, inCircle, isBlocked, moveWithCollision, type GameMap, type RegionId } from './world/map';
+import { buildRegion, regionName } from './world/regions';
 import { TUNING } from './tuning';
 
 export const TICK = 1 / 30;
@@ -711,7 +712,7 @@ export class Simulation {
       } else {
         this.traveling = true;
         this.events.push({ t: 'travel', to: exit.to, arrive: { ...exit.arrive } });
-        this.notice(`Rumo a ${REGION_NAMES[exit.to]}…`, 'info');
+        this.notice(`Rumo a ${regionName(exit.to)}…`, 'info');
       }
     }
 

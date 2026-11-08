@@ -5,6 +5,12 @@ import { migrateCharacter, type Character } from '../sim/character';
  * por ora o navegador guarda uma cópia.
  */
 const KEY = 'voyagers-vow/character/v1';
+let enabled = true;
+
+/** Teste de mapa vindo do editor: nada é salvo. */
+export function disableSaving(): void {
+  enabled = false;
+}
 
 export function loadCharacter(): Character | null {
   try {
@@ -17,6 +23,7 @@ export function loadCharacter(): Character | null {
 }
 
 export function saveCharacter(c: Character): void {
+  if (!enabled) return;
   try {
     localStorage.setItem(KEY, JSON.stringify(c));
   } catch {

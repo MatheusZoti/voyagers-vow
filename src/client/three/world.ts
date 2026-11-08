@@ -77,15 +77,9 @@ export function buildWorld(map: GameMap): WorldView {
   const e2 = new THREE.Vector3();
   const nrm = new THREE.Vector3();
   const patch = (x: number, y: number) => 0.5 + 0.5 * Math.sin(x * 0.21 + Math.cos(y * 0.17) * 2) * Math.cos(y * 0.23 - x * 0.05);
-  /** Trilha de terra seguindo a curva real, com borda irregular. */
-  const onPath = (x: number, y: number) => {
-    const ix = Math.floor(x);
-    const a0 = map.pathY[ix];
-    const a1 = map.pathY[Math.min(w, ix + 1)];
-    if (a0 === undefined || a1 === undefined || Number.isNaN(a0) || Number.isNaN(a1)) return false;
-    const py = a0 + (a1 - a0) * (x - ix);
-    return Math.abs(y - py) < 1.25 + Math.sin(x * 1.7) * 0.25 + Math.cos(x * 0.9 + y) * 0.15;
-  };
+  /** Trilha de terra nos tiles de trilha, com a borda irregular (amostra levemente deslocada). */
+  const onPath = (x: number, y: number) =>
+    tile(x + Math.sin(x * 1.7 + y * 0.9) * 0.3, y + Math.cos(y * 1.9 - x * 0.7) * 0.3) === Tile.Path;
   const face = (a: number[], b: number[], d: number[]) => {
     e1.set(b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!);
     e2.set(d[0]! - a[0]!, d[1]! - a[1]!, d[2]! - a[2]!);
@@ -323,39 +317,48 @@ export function buildWorld(map: GameMap): WorldView {
   // -------------------------------------------------------------------------
   // Ponte suspensa sobre o desfiladeiro: tábuas com leve barriga, postes e cordas.
   // -------------------------------------------------------------------------
-  const b = map.bridge;
   const plank = mat('#9b6d43');
   const wood = mat('#5e4128');
   const ropeMat = mat('#c9b48a');
-  if (b) {
-    const zMid = (b.y0 + b.y1 + 1) / 2;
-    const xs = b.x0 - 0.5;
-    const xe = b.x1 + 1.5;
-    const sag = (x: number) => BRIDGE_DECK - Math.sin(((x - xs) / (xe - xs)) * Math.PI) * 0.3;
-    for (let x = xs; x <= xe; x += 0.42) {
-      const p = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 3.4), plank);
-      p.position.set(x, sag(x), zMid);
+  for (const b of map.bridges) {
+    // u = ao longo da ponte, v = de lado a lado; P(u, v) devolve (x, z) no mundo.
+    const alongX = b.x1 - b.x0 >= b.y1 - b.y0;
+    const P = (u: number, v: number): [number, number] => (alongX ? [u, v] : [v, u]);
+    const vMid = alongX ? (b.y0 + b.y1 + 1) / 2 : (b.x0 + b.x1 + 1) / 2;
+    const width = (alongX ? b.y1 - b.y0 : b.x1 - b.x0) + 1;
+    const us = (alongX ? b.x0 : b.y0) - 0.5;
+    const ue = (alongX ? b.x1 : b.y1) + 1.5;
+    const sag = (u: number) => BRIDGE_DECK - Math.sin(((u - us) / (ue - us)) * Math.PI) * 0.3;
+    for (let u = us; u <= ue; u += 0.42) {
+      const p = new THREE.Mesh(alongX ? new THREE.BoxGeometry(0.36, 0.1, width - 1.6) : new THREE.BoxGeometry(width - 1.6, 0.1, 0.36), plank);
+      const [px, pz] = P(u, vMid);
+      p.position.set(px, sag(u), pz);
       p.rotation.y = (rng.next() - 0.5) * 0.06;
       p.castShadow = p.receiveShadow = true;
       group.add(p);
     }
     for (const side of [-1, 1]) {
-      const z = zMid + side * 1.8;
-      for (const x of [xs - 0.3, xe + 0.3]) {
+      const v = vMid + side * (width / 2 - 0.7);
+      for (const u of [us - 0.3, ue + 0.3]) {
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 1.6, 6), wood);
-        post.position.set(x, gh(x, z) + 0.7, z);
+        const [px, pz] = P(u, v);
+        post.position.set(px, gh(px, pz) + 0.7, pz);
         post.castShadow = true;
         group.add(post);
       }
       const pts: THREE.Vector3[] = [];
-      for (let x = xs - 0.3; x <= xe + 0.31; x += 0.5) pts.push(new THREE.Vector3(x, sag(Math.min(xe, Math.max(xs, x))) + 0.95, z));
+      for (let u = us - 0.3; u <= ue + 0.31; u += 0.5) {
+        const [px, pz] = P(u, v);
+        pts.push(new THREE.Vector3(px, sag(Math.min(ue, Math.max(us, u))) + 0.95, pz));
+      }
       const rope = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.035, 5, false), ropeMat);
       rope.castShadow = true;
       group.add(rope);
-      for (let x = xs + 0.6; x < xe; x += 1.2) {
-        const v = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9, 4), ropeMat);
-        v.position.set(x, sag(x) + 0.5, z);
-        group.add(v);
+      for (let u = us + 0.6; u < ue; u += 1.2) {
+        const vert = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9, 4), ropeMat);
+        const [px, pz] = P(u, v);
+        vert.position.set(px, sag(u) + 0.5, pz);
+        group.add(vert);
       }
     }
   }

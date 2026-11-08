@@ -31,13 +31,9 @@ export function drawBase(map: GameMap, scale: number): HTMLCanvasElement {
   cv.height = H;
   const g = cv.getContext('2d')!;
   const img = g.createImageData(W, H);
-  const onPath = (x: number, y: number) => {
-    const ix = Math.floor(x);
-    const a0 = map.pathY[ix];
-    const a1 = map.pathY[Math.min(map.w, ix + 1)];
-    if (a0 === undefined || a1 === undefined || Number.isNaN(a0) || Number.isNaN(a1)) return false;
-    return Math.abs(y - (a0 + (a1 - a0) * (x - ix))) < 1.25 + Math.sin(x * 1.7) * 0.25;
-  };
+  const tileAtXY = (x: number, y: number) =>
+    x < 0 || y < 0 || x >= map.w || y >= map.h ? Tile.Tree : (map.tiles[Math.floor(y) * map.w + Math.floor(x)] as Tile);
+  const onPath = (x: number, y: number) => tileAtXY(x + Math.sin(x * 1.7 + y * 0.9) * 0.3, y + Math.cos(y * 1.9 - x * 0.7) * 0.3) === Tile.Path;
   for (let py = 0; py < H; py++)
     for (let px = 0; px < W; px++) {
       const x = (px + 0.5) / scale;
