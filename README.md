@@ -36,7 +36,7 @@ npm run build
 | Mover | WASD |
 | Mirar | Mouse |
 | Golpe básico | Botão esquerdo · Espaço |
-| Magias nos Elos 1–5 | Q · E · R · F · T (botão direito = Elo 1) |
+| Magias nos Elos 1–8 | 1 · 2 · 3 · 4 · Q · E · R · F (botão direito = Elo 1) |
 | Conversar | Clique no NPC |
 | Posturas (toque de novo para sair) | Shift Silêncio · Tab Olhar |
 | Maré: «« « • » »» (±15% por degrau, −1% de Fluxo/s por degrau) | Roda do mouse (ou Z / X) |

@@ -27,7 +27,8 @@ export class InputController {
       if (e.repeat) return;
       this.onKey(e.code);
       if (!this.enabled) return;
-      const slotKeys: Record<string, number> = { KeyQ: 1, KeyE: 2, KeyR: 3, KeyF: 4, KeyT: 5, KeyG: 6, KeyV: 7, KeyB: 8 };
+      // Elos 1–4 nas teclas 1–4; Elos 5–8 em Q E R F.
+      const slotKeys: Record<string, number> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, KeyQ: 5, KeyE: 6, KeyR: 7, KeyF: 8 };
       if (e.code in slotKeys) this.pendingSlot = slotKeys[e.code]!;
       // Shift alterna o Silêncio; Tab, o Olhar. 1 a 4 estão livres (Véu e Ímpeto viraram a Maré).
       if (e.key === 'Shift') this.pendingPosture = 'silence';
