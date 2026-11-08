@@ -1000,23 +1000,3 @@ input.name {
   opacity: 1;
   filter: none;
 }
-
-/* Entrada do Mestre (GM) na tela de título: discreta, abaixo das ações principais. */
-.gm-entry {
-  margin-top: 18px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  border: 1px dashed rgba(226, 182, 90, 0.4);
-  background: rgba(0, 0, 0, 0.25);
-  color: #c9a85c;
-  font: 600 12.5px Inter, sans-serif;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-.gm-entry:hover {
-  border-color: var(--gold);
-  color: var(--gold);
-}

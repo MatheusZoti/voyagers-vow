@@ -5,7 +5,6 @@ import { displayLevel, GRACE_PLAYED_S, masteryCostMult, modifierDiscount, sharpn
 import { EMOTION_COLORS, EMOTION_NAMES, type Emotion } from '../../sim/psyche/emotions';
 import { CRISIS_DESC, CRISIS_NAMES } from '../../sim/psyche/psyche';
 import { STRONG_VALUE, TRAIT_GROUPS, VALUE_NAMES } from '../../sim/psyche/traits';
-import { resetPact, resetSpell, setPactLevel, setSpellField, SPELL_FIELDS, toggleSpellPact, type SpellNumField } from '../../sim/overrides';
 import type { Simulation } from '../../sim/sim';
 import {
   isSpell,
@@ -21,7 +20,6 @@ import {
   type TechniqueId,
 } from '../../sim/techniques';
 import { SLOT_KEYS } from '../keys';
-import { commitGmOverrides, gmOverrides, resetAllGmOverrides } from '../gm';
 import type { Sfx } from '../sfx';
 import { escapeHtml } from '../util';
 import {
@@ -248,7 +246,7 @@ export class Panels {
 
   private onClick(e: MouseEvent): void {
     const t = (e.target as HTMLElement).closest<HTMLElement>(
-      '[data-tab],[data-a],[data-mem],[data-elo],[data-gm],[data-gm-step],[data-gm-pact],[data-mod],[data-node],[data-open],[data-open-pact],[data-rm-pact],[data-codex],[data-pick],[data-cat-act],[data-f-aff],[data-f-level],[data-f-kind],[data-goto-pact],[data-goto-spell]',
+      '[data-tab],[data-a],[data-mem],[data-elo],[data-mod],[data-node],[data-open],[data-open-pact],[data-rm-pact],[data-codex],[data-pick],[data-cat-act],[data-f-aff],[data-f-level],[data-f-kind],[data-goto-pact],[data-goto-spell]',
     );
     if (!t) return;
     const c = this.sim.c;
@@ -330,36 +328,6 @@ export class Panels {
       const kind = this.catalogNow()?.kind;
       if (kind) cat.resetFilters(kind);
       return this.render();
-    }
-    // Mestre (GM): edita os dados no Grimório, em qualquer lugar.
-    if (c.gm && this.current === 'codex' && !(t as HTMLButtonElement).disabled) {
-      if (t.dataset.gmStep) return this.gmStep(t.dataset.gmStep, +t.dataset.d!);
-      if (t.dataset.gmPact && cat.selSpell) {
-        toggleSpellPact(gmOverrides, cat.selSpell, t.dataset.gmPact as PactId);
-        return this.gmCommit();
-      }
-      const act = t.dataset.gm;
-      if (act === 'reset-spell' && cat.selSpell) {
-        resetSpell(gmOverrides, cat.selSpell);
-        return this.gmCommit();
-      }
-      if (act === 'reset-pact' && cat.selPact) {
-        resetPact(gmOverrides, cat.selPact);
-        return this.gmCommit();
-      }
-      if (act === 'reset-all') {
-        if (!window.confirm('Restaurar todas as magias e Restrições para os valores do código? Os ajustes deste navegador serão apagados.')) return;
-        resetAllGmOverrides();
-        return this.gmCommit();
-      }
-      if (act === 'copy') {
-        const json = JSON.stringify(gmOverrides, null, 2);
-        void navigator.clipboard?.writeText(json).then(
-          () => (t.textContent = 'Copiado!'),
-          () => window.prompt('Copie os ajustes:', json),
-        );
-        return;
-      }
     }
     // Daqui para baixo, só no santuário.
     if (!this.editable() || (t as HTMLButtonElement).disabled) return;
@@ -715,41 +683,7 @@ export class Panels {
     this.render();
   }
 
-  /** Mestre: aplica os ajustes no jogo, grava e acerta os Elos do personagem atual. */
-  private gmCommit(): void {
-    commitGmOverrides();
-    const c = this.sim.c;
-    for (const slot of c.elos) {
-      sanitizeSlot(slot);
-      const info = this.sim.slotInfo(slot);
-      if (info && slot.technique) trimMods(slot, info, modifierDiscount(c.mastery[slot.technique as MasteryId]));
-    }
-    this.sfx?.ui();
-    this.render();
-  }
-
-  private gmSet(field: string, value: number): void {
-    if (!Number.isFinite(value)) return this.render();
-    if (this.codexKind === 'spells' && this.cat.selSpell) setSpellField(gmOverrides, this.cat.selSpell, field as SpellNumField, value);
-    else if (this.codexKind === 'pacts' && this.cat.selPact && field === 'level') setPactLevel(gmOverrides, this.cat.selPact, value);
-    else return;
-    this.gmCommit();
-  }
-
-  private gmStep(field: string, dir: number): void {
-    if (this.codexKind === 'pacts' && this.cat.selPact) return this.gmSet(field, PACTS[this.cat.selPact].level + dir);
-    const id = this.cat.selSpell;
-    const f = SPELL_FIELDS.find((x) => x.key === field);
-    if (!id || !f) return;
-    this.gmSet(field, SPELLS[id][f.key] + dir * f.step);
-  }
-
   private onFilterChange(e: Event): void {
-    const gmInput = (e.target as HTMLElement).closest?.<HTMLInputElement>('[data-gm-field]');
-    if (gmInput) {
-      if (this.sim.c.gm && this.current === 'codex') this.gmSet(gmInput.dataset.gmField!, parseFloat(gmInput.value.replace(',', '.')));
-      return;
-    }
     const el = e.target as HTMLSelectElement;
     const f = el.dataset.f;
     const cur = this.catalogNow();

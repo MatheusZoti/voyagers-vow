@@ -4,8 +4,6 @@ import { displayLevel } from '../../sim/mastery';
 import { STRONG_VALUE, VALUE_IDS, VALUE_NAMES, type ValueId } from '../../sim/psyche/traits';
 import type { Simulation } from '../../sim/sim';
 import { NATURE_NAMES, resonance, SPELLS, type SpellId } from '../../sim/techniques';
-import { countOverrides, PACT_LEVEL_MAX, PACT_LEVEL_MIN, pactDefault, SPELL_FIELDS, spellDefault } from '../../sim/overrides';
-import { gmOverrides } from '../gm';
 import { escapeHtml } from '../util';
 import { pactPips } from './charts';
 import { icon } from './icons';
@@ -179,16 +177,7 @@ export function catalogHtml(sim: Simulation, st: CatalogState, kind: CatalogKind
     ? [opt('need', 'Elo mínimo', st.spellSort), opt('affinity', 'Afinidade', st.spellSort), opt('mastery', 'Maestria', st.spellSort), opt('name', 'Nome', st.spellSort)]
     : [opt('level', 'Nível', st.pactSort), opt('name', 'Nome', st.pactSort)];
   const query = spells ? st.spellQuery : st.pactQuery;
-  const gm = !ctx && !!c.gm;
-  const edits = gm ? countOverrides(gmOverrides) : 0;
-  const gmTools = gm
-    ? `<div class="gm-tools" title="Os ajustes valem para todos os personagens deste navegador e ficam salvos nele.">
-        <span class="gm-badge">${icon('book', 13)} Mestre · ${edits ? `${edits} ajuste${edits > 1 ? 's' : ''}` : 'sem ajustes'}</span>
-        <button class="link" data-gm="copy" ${edits ? '' : 'disabled'} title="Copia os ajustes em JSON (para mandar e virar padrão no código)">Copiar</button>
-        <button class="link danger" data-gm="reset-all" ${edits ? '' : 'disabled'}>Restaurar tudo</button>
-      </div>`
-    : '';
-  const bar = `<div class="cat-bar">${head}${gmTools}
+  const bar = `<div class="cat-bar">${head}
       <label class="cat-search">${icon('search', 15)}<input type="text" data-search value="${escapeHtml(query)}" placeholder="Buscar ${spells ? 'magia' : 'Restrição'}…" autocomplete="off" spellcheck="false"><kbd>/</kbd></label>
       <label class="cat-sort">Ordenar<select data-f="sort">${sort.join('')}</select></label>
     </div>`;
@@ -221,7 +210,7 @@ export function catalogHtml(sim: Simulation, st: CatalogState, kind: CatalogKind
 
   const sel = spells ? st.selSpell : st.selPact;
   const rows = list.length
-    ? list.map((e) => (spells ? spellRow(sim, e as Entry<SpellId>, sel === e.id, ctx, gm) : pactRow(e as Entry<PactId>, sel === e.id, gm))).join('')
+    ? list.map((e) => (spells ? spellRow(sim, e as Entry<SpellId>, sel === e.id, ctx) : pactRow(e as Entry<PactId>, sel === e.id))).join('')
     : `<div class="cat-empty">Nada encontrado.<button class="link" data-a="reset-filters">Limpar busca e filtros</button></div>`;
   const noun = spells ? (list.length === 1 ? 'magia' : 'magias') : list.length === 1 ? 'Restrição' : 'Restrições';
   const count = `<div class="cat-count"><span>${list.length} ${noun}</span>${
@@ -231,11 +220,11 @@ export function catalogHtml(sim: Simulation, st: CatalogState, kind: CatalogKind
         ? `<button class="link" data-a="show-all">ocultar as que não servem</button>`
         : ''
   }</div>`;
-  const detail = sel ? (spells ? spellDetail(sim, sel as SpellId, ctx, gm) : pactDetail(sim, sel as PactId, ctx, gm)) : `<p class="empty-note">Nada selecionado.</p>`;
+  const detail = sel ? (spells ? spellDetail(sim, sel as SpellId, ctx) : pactDetail(sim, sel as PactId, ctx)) : `<p class="empty-note">Nada selecionado.</p>`;
   const keys = ctx
     ? `<kbd>↑</kbd><kbd>↓</kbd> navegar · <kbd>Enter</kbd> ${spells ? 'equipar' : 'adicionar / remover'} · <kbd>Esc</kbd> voltar`
     : `<kbd>↑</kbd><kbd>↓</kbd> navegar · <kbd>/</kbd> buscar`;
-  return `<div class="cat ${ctx ? 'pick' : 'codex'} ${gm ? 'gm' : ''}" data-kind="${kind}">
+  return `<div class="cat ${ctx ? 'pick' : 'codex'}" data-kind="${kind}">
     ${bar}
     <div class="cat-filters">${filters}</div>
     <div class="cat-main">
@@ -246,46 +235,30 @@ export function catalogHtml(sim: Simulation, st: CatalogState, kind: CatalogKind
   </div>`;
 }
 
-const editedMark = '<i class="gm-dot" title="Ajustada pelo Mestre"></i>';
-
-function spellRow(sim: Simulation, e: Entry<SpellId>, sel: boolean, ctx: PickContext | null, gm = false): string {
+function spellRow(sim: Simulation, e: Entry<SpellId>, sel: boolean, ctx: PickContext | null): string {
   const s = SPELLS[e.id];
   const need = spellNeed(sim, e.id);
   const where = whereEquipped(sim, e.id);
   const tag = where ? `<em class="tag ${ctx && where === ctx.slot ? 'here' : ''}">${ctx && where === ctx.slot ? 'neste Elo' : `Elo ${where.level}`}</em>` : '';
   return `<button class="crow ${sel ? 'sel' : ''} ${e.why ? 'blocked' : ''}" data-pick="${e.id}" role="option" aria-selected="${sel}" style="--c:${AFFINITY_COLORS[s.affinity]}" title="${escapeHtml(e.why ?? '')}">
     <span class="cr-ic">${icon(s.icon, 20)}</span>
-    <span class="cr-txt"><b>${s.name}${gm && gmOverrides.spells[e.id] ? editedMark : ''}</b><small>${s.role} · ${AFFINITY_NAMES[s.affinity]}</small></span>
+    <span class="cr-txt"><b>${s.name}</b><small>${s.role} · ${AFFINITY_NAMES[s.affinity]}</small></span>
     <span class="cr-tags">${tag}<span class="need ${e.why ? 'bad' : need > 1 ? 'up' : ''}">${e.why ? icon('lock', 11) : ''}Elo ${need}+</span></span>
   </button>`;
 }
 
-function pactRow(e: Entry<PactId>, sel: boolean, gm = false): string {
+function pactRow(e: Entry<PactId>, sel: boolean): string {
   const d = PACTS[e.id];
   return `<button class="crow pact ${sel ? 'sel' : ''} ${e.why ? 'blocked' : ''} ${d.oath ? 'oath' : ''}" data-pick="${e.id}" role="option" aria-selected="${sel}" title="${escapeHtml(e.why ?? '')}">
     <span class="cr-lvl">+${d.level}</span>
-    <span class="cr-txt"><b>${d.name}${gm && gmOverrides.pacts[e.id] ? editedMark : ''}</b><small>${d.oath ? 'Juramento' : 'Restrição'}${d.value ? ` · ${VALUE_NAMES[d.value]}` : ''}</small></span>
+    <span class="cr-txt"><b>${d.name}</b><small>${d.oath ? 'Juramento' : 'Restrição'}${d.value ? ` · ${VALUE_NAMES[d.value]}` : ''}</small></span>
     <span class="cr-tags">${e.on ? '<em class="tag here">neste Elo</em>' : ''}${pactPips(d.level)}</span>
   </button>`;
 }
 
 const stat = (k: string, v: string, s = '') => `<div class="stat"><span>${k}</span><b>${v}</b>${s ? `<small>${s}</small>` : ''}</div>`;
 
-/** Campo numérico do Mestre: − valor + e o padrão do código quando alterado. */
-function gmField(field: string, label: string, value: number, def: number, step: number, min: number, max: number, unit: string, hint: string): string {
-  const changed = value !== def;
-  return `<label class="gm-field ${changed ? 'changed' : ''}" title="${escapeHtml(hint)}">
-    <span class="gf-label">${label}${unit ? ` <small>${unit}</small>` : ''}</span>
-    <span class="gf-step">
-      <button type="button" data-gm-step="${field}" data-d="-1" ${value <= min ? 'disabled' : ''} aria-label="Diminuir">−</button>
-      <input type="text" inputmode="decimal" data-gm-field="${field}" value="${String(value).replace('.', ',')}" aria-label="${label}" autocomplete="off" spellcheck="false">
-      <button type="button" data-gm-step="${field}" data-d="1" ${value >= max ? 'disabled' : ''} aria-label="Aumentar">+</button>
-    </span>
-    <small class="gf-def">${changed ? `padrão ${String(def).replace('.', ',')}` : '&nbsp;'}</small>
-  </label>`;
-}
-
-function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null, gm = false): string {
+function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): string {
   const c = sim.c;
   const s = SPELLS[id];
   const color = AFFINITY_COLORS[s.affinity];
@@ -320,13 +293,9 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null, gm =
     else action = `<button class="btn primary" data-cat-act="equip">Equipar no Elo ${slot.level}</button>`;
   }
 
-  const pacts = (gm ? [...PACT_IDS] : s.pacts)
+  const pacts = s.pacts
     .map((p) => {
       const d = PACTS[p];
-      if (gm) {
-        const on = s.pacts.includes(p);
-        return `<button class="mchip toggle ${on ? 'on' : ''} ${d.oath ? 'oath' : ''}" data-gm-pact="${p}" title="${on ? 'Compatível: clique para tirar' : 'Clique para tornar compatível'}">${on ? '✓' : '+'} +${d.level} ${d.name}</button>`;
-      }
       return ctx
         ? `<span class="mchip ${d.oath ? 'oath' : ''}">+${d.level} ${d.name}</span>`
         : `<button class="mchip link ${d.oath ? 'oath' : ''}" data-goto-pact="${p}">+${d.level} ${d.name}</button>`;
@@ -337,15 +306,7 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null, gm =
       <div><h3>${s.name}</h3><p>${s.role} · <b style="color:${color}">${AFFINITY_NAMES[s.affinity]}</b>${s.tags.length ? ` · ${s.tags.map((t) => NATURE_NAMES[t]).join(', ')}` : ''}</p></div>
     </div>
     <p class="cd-desc">${s.desc}</p>
-    ${
-      gm
-        ? `<div class="gm-box">
-        <div class="gm-head"><b>${icon('book', 14)} Valores da magia</b>${gmOverrides.spells[id] ? `<button class="link" data-gm="reset-spell">Restaurar padrão</button>` : '<small>iguais ao código</small>'}</div>
-        <div class="gm-fields">${SPELL_FIELDS.map((f) => gmField(f.key, f.label, s[f.key], spellDefault(id)[f.key], f.step, f.min, f.max, f.unit, f.hint)).join('')}</div>
-        <p class="gm-note">Elo mínimo para você: ${need}. Os ajustes valem na hora, para todos os personagens deste navegador.</p>
-      </div>`
-        : `<div class="stats">${stat('Dano base', s.baseDamage ? `${s.baseDamage}` : '—')}${stat('Alcance', s.range ? `${s.range} m` : '—')}${stat('Raio', s.radius ? `${s.radius} m` : '—')}${stat('Elo mínimo', `${need}`, 'para você')}</div>`
-    }
+    <div class="stats">${stat('Dano base', s.baseDamage ? `${s.baseDamage}` : '—')}${stat('Alcance', s.range ? `${s.range} m` : '—')}${stat('Raio', s.radius ? `${s.radius} m` : '—')}${stat('Elo mínimo', `${need}`, 'para você')}</div>
     <dl class="cd-facts">
       <div><dt>Afinidade</dt><dd>${pen ? `Fora da sua: −${pen} no nível efetivo` : 'A sua: sem penalidade'}</dd></div>
       <div><dt>Maestria</dt><dd>Nível ${displayLevel(c.mastery[id])}</dd></div>
@@ -355,13 +316,13 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null, gm =
     ${preview}
     <h6 class="cd-sub">Forja <small>${s.mods.length} modificadores</small></h6>
     <div class="cd-chips">${s.mods.map((m) => `<span class="mchip" title="${escapeHtml(MODS[m].desc)}">${icon(m, 13)}${MODS[m].name}</span>`).join('')}</div>
-    <h6 class="cd-sub">Restrições compatíveis <small>${s.pacts.length}${gm ? ` de ${PACT_IDS.length} · clique para ligar/desligar` : ''}</small></h6>
+    <h6 class="cd-sub">Restrições compatíveis <small>${s.pacts.length}</small></h6>
     <div class="cd-chips">${pacts}</div>
     <div class="cd-spacer"></div>
     ${action ? `<div class="cd-actions">${action}</div>` : ''}`;
 }
 
-function pactDetail(sim: Simulation, id: PactId, ctx: PickContext | null, gm = false): string {
+function pactDetail(sim: Simulation, id: PactId, ctx: PickContext | null): string {
   const c = sim.c;
   const d = PACTS[id];
   const v = d.value ? c.psyche.values[d.value] : 0;
@@ -408,15 +369,6 @@ function pactDetail(sim: Simulation, id: PactId, ctx: PickContext | null, gm = f
       <span class="cd-lvl">+${d.level}</span>
       <div><h3>${d.name}</h3><p>${d.oath ? 'Juramento: pode ser quebrado' : 'Restrição: só deixa de se aplicar'} · ${pactPips(d.level)}</p></div>
     </div>
-    ${
-      gm
-        ? `<div class="gm-box">
-        <div class="gm-head"><b>${icon('book', 14)} Valores da Restrição</b>${gmOverrides.pacts[id] ? `<button class="link" data-gm="reset-pact">Restaurar padrão</button>` : '<small>iguais ao código</small>'}</div>
-        <div class="gm-fields">${gmField('level', 'Nível', d.level, pactDefault(id).level, 1, PACT_LEVEL_MIN, PACT_LEVEL_MAX, '', 'Quanto a Restrição soma ao nível efetivo do Elo (+1 a +4).')}</div>
-        <p class="gm-note">Elos com esta Restrição recalculam o nível efetivo na hora; a forja excedente é devolvida.</p>
-      </div>`
-        : ''
-    }
     <div class="cd-rule"><h6>Regra</h6><p>${d.desc}</p></div>
     <div class="cd-rule ${d.oath ? 'oath' : ''}"><h6>Se quebrar</h6><p>${d.onBreak}</p></div>
     <dl class="cd-facts">

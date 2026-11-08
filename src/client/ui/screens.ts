@@ -5,7 +5,7 @@ import { icon } from './icons';
 
 /** Telas fora do jogo: título e criação do personagem. */
 
-export function titleScreen(root: HTMLElement, opts: { hasSave: string | null; onContinue: () => void; onNew: () => void; onGm: () => void }): void {
+export function titleScreen(root: HTMLElement, opts: { hasSave: string | null; onContinue: () => void; onNew: () => void }): void {
   root.className = 'screen title';
   root.innerHTML = `
     <div class="title-wrap">
@@ -16,14 +16,10 @@ export function titleScreen(root: HTMLElement, opts: { hasSave: string | null; o
         ${opts.hasSave ? `<button class="btn primary" data-a="continue">Continuar como ${escapeHtml(opts.hasSave)}</button>` : ''}
         <button class="btn ${opts.hasSave ? '' : 'primary'}" data-a="new">Novo personagem</button>
       </div>
-      <button class="gm-entry" data-a="gm" title="Personagem de teste com todas as magias e Restrições. No Grimório (G) ele edita os valores do jogo.">
-        ${icon('book', 15)} Entrar como Mestre (GM)
-      </button>
       <p class="foot">Fatia vertical · v0.2</p>
     </div>`;
   root.querySelector('[data-a="continue"]')?.addEventListener('click', opts.onContinue);
   root.querySelector('[data-a="new"]')?.addEventListener('click', opts.onNew);
-  root.querySelector('[data-a="gm"]')?.addEventListener('click', opts.onGm);
 }
 
 /** Pentágono das afinidades, clicável. Cada nó mostra o Elo mínimo a partir da escolhida. */
