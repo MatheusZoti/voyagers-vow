@@ -19,6 +19,7 @@ import {
   type SpellId,
   type TechniqueId,
 } from '../../sim/techniques';
+import type { Sfx } from '../sfx';
 import { escapeHtml } from '../util';
 import {
   affinityRadar,
@@ -68,6 +69,7 @@ export class Panels {
   current: PanelId | null = null;
   onClose: () => void = () => {};
   onQuit: () => void = () => {};
+  sfx: Sfx | null = null;
   private selectedElo = 2;
   private selectedNode: MasteryId = 'basic';
 
@@ -428,6 +430,10 @@ export class Panels {
       if (a === 'close' || a === 'resume') this.close();
       if (a === 'help') this.open('help');
       if (a === 'quit') this.onQuit();
+      if (a === 'mute' && this.sfx) {
+        this.sfx.toggleMute();
+        this.render();
+      }
     };
   }
 
@@ -463,7 +469,17 @@ export class Panels {
         <button class="btn primary" data-a="resume">Continuar</button>
         <button class="btn" data-a="help">Como jogar</button>
         <button class="btn" data-a="quit">Salvar e sair para o título</button>
-      </div>`,
+      </div>
+      <div class="audio-row">
+        <span>Som</span>
+        <input type="range" min="0" max="1" step="0.05" value="${this.sfx?.volume ?? 0.6}" data-vol/>
+        <button class="btn" data-a="mute">${this.sfx?.muted ? 'Ligar' : 'Silenciar'}</button>
+      </div>
+      <p class="muted small" style="text-align:center;margin:10px 0 0">Tecla <kbd>\`</kbd> abre o painel de playtest.</p>`,
     );
+    this.root.querySelector<HTMLInputElement>('[data-vol]')?.addEventListener('input', (e) => {
+      this.sfx?.setVolume(+(e.target as HTMLInputElement).value);
+      this.sfx?.ui();
+    });
   }
 }

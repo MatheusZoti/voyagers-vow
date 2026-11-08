@@ -41,7 +41,18 @@ npm run build
 | Posturas | 1 Véu · 2 Silêncio · 3 Ímpeto · 4 Olhar |
 | Maré (ataque ↔ defesa) | Roda do mouse (ou Z / X) |
 | Psique · Grade de Elos · Maestria | C · K · M |
-| Ajuda · Pausa | H · Esc |
+| Ajuda · Pausa (volume) | H · Esc |
+| Painel de playtest | ` (crase) ou F2 |
+
+## Balanceamento
+
+`npm test` roda um bot que joga cenários fixos (Carniçais, matilha, Bruto, Guardião) com as cinco afinidades e imprime tempo de luta e vida perdida. O teste falha se o Guardião ficar impossível para quem usa a Maré, ou fácil para quem a ignora. Para ver a tabela:
+
+```bash
+npx vitest run tests/balance.test.ts --silent=false
+```
+
+No jogo, o painel de playtest ajusta multiplicadores globais ao vivo (`src/sim/tuning.ts`). "Copiar valores" gera o JSON para trazer de volta ao código.
 
 ## Estrutura
 

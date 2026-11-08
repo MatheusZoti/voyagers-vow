@@ -34,6 +34,8 @@ interface EnemyView {
   dead: number;
   hurt: number;
   attack: number;
+  /** "amassado" do último golpe (1 = recém-atingido) */
+  punch: number;
 }
 
 interface Floater {
@@ -284,7 +286,7 @@ export class GameView {
     rootRing.position.y = 0.25;
     rootRing.visible = false;
     rig.root.add(markRing, rootRing);
-    v = { rig, markRing, rootRing, bar, barFill: fill, last: new THREE.Vector3(e.pos.x, 0, e.pos.y), dead: 0, hurt: 0, attack: 0 };
+    v = { rig, markRing, rootRing, bar, barFill: fill, last: new THREE.Vector3(e.pos.x, 0, e.pos.y), dead: 0, hurt: 0, attack: 0, punch: 0 };
     rig.root.position.copy(v.last);
     this.enemies.set(e.id, v);
     return v;
@@ -295,7 +297,18 @@ export class GameView {
     for (const ev of events) {
       switch (ev.t) {
         case 'swing':
-          this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range, POSTURES[sim.player.posture].color);
+          if (ev.finisher) {
+            this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range, '#fff4d0', (150 * Math.PI) / 180);
+            this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range * 0.7, POSTURES[sim.player.posture].color, (130 * Math.PI) / 180);
+          } else this.fx.swing({ x: ev.x, y: ev.y }, ev.dir, ev.range, POSTURES[sim.player.posture].color);
+          break;
+        case 'telegraphArc':
+          this.fx.arcTelegraph({ x: ev.x, y: ev.y }, ev.dir, ev.range, ev.arc, ev.duration);
+          break;
+        case 'quake':
+          this.fx.shockwave({ x: ev.x, y: ev.y }, ev.r * 1.2, '#ffb07a', 0.6, 0.25);
+          this.fx.burst({ x: ev.x, y: ev.y }, '#8a7356', 22, 5, 0.3);
+          this.shake = Math.max(this.shake, 0.55);
           break;
         case 'signature': {
           const color = ev.beyond ? '#ffd84a' : AFFINITY_COLORS[sim.c.affinity];
@@ -367,7 +380,10 @@ export class GameView {
             const e = sim.enemies.find((x) => x.id === ev.id);
             if (e) {
               const v = this.enemies.get(e.id);
-              if (v) v.hurt = 0.12;
+              if (v) {
+                v.hurt = 0.12;
+                if (!ev.immune) v.punch = ev.big || ev.crit ? 1 : 0.6;
+              }
               at.y = (v?.rig.height ?? 2) + 0.2;
             }
             if (ev.immune) this.floater(at, 'imune', 'imm');
@@ -489,6 +505,10 @@ export class GameView {
       const windup = e.state === 'windup' && e.attack ? 1 - e.timer / Math.max(0.01, e.windupTotal) : 0;
       v.attack = Math.max(0, v.attack - dt);
       animateRig(v.rig, dt, sp, { attack: v.attack / 0.3, windup, dead: dead ? v.dead : 0 });
+      // Amassa e volta: o golpe "entra" no corpo.
+      v.punch = Math.max(0, v.punch - dt * 7);
+      const sq = v.punch * 0.22;
+      v.rig.body.scale.set(1 + sq, 1 - sq, 1 + sq);
       let opacity = dead ? Math.max(0, 1 - Math.max(0, v.dead - 1.2) / 0.8) : 1;
       if (e.def.shadowed && !dead) opacity = e.revealed ? 0.8 : 0;
       setOpacity(v.rig, opacity);

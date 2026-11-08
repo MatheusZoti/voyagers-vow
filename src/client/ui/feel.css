@@ -1,0 +1,181 @@
+/* =========================================================================
+   Retorno de combate: borda de dano, vida baixa, Maré perfeita, magia pronta
+   ========================================================================= */
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(200, 20, 10, 0.55) 100%);
+}
+.vignette.hit {
+  animation: hitFlash 0.45s ease-out;
+}
+@keyframes hitFlash {
+  from {
+    opacity: var(--hit, 0.6);
+  }
+  to {
+    opacity: 0;
+  }
+}
+.vignette.low {
+  animation: lowPulse 1.1s ease-in-out infinite;
+}
+.vignette.low.hit {
+  animation:
+    hitFlash 0.45s ease-out,
+    lowPulse 1.1s ease-in-out 0.45s infinite;
+}
+@keyframes lowPulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+.vignette.perfect {
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(80, 210, 255, 0.45) 100%);
+  animation: hitFlash 0.6s ease-out;
+  --hit: 1;
+}
+
+.key.slot.ready {
+  animation: slotReady 0.5s ease-out;
+}
+@keyframes slotReady {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 233, 160, 0.9);
+    border-color: #ffe9a0;
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(255, 233, 160, 0);
+  }
+}
+
+.floater {
+  animation: floaterPop 0.18s ease-out;
+}
+.floater.crit {
+  animation: floaterPop 0.24s cubic-bezier(0.2, 2, 0.4, 1);
+}
+@keyframes floaterPop {
+  from {
+    font-size: 6px;
+  }
+}
+
+/* =========================================================================
+   Painel de playtest
+   ========================================================================= */
+#debug {
+  position: fixed;
+  top: 100px;
+  left: 14px;
+  z-index: 30;
+}
+#debug[hidden] {
+  display: none;
+}
+.debug {
+  width: 300px;
+  background: rgba(16, 18, 26, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 12px 14px;
+  color: #e9eaf0;
+  font-size: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.debug header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.debug header b {
+  font-family: Cinzel, serif;
+  color: #e2b65a;
+  font-size: 14px;
+}
+.dbg-fps {
+  color: #8d92a6;
+  font-size: 11px;
+  flex: 1;
+}
+.debug header button {
+  background: none;
+  border: none;
+  color: #8d92a6;
+  font-size: 18px;
+  cursor: pointer;
+}
+.dbg-sliders {
+  display: grid;
+  gap: 6px;
+}
+.dbg-sliders label {
+  display: grid;
+  grid-template-columns: 1fr 44px;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+}
+.dbg-sliders label span {
+  grid-column: span 2;
+  color: #b7bccb;
+}
+.dbg-sliders label.changed span {
+  color: #ffd27a;
+}
+.dbg-sliders input {
+  width: 100%;
+  accent-color: #e2b65a;
+}
+.dbg-sliders output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #e9eaf0;
+}
+.dbg-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: 10px;
+}
+.dbg-actions button {
+  font: 600 11px Inter, sans-serif;
+  color: #e9eaf0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+.dbg-actions button:hover {
+  border-color: #e2b65a;
+}
+.dbg-actions button.wide {
+  grid-column: span 1;
+}
+.dbg-actions:last-child {
+  grid-template-columns: 1fr 1fr;
+}
+
+.audio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+.audio-row input {
+  flex: 1;
+  accent-color: #e2b65a;
+}
+.audio-row .btn {
+  padding: 6px 12px;
+  font-size: 12px;
+}

@@ -98,6 +98,27 @@ export class Effects {
     });
   }
 
+  /** Cone de aviso que se enche até o golpe (golpes corpo a corpo de elites e chefe). */
+  arcTelegraph(at: Vec2, dir: Vec2, range: number, arc: number, duration: number): void {
+    const yaw = Math.atan2(dir.y, dir.x);
+    const g = new THREE.Group();
+    const edgeMat = this.groundMat('#ff7a3a', 0.85, false);
+    const fillMat = this.groundMat('#ff5a2a', 0.2, false);
+    const edge = new THREE.Mesh(new THREE.RingGeometry(range - 0.1, range, 32, 1, -arc / 2, arc), edgeMat);
+    const fill = new THREE.Mesh(new THREE.CircleGeometry(range, 32, -arc / 2, arc), fillMat);
+    for (const m of [edge, fill]) {
+      m.rotation.x = -Math.PI / 2;
+      m.rotation.z = -yaw;
+    }
+    fill.position.y = -0.01;
+    g.add(edge, fill);
+    add(g, at.x, 0.09, at.y);
+    this.push(g, duration, (_f, k) => {
+      fill.scale.setScalar(Math.max(0.01, k));
+      fillMat.opacity = 0.15 + 0.3 * k;
+    });
+  }
+
   burst(at: Vec2, color: string, n = 10, speed = 3, y = 0.8): void {
     const m = new THREE.MeshBasicMaterial({ color });
     for (let i = 0; i < n; i++) {

@@ -45,6 +45,8 @@ export class Hud {
   private hint = h('div', 'hint');
   private level = h('div', 'level');
   private miniWheel = h('div', 'mini-wheel');
+  private vignette = h('div', 'vignette');
+  private prevCd: number[] = [];
   private lastWheel = '';
   private lastStatic = '';
 
@@ -54,6 +56,7 @@ export class Hud {
   ) {
     root.innerHTML = '';
     root.hidden = false;
+    root.append(this.vignette);
 
     // Topo esquerdo: Psique.
     const psy = h('div', 'panel psyche');
@@ -118,7 +121,21 @@ export class Hud {
   }
 
   handleEvents(events: SimEvent[]): void {
-    for (const ev of events) if (ev.t === 'notice') this.pushNotice(ev.text, ev.tone);
+    for (const ev of events) {
+      if (ev.t === 'notice') this.pushNotice(ev.text, ev.tone);
+      // Borda vermelha ao levar dano (reinicia a animação a cada golpe).
+      if (ev.t === 'damage' && ev.target === 'player') {
+        this.vignette.classList.remove('hit');
+        void this.vignette.offsetWidth;
+        this.vignette.style.setProperty('--hit', String(Math.min(1, 0.35 + ev.amount / 40)));
+        this.vignette.classList.add('hit');
+      }
+      if (ev.t === 'perfectTide') {
+        this.vignette.classList.remove('perfect');
+        void this.vignette.offsetWidth;
+        this.vignette.classList.add('perfect');
+      }
+    }
   }
 
   pushNotice(text: string, tone: NoticeTone = 'info'): void {
@@ -143,6 +160,7 @@ export class Hud {
     const psy = c.psyche;
 
     const maxHp = sim.maxHp();
+    this.vignette.classList.toggle('low', !p.dead && p.hp / maxHp < 0.3);
     this.hp.style.width = `${(p.hp / maxHp) * 100}%`;
     this.hpText.textContent = `${Math.ceil(p.hp)} / ${maxHp}`;
     // A Euforia faz a barra de Fluxo mentir para cima.
@@ -193,12 +211,18 @@ export class Hud {
       const slot = c.elos[i]!;
       const info = slot.unlocked && slot.technique ? sim.slotInfo(slot) : null;
       const cd = p.slotCd[slot.level] ?? 0;
+      if ((this.prevCd[i] ?? 0) > 0 && cd <= 0) {
+        el.classList.remove('ready');
+        void el.offsetWidth;
+        el.classList.add('ready');
+      }
+      this.prevCd[i] = cd;
       const tech = slot.technique ? TECHNIQUES[slot.technique as TechniqueId] : null;
       const state = !slot.unlocked ? 'locked' : slot.sealed ? 'sealed' : !tech ? 'empty' : '';
       const key = `${i}|${state}|${tech?.id}|${info?.effective}|${cd > 0 ? Math.ceil(cd * 10) : 0}|${info ? Math.round(sim.slotCost(slot, info)) : 0}|${p.flow < (info ? sim.slotCost(slot, info) : 0)}`;
       if (el.dataset.key === key) return;
       el.dataset.key = key;
-      el.className = `key slot ${state} ${info?.beyondLimit ? 'beyond' : ''} ${info && p.flow < sim.slotCost(slot, info) ? 'nocost' : ''}`;
+      el.className = `key slot ${state} ${info?.beyondLimit ? 'beyond' : ''} ${info && p.flow < sim.slotCost(slot, info) ? 'nocost' : ''} ${el.classList.contains('ready') ? 'ready' : ''}`;
       const label = !slot.unlocked ? '—' : slot.sealed ? 'Selado' : tech ? tech.name : 'Vazio';
       const art = !slot.unlocked ? 'lock' : slot.sealed ? 'seal' : tech ? tech.icon : 'empty';
       el.innerHTML =

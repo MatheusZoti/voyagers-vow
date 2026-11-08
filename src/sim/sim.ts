@@ -94,6 +94,7 @@ export type SimEvent =
   | { t: 'signature'; from: Vec2; to: Vec2; radius: number; beyond: boolean }
   | { t: 'pointCharge' }
   | { t: 'telegraph'; x: number; y: number; r: number; duration: number; heavy: boolean }
+  | { t: 'quake'; x: number; y: number; r: number }
   | { t: 'telegraphArc'; x: number; y: number; dir: Vec2; range: number; arc: number; duration: number }
   | { t: 'enemySwing'; id: number; dir: Vec2; range: number }
   | { t: 'enemyDeath'; id: number; x: number; y: number; boss: boolean }
@@ -996,7 +997,7 @@ export class Simulation {
     }
   }
 
-  private gainXp(amount: number, fromKill: boolean): void {
+  gainXp(amount: number, fromKill: boolean): void {
     const c = this.c;
     c.xp += amount;
     while (c.xp >= xpToNext(c.level)) {
@@ -1364,6 +1365,7 @@ export class Simulation {
       return;
     }
     if (a.type === 'slam') {
+      this.events.push({ t: 'quake', x: e.attackTarget.x, y: e.attackTarget.y, r: a.radius });
       if (!p.dead && dist(p.pos, e.attackTarget) <= a.radius + 0.3) this.damagePlayer(a.damage, { heavy: a.heavy, source: e });
     } else {
       this.events.push({ t: 'enemySwing', id: e.id, dir: { ...e.facing }, range: a.range });

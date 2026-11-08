@@ -44,7 +44,7 @@ export const TUNING: Tuning = { ...DEFAULT_TUNING };
 export const TUNING_LABELS: Record<keyof Tuning, string> = {
   playerDamage: 'Dano do jogador',
   enemyDamage: 'Dano dos inimigos',
-  enemyHp: 'Vida dos inimigos',
+  enemyHp: 'Vida dos inimigos (ao renascer)',
   enemySpeed: 'Velocidade dos inimigos',
   enemyWindup: 'Preparo dos ataques inimigos',
   flowRegen: 'Regeneração de Fluxo',
