@@ -239,7 +239,7 @@ function spellRow(sim: Simulation, e: Entry<SpellId>, sel: boolean, ctx: PickCon
   const s = SPELLS[e.id];
   const need = spellNeed(sim, e.id);
   const where = whereEquipped(sim, e.id);
-  const tag = where ? `<em class="tag ${ctx && where === ctx.slot ? 'here' : ''}">${ctx && where === ctx.slot ? 'neste Elo' : `Elo ${where.level}`}</em>` : '';
+  const tag = where && ctx ? `<em class="tag ${ctx && where === ctx.slot ? 'here' : ''}">${ctx && where === ctx.slot ? 'neste Elo' : `Elo ${where.level}`}</em>` : '';
   return `<button class="crow ${sel ? 'sel' : ''} ${e.why ? 'blocked' : ''}" data-pick="${e.id}" role="option" aria-selected="${sel}" style="--c:${AFFINITY_COLORS[s.affinity]}" title="${escapeHtml(e.why ?? '')}">
     <span class="cr-ic">${icon(s.icon, 20)}</span>
     <span class="cr-txt"><b>${s.name}</b><small>${s.role} · ${AFFINITY_NAMES[s.affinity]}</small></span>
@@ -387,26 +387,23 @@ function headlineStats(sim: Simulation, s: SpellDef): string {
   return `<div class="stats">${power}${reach}${size}${stat('Elo mínimo', `${need}`, 'para você')}</div>`;
 }
 
-/** Números no personagem atual: no Elo onde a magia está ou no Elo mínimo, sem Restrições nem forja. */
-function nowBlock(sim: Simulation, s: SpellDef): string {
-  const c = sim.c;
-  const where = whereEquipped(sim, s.id);
+/**
+ * Base da magia no nível natural para o personagem: no Elo mínimo da afinidade dele,
+ * sem Restrições, forja, Maré, emoções nem Maestria. Estável: não muda com o momento.
+ */
+function naturalBlock(sim: Simulation, s: SpellDef): string {
   const need = spellNeed(sim, s.id);
-  if (!where && need > 8) return '';
-  const slot: EloSlot = where ?? { level: need, unlocked: true, technique: s.id, restrictions: [], mods: {}, sealed: false };
-  const pv = sim.spellPreview(slot);
-  if (!pv) return '';
-  const label = where ? `No Elo ${where.level}, como está configurada` : `No Elo ${need} (o mínimo), sem Restrições nem forja`;
-  let main: string;
-  if (s.fx.shape === 'charge') {
-    const pm = displayLevel(c.mastery.point);
-    const mult = (s.fx.critBase! + s.fx.critPerMastery! * pm) * (0.7 + 0.3 * pv.info.power) * (1 + 0.2 * (slot.mods.damage ?? 0));
-    main = stat('Crítico', `×${num(mult)}`, 'no próximo golpe');
-  } else main = stat('Dano por alvo', pv.damage ? num(pv.damage, 0) : '—', pv.damage ? 'antes da armadura' : 'sem dano direto');
+  if (need > 8) return '';
+  const info = sim.slotInfo({ level: need, unlocked: true, technique: s.id, restrictions: [], mods: {}, sealed: false });
+  if (!info) return '';
+  const main =
+    s.fx.shape === 'charge'
+      ? stat('Crítico', `×${num(s.fx.critBase! * (0.7 + 0.3 * info.power))}`, 'no próximo golpe')
+      : stat('Dano por alvo', s.baseDamage ? num(s.baseDamage * info.power, 0) : '—', s.baseDamage ? 'antes da armadura' : 'sem dano direto');
   return `<div class="cd-now">
-    <div class="pv-main"><span>${label}</span><b>nível ${pv.info.effective}</b>${pv.info.beyondLimit ? '<em>Além-limite</em>' : ''}</div>
-    <div class="pv-stats">${main}${stat('Potência', `×${num(pv.info.power)}`)}${stat('Custo', `${num(pv.cost, 0)}`, `Fluxo · ${pv.info.costPct}% da reserva`)}${stat('Recarga', sec(pv.cooldown))}</div>
-    <p class="cd-note">Com a sua Maré, emoções, nível e Maestria de agora.</p>
+    <div class="pv-main"><span>Nível natural para você</span><b>nível ${info.effective}</b><span>no Elo ${need}</span></div>
+    <div class="pv-stats">${main}${stat('Potência', `×${num(info.power)}`)}${stat('Custo', `${info.costPct}%`, 'da reserva de Fluxo')}${stat('Recarga', sec(info.cooldown))}</div>
+    <p class="cd-note">Base, sem Restrições, forja, Maré, emoções nem Maestria. Restrições sobem o nível; custo e recarga são sempre os do Elo.</p>
   </div>`;
 }
 
@@ -490,7 +487,7 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
       <div><h3>${s.name}</h3><p>${s.role} · <b style="color:${color}">${AFFINITY_NAMES[s.affinity]}</b>${s.tags.length ? ` · natureza ${s.tags.map((t) => NATURE_NAMES[t]).join(' e ')}` : ''}</p></div>
     </div>
     <p class="cd-desc">${s.desc}</p>
-    ${preview || (ctx ? '' : nowBlock(sim, s))}
+    ${preview || (ctx ? '' : naturalBlock(sim, s))}
     ${headlineStats(sim, s)}
     <h6 class="cd-sub">Como funciona</h6>
     <ul class="cd-how" style="--c:${color}">${howItWorks(s)
@@ -500,7 +497,7 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
     <ul class="cd-mods">${mods}</ul>
     <dl class="cd-facts">
       <div><dt>Afinidade</dt><dd>${pen ? `Fora da sua: −${pen} no nível efetivo e pede Elo ${need}+.` : 'A sua: sem penalidade, entra no Elo 1.'}</dd></div>
-      <div><dt>Equipada</dt><dd>${where ? `Elo ${where.level}` : 'Não'}</dd></div>
+      ${ctx ? `<div><dt>Equipada</dt><dd>${where ? `Elo ${where.level}` : 'Não'}</dd></div>` : ''}
       <div><dt>Maestria</dt><dd>${masteryText}</dd></div>
       <div><dt>Ressonância</dt><dd>${resText}</dd></div>
     </dl>
