@@ -476,7 +476,7 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
     .join('');
   return `<div class="cd-head" style="--c:${color}">
       <span class="cd-art">${icon(s.icon, 40)}</span>
-      <div><h3>${s.name}</h3><p>${s.role} · <b style="color:${color}">${AFFINITY_NAMES[s.affinity]}</b>${s.tags.length ? ` · natureza ${s.tags.map((t) => NATURE_NAMES[t]).join(' e ')}` : ''}</p></div>
+      <div><h3>${s.name}</h3><p>${s.role} · <b style="color:${color}">${AFFINITY_NAMES[s.affinity]}</b></p></div>
     </div>
     <p class="cd-desc">${s.desc}</p>
     ${preview || (ctx ? '' : naturalBlock(sim, s))}
@@ -488,7 +488,9 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
     <h6 class="cd-sub">Forja nesta magia <small>${s.mods.length} de ${MOD_IDS.length} modificadores</small></h6>
     <ul class="cd-mods">${mods}</ul>
     <dl class="cd-facts">
-      <div><dt>Afinidade</dt><dd><b style="color:${color}">${AFFINITY_NAMES[s.affinity]}</b></dd></div>
+      <div><dt>Natureza ${hintTip(
+        'O jeito de agir da magia. Cada natureza combina com traços da sua personalidade: agressiva com Coragem e Ira; protetora com Empatia e Disciplina; enganadora com pouca Sinceridade; paciente com Perseverança e Disciplina. Essa combinação define a Ressonância.',
+      )}</dt><dd>${s.tags.length ? s.tags.map((t) => NATURE_NAMES[t].charAt(0).toUpperCase() + NATURE_NAMES[t].slice(1)).join(' e ') : '—'}</dd></div>
       ${ctx ? `<div><dt>Equipada</dt><dd>${where ? `Elo ${where.level}` : 'Não'}</dd></div>` : ''}
       <div><dt>Ressonância ${hintTip('O quanto a natureza da magia combina com a sua personalidade. Muda o custo de Fluxo e a velocidade com que a Maestria sobe.')}</dt><dd>${resText}</dd></div>
     </dl>
