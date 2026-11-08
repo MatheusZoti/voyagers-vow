@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import { Rng } from '../../sim/math';
-import { BRIDGE_DECK, floorAt, GORGE_DEPTH, heightAt, Tile, type GameMap } from '../../sim/world/map';
+import { BRIDGE_DECK, floorAt, FLOOR_H, GORGE_DEPTH, heightAt, Tile, type GameMap } from '../../sim/world/map';
 import { mat } from './models';
 
 /**
- * Terreno e cenário no estilo Albion: platôs de grama morna, encostas de rocha
- * estratificada, desfiladeiro com o rio no fundo, pinheiros verde-azulados, árvores
- * de outono e pedregulhos facetados. Mundo (x, y) -> Three (x, altura, y).
+ * Terreno e cenário no estilo Albion, organizado em andares (como no Tibia): cada andar é
+ * um platô plano de grama morna; entre eles, paredes de rocha estratificada; rampas de
+ * terra com degraus de madeira ligam os andares. Desfiladeiro com o rio no fundo,
+ * pinheiros verde-azulados, árvores de outono e pedregulhos facetados.
+ * Mundo (x, y) -> Three (x, altura, y).
  */
 
 const GRASS_VALE = ['#8fa046', '#9aab4e', '#a5ad57', '#86983f', '#99a24a'];
@@ -34,22 +36,36 @@ export function buildWorld(map: GameMap): WorldView {
   const GRASS = map.theme === 'autumn' ? GRASS_AUTUMN : GRASS_VALE;
 
   // -------------------------------------------------------------------------
-  // Terreno: malha de 0,5 m, cor de cada face pela inclinação e pelo tipo de chão.
+  // Terreno: malha de 1/3 m, cor de cada face pela inclinação e pelo tipo de chão.
   // -------------------------------------------------------------------------
-  const RES = 2;
+  const RES = 3;
   const NX = w * RES;
   const NY = h * RES;
   const vh = new Float32Array((NX + 1) * (NY + 1));
+  /** O vértice está inteiro dentro de paredes de rocha (não toca chão caminhável)? */
+  const inWall = (x: number, y: number) => {
+    for (const ox of [-0.01, 0.01])
+      for (const oy of [-0.01, 0.01]) {
+        const t = tile(x + ox, y + oy);
+        if (t !== Tile.Cliff) return false;
+      }
+    return true;
+  };
   for (let j = 0; j <= NY; j++)
     for (let i = 0; i <= NX; i++) {
       const x = i / RES;
       const y = j / RES;
       let hh = heightAt(map, x, y);
-      // Rugosidade só nas encostas: a rocha fica facetada e irregular, o plano continua plano.
-      const sx = heightAt(map, Math.min(w, x + 0.5), y) - heightAt(map, Math.max(0, x - 0.5), y);
-      const sy = heightAt(map, x, Math.min(h, y + 0.5)) - heightAt(map, x, Math.max(0, y - 0.5));
-      const steep = Math.min(1, Math.hypot(sx, sy) / 1.2);
-      hh += steep * (Math.sin(x * 3.1 + y * 1.7) * 0.18 + Math.cos(x * 1.3 - y * 2.9) * 0.14);
+      // Rugosidade só dentro das paredes: a rocha fica facetada, a borda de cada andar e o chão continuam planos.
+      if (inWall(x, y)) {
+        const sx = heightAt(map, Math.min(w, x + 0.5), y) - heightAt(map, Math.max(0, x - 0.5), y);
+        const sy = heightAt(map, x, Math.min(h, y + 0.5)) - heightAt(map, x, Math.max(0, y - 0.5));
+        const steep = Math.min(1, Math.hypot(sx, sy) / 1.2);
+        hh += steep * (Math.sin(x * 3.1 + y * 1.7) * 0.2 + Math.cos(x * 1.3 - y * 2.9) * 0.16);
+      } else if (tile(x, y) !== Tile.Ramp && tile(x - 0.01, y - 0.01) !== Tile.Ramp) {
+        // Relevo estético mínimo no plano (centímetros), sem mudar onde os pés pisam.
+        hh += Math.sin(x * 1.9 + Math.cos(y * 1.3)) * Math.cos(y * 1.7 - x * 0.4) * 0.035;
+      }
       vh[j * (NX + 1) + i] = hh;
     }
   const V = (i: number, j: number) => vh[j * (NX + 1) + i]!;
@@ -84,6 +100,8 @@ export function buildWorld(map: GameMap): WorldView {
       // Encosta: rocha em camadas (estratos) — mais cinza no fundo do desfiladeiro.
       c.set(cy < -0.8 ? ROCK_DEEP : ROCK);
       c.offsetHSL(0, 0, Math.sin(cy * 6.5) * 0.045 + (v - 0.5) * 0.05 - (0.74 - nrm.y) * 0.12);
+    } else if (t === Tile.Ramp) {
+      c.set(PATH[1]!).offsetHSL(0, 0, (v - 0.5) * 0.05 - 0.02);
     } else if (onPath(cx, cz)) {
       c.set(PATH[Math.floor(v * PATH.length)]!).offsetHSL(0, 0, (patch(cx * 3, cz * 3) - 0.5) * 0.05);
     } else if (t === Tile.Sanctuary) {
@@ -260,6 +278,19 @@ export function buildWorld(map: GameMap): WorldView {
     autumnTop.setMatrixAt(i, m4);
     autumnTop.setColorAt(i, ac.clone().offsetHSL(0, 0, 0.06));
   });
+
+  // Rampas entre andares: degraus de tronco atravessados na terra batida.
+  const steps: Array<{ x: number; y: number; alongX: boolean }> = [];
+  for (const r of map.ramps)
+    for (let t = 0.45; t < r.len; t += 0.55)
+      steps.push({ x: r.x + 0.5 + r.dx * (t - 0.5), y: r.y + 0.5 + r.dy * (t - 0.5), alongX: r.dx !== 0 });
+  const stepMesh = inst(new THREE.CylinderGeometry(0.075, 0.075, 2.7, 6), '#7a5534', steps.length);
+  steps.forEach((s, i) => {
+    q.setFromEuler(s.alongX ? new THREE.Euler(Math.PI / 2, 0, 0) : new THREE.Euler(0, 0, Math.PI / 2));
+    m4.compose(tp.set(s.x, heightAt(map, s.x, s.y) + 0.05, s.y), q, sc.set(1, 1, 1));
+    stepMesh.setMatrixAt(i, m4);
+  });
+  stepMesh.castShadow = false;
 
   // Pedregulhos facetados de arenito.
   const rockMesh = inst(new THREE.DodecahedronGeometry(0.6, 0), '#ffffff', rocks.length);

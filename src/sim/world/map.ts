@@ -4,8 +4,9 @@ import type { SpellId } from '../techniques';
 
 /**
  * Regiões do mundo. Cada uma é descrita por uma especificação (trilha, colinas, lugar seguro,
- * rio, arena, saídas, pontos de interesse) e passa pelo mesmo pipeline de relevo:
- * platôs com encostas íngremes, penhascos que bloqueiam, clareiras e rampas automáticas.
+ * rio, arena, saídas, pontos de interesse) e passa pelo mesmo pipeline de relevo, em andares
+ * como no Tibia: cada andar é plano, separado do vizinho por uma parede de rocha, e só se
+ * troca de andar por rampas largas (por onde monstros também passam).
  * Coordenadas em metros; o chão é o plano (x, y). O cliente 3D mapeia y -> Z.
  */
 export const Tile = {
@@ -17,15 +18,21 @@ export const Tile = {
   Sanctuary: 5,
   Path: 6,
   Arena: 7,
-  /** encosta íngreme de rocha: não dá para subir */
+  /** parede de rocha entre dois andares (ou borda do desfiladeiro): não dá para subir */
   Cliff: 8,
+  /** rampa entre dois andares vizinhos */
+  Ramp: 9,
 } as const;
 export type Tile = (typeof Tile)[keyof typeof Tile];
 
 export const BLOCKING: ReadonlySet<Tile> = new Set([Tile.Tree, Tile.Rock, Tile.Water, Tile.Cliff]);
 
+/** Altura de um andar (m). O térreo (andar 0) fica na altura 0. */
+export const FLOOR_H = 1.6;
+/** "Andar" do rio, no fundo do desfiladeiro. */
+export const WATER_LEVEL = -1;
 /** Altura do tabuleiro da ponte sobre o desfiladeiro. */
-export const BRIDGE_DECK = 0.55;
+export const BRIDGE_DECK = 0.15;
 /** Fundo do desfiladeiro (leito do rio). */
 export const GORGE_DEPTH = -2.6;
 
@@ -60,6 +67,19 @@ export interface Exit {
   needsBoss: boolean;
 }
 
+/** Rampa reta de 3 tiles de largura: o pé fica em (x, y) no andar `from` e sobe na direção (dx, dy). */
+export interface Ramp {
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+  /** comprimento em tiles (o andar de cima começa logo depois) */
+  len: number;
+  from: number;
+  /** quantos andares sobe (1 ou 2) */
+  rise: number;
+}
+
 export interface GameMap {
   id: RegionId;
   name: string;
@@ -86,14 +106,14 @@ export interface GameMap {
   variation: Float32Array;
   /** altura (m) em cada canto de tile: (w+1) x (h+1) */
   heights: Float32Array;
+  /** andar de cada tile (0 = térreo; WATER_LEVEL no rio) */
+  floors: Int8Array;
+  ramps: Ramp[];
   /** centro da trilha (y) para cada x; NaN onde não há trilha */
   pathY: Float32Array;
   /** nomes de lugares para o mapa */
   places: Array<{ name: string; x: number; y: number }>;
 }
-
-/** Altura de cada degrau do relevo (curvas de nível). */
-export const TERRACE = 0.5;
 
 /** Altura do chão em qualquer ponto (interpolação bilinear dos cantos). */
 export function heightAt(m: GameMap, x: number, y: number): number {
@@ -119,9 +139,11 @@ export function floorAt(m: GameMap, x: number, y: number): number {
   return heightAt(m, x, y);
 }
 
-/** Nível do terraço (inteiro) de um tile. */
-export function terraceLevel(m: GameMap, x: number, y: number): number {
-  return Math.round(heightAt(m, x + 0.5, y + 0.5) / TERRACE);
+/** Andar do tile que contém o ponto (x, y). */
+export function floorLevel(m: GameMap, x: number, y: number): number {
+  const ix = Math.max(0, Math.min(m.w - 1, Math.floor(x)));
+  const iy = Math.max(0, Math.min(m.h - 1, Math.floor(y)));
+  return m.floors[iy * m.w + ix]!;
 }
 
 export function tileAt(m: GameMap, x: number, y: number): Tile {
@@ -423,171 +445,470 @@ export function buildRegion(id: RegionId): GameMap {
   for (const e of exits) for (let y = e.y0; y <= e.y1; y++) for (let x = e.x0; x <= e.x1; x++) set(x, y, Tile.Path);
 
   // ---------------------------------------------------------------------
-  // Relevo: platôs com encostas íngremes, paredes nas bordas, desfiladeiro.
+  // Andares (como no Tibia): cada tile pertence a um andar inteiro e plano.
+  // Entre andares há uma parede de rocha de um tile (no lado de baixo) e só se
+  // sobe ou desce por rampas explícitas, largas o bastante para monstros.
   // ---------------------------------------------------------------------
   const smooth = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
-  const STEP = 1.6;
-  const plateau = (v: number) => {
-    const k = Math.floor(v / STEP);
-    const f = v / STEP - k;
-    return (k + smooth((f - 0.68) / 0.32)) * STEP;
-  };
-  const W1 = w + 1;
-  const heights = new Float32Array(W1 * (h + 1));
-  const riverCenter = (cy: number) => riverAt(cy) + 1;
-  for (let cy = 0; cy <= h; cy++)
-    for (let cx = 0; cx <= w; cx++) {
-      const edge = Math.min(cx, cy, w - cx, h - cy);
-      let hgt = Math.max(0, 6 - edge * 0.8);
-      hgt += 0.5 + 0.6 * Math.sin(cx * 0.11 + spec.seed * 0.001) * Math.cos(cy * 0.13 - 0.4) + 0.25 * Math.sin(cx * 0.31 - cy * 0.27);
-      for (const k of spec.hills) hgt += k.h * Math.exp(-((cx - k.x) ** 2 + (cy - k.y) ** 2) / (2 * k.r * k.r));
-      hgt = plateau(hgt);
-      const py = pathY(cx);
-      const dPath = Number.isNaN(py) ? Infinity : Math.abs(cy - py);
-      hgt *= smooth((dPath - 1.8) / 3);
-      if (river) hgt *= smooth((Math.abs(cx - riverCenter(cy)) - 3) / 4);
-      const sm = 1 - smooth((Math.hypot(cx - safe.x, cy - safe.y) - safe.r) / 2.5);
-      hgt = hgt * (1 - sm) + spec.safeHeight * sm;
-      if (arena) {
-        const am = 1 - smooth((Math.hypot(cx - arena.x, cy - arena.y) - arena.r) / 3);
-        hgt = hgt * (1 - am) + arena.height * am;
-      }
-      if (river) {
-        const riverD = Math.abs(cx - riverCenter(cy));
-        if (riverD < 3.2) hgt = hgt + (GORGE_DEPTH - hgt) * (1 - smooth((riverD - 1.6) / 1.6));
-      }
-      heights[cy * W1 + cx] = hgt;
-    }
-
-  // Pontos de interesse ficam em pequenas clareiras planas.
-  const pois = [...spawns.map((q) => ({ x: q.x + 0.5, y: q.y + 0.5 })), ...npcs, ...books, ...traps];
-  for (const q of pois) {
-    const qx = Math.round(q.x);
-    const qy = Math.round(q.y);
-    const target = heights[qy * W1 + qx]!;
-    for (let cy = qy - 3; cy <= qy + 3; cy++)
-      for (let cx = qx - 3; cx <= qx + 3; cx++) {
-        if (cx < 0 || cy < 0 || cx > w || cy > h) continue;
-        const k = 1 - smooth((Math.hypot(cx - q.x, cy - q.y) - 1.4) / 1.4);
-        const i = cy * W1 + cx;
-        if (heights[i]! > -0.3) heights[i] = heights[i]! + (target - heights[i]!) * k;
-      }
-  }
-
-  // Encostas íngremes e a borda do desfiladeiro viram penhasco (bloqueiam).
-  const corners = (x: number, y: number) => [heights[y * W1 + x]!, heights[y * W1 + x + 1]!, heights[(y + 1) * W1 + x]!, heights[(y + 1) * W1 + x + 1]!];
-  const markCliffs = () => {
-    for (let y = 0; y < h; y++)
-      for (let x = 0; x < w; x++) {
-        const t = get(x, y);
-        if (t === Tile.Water || t === Tile.Bridge || t === Tile.Cliff) continue;
-        const c = corners(x, y);
-        if (Math.max(...c) - Math.min(...c) > 0.9 || Math.min(...c) < -0.3) set(x, y, Tile.Cliff);
-      }
-  };
-  markCliffs();
-
-  // Rampas: cada região caminhável isolada ganha acesso pelo caminho com menos penhasco.
   const N4 = [
     [1, 0],
     [-1, 0],
     [0, 1],
     [0, -1],
   ] as const;
-  const walkable = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && !BLOCKING.has(get(x, y));
-  const startIdx = Math.floor(safe.y) * w + Math.floor(safe.x);
-  for (let iter = 0; iter < 16; iter++) {
-    const reach = new Uint8Array(w * h);
-    const stack = [startIdx];
-    reach[startIdx] = 1;
-    while (stack.length) {
-      const i = stack.pop()!;
-      for (const [dx, dy] of N4) {
-        const nx = (i % w) + dx;
-        const ny = ((i / w) | 0) + dy;
-        if (!walkable(nx, ny) || reach[ny * w + nx]) continue;
-        reach[ny * w + nx] = 1;
-        stack.push(ny * w + nx);
+  const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h;
+  const riverCenter = (y: number) => riverAt(y) + 1;
+  const level = new Int8Array(w * h);
+  const forced = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const t = get(x, y);
+      if (t === Tile.Water || (t === Tile.Bridge && river && Math.abs(x + 0.5 - riverCenter(y)) <= 2)) {
+        level[i] = WATER_LEVEL;
+        forced[i] = 1;
+        continue;
+      }
+      const cx = x + 0.5;
+      const cy = y + 0.5;
+      let hgt = 0.5 + 0.6 * Math.sin(cx * 0.11 + spec.seed * 0.001) * Math.cos(cy * 0.13 - 0.4) + 0.25 * Math.sin(cx * 0.31 - cy * 0.27);
+      for (const k of spec.hills) hgt += k.h * Math.exp(-((cx - k.x) ** 2 + (cy - k.y) ** 2) / (2 * k.r * k.r));
+      const py = pathY(cx);
+      const dPath = Number.isNaN(py) ? Infinity : Math.abs(cy - py);
+      hgt *= smooth((dPath - 1.8) / 3);
+      if (river) hgt *= smooth((Math.abs(cx - riverCenter(cy)) - 3) / 4);
+      hgt *= smooth((Math.hypot(cx - safe.x, cy - safe.y) - safe.r) / 3);
+      if (arena) hgt *= smooth((Math.hypot(cx - arena.x, cy - arena.y) - arena.r) / 3);
+      level[i] = Math.max(0, Math.floor(hgt / FLOOR_H + 0.16));
+      // Trilha, lugar seguro, arena e margens do rio ficam sempre no térreo.
+      if (
+        dPath < 2.3 ||
+        Math.hypot(cx - safe.x, cy - safe.y) < safe.r + 2 ||
+        (arena && Math.hypot(cx - arena.x, cy - arena.y) < arena.r + 2) ||
+        (river && Math.abs(cx - riverCenter(cy)) < 4.5)
+      ) {
+        level[i] = 0;
+        forced[i] = 1;
       }
     }
-    const comp = new Int32Array(w * h).fill(-1);
-    let bestComp = -1;
-    let bestSize = 7;
-    for (let i = 0; i < w * h; i++) {
-      if (reach[i] || comp[i] !== -1 || !walkable(i % w, (i / w) | 0)) continue;
-      const st = [i];
-      comp[i] = i;
-      let size = 0;
-      while (st.length) {
-        const j = st.pop()!;
-        size++;
+
+  // Contornos limpos: tiles quase isolados adotam o andar dos vizinhos...
+  for (let iter = 0; iter < 3; iter++)
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (forced[i]) continue;
+        const count = new Map<number, number>();
+        for (const [dx, dy] of N4) {
+          if (!inside(x + dx, y + dy)) continue;
+          const l = level[(y + dy) * w + x + dx]!;
+          if (l >= 0) count.set(l, (count.get(l) ?? 0) + 1);
+        }
+        if ((count.get(level[i]!) ?? 0) >= 2) continue;
+        let best = level[i]!;
+        let bestN = -1;
+        for (const [l, n] of count) if (n > bestN || (n === bestN && l < best)) [best, bestN] = [l, n];
+        level[i] = best;
+      }
+  // Platôs largos: nada de faixas estreitas (anéis de 1 tile viram labirinto).
+  const maxLevel = Math.max(0, ...level);
+  const open = (inR: (i: number) => boolean) => {
+    let cur = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) cur[i] = +inR(i);
+    const pass = (src: Uint8Array, erode: boolean) => {
+      const out = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) {
+          let v = erode ? 1 : 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx;
+              const ny = y + dy;
+              const n = inside(nx, ny) ? src[ny * w + nx]! : +erode;
+              if (erode) v &= n;
+              else v |= n;
+            }
+          out[y * w + x] = v;
+        }
+      return out;
+    };
+    const base0 = cur;
+    cur = pass(pass(cur, true), true);
+    cur = pass(pass(cur, false), false);
+    for (let i = 0; i < w * h; i++) cur[i] = cur[i]! & base0[i]!;
+    return cur;
+  };
+  for (let round = 0; round < 2; round++) {
+    for (let L = maxLevel; L >= 1; L--) {
+      const kept = open((i) => level[i]! >= L);
+      for (let i = 0; i < w * h; i++) if (level[i]! >= L && !kept[i] && !forced[i]) level[i] = L - 1;
+    }
+    // Degrau estreito entre um andar de cima e um de baixo: desce (a parede fica mais alta).
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const lv = level[y * w + x]!;
+        if (lv < 1 || forced[y * w + x]) continue;
+        let up = false;
+        let down = false;
+        for (let dy = -2; dy <= 2; dy++)
+          for (let dx = -2; dx <= 2; dx++) {
+            if (!inside(x + dx, y + dy)) continue;
+            const n = level[(y + dy) * w + x + dx]!;
+            if (n < 0) continue;
+            if (n > lv && Math.abs(dx) <= 1 && Math.abs(dy) <= 1) up = true;
+            if (n < lv) down = true;
+          }
+        if (up && down) level[y * w + x] = lv - 1;
+      }
+    // Valas de 1 tile (mais baixas que os dois vizinhos opostos) sobem ao nível deles.
+    for (let y = 1; y < h - 1; y++)
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        if (forced[i] || level[i]! < 0) continue;
+        const ab = Math.min(level[i - 1]!, level[i + 1]!);
+        const cd = Math.min(level[i - w]!, level[i + w]!);
+        const fill = Math.max(ab, cd);
+        if (fill > level[i]!) level[i] = fill;
+      }
+  }
+  // ...e manchas pequenas demais para serem um andar somem no andar ao redor.
+  for (let iter = 0; iter < 2; iter++) {
+    const seen = new Uint8Array(w * h);
+    for (let s = 0; s < w * h; s++) {
+      if (seen[s] || level[s]! < 0) continue;
+      const lv = level[s]!;
+      const comp = [s];
+      seen[s] = 1;
+      const around = new Map<number, number>();
+      for (let k = 0; k < comp.length; k++) {
+        const j = comp[k]!;
         for (const [dx, dy] of N4) {
           const nx = (j % w) + dx;
           const ny = ((j / w) | 0) + dy;
-          if (!walkable(nx, ny) || reach[ny * w + nx] || comp[ny * w + nx] !== -1) continue;
+          if (!inside(nx, ny)) continue;
+          const n = ny * w + nx;
+          if (level[n] === lv) {
+            if (!seen[n]) {
+              seen[n] = 1;
+              comp.push(n);
+            }
+          } else if (level[n]! >= 0) around.set(level[n]!, (around.get(level[n]!) ?? 0) + 1);
+        }
+      }
+      if (comp.length >= 14 || around.size === 0) continue;
+      let to = lv;
+      let bestN = -1;
+      for (const [l, n] of around) if (n > bestN) [to, bestN] = [l, n];
+      for (const j of comp) if (!forced[j]) level[j] = to;
+    }
+  }
+
+  // Pontos de interesse ficam no meio de um pedaço plano do seu andar (nunca na parede).
+  const pois = [...spawns.map((q) => ({ x: q.x + 0.5, y: q.y + 0.5 })), ...npcs, ...books, ...traps];
+  /** Tiles perto de um ponto de interesse: rampas (e suas paredes laterais) não passam ali. */
+  const nearPoi = new Uint8Array(w * h);
+  /** Andar já reservado por um ponto de interesse anterior (-2 = livre). */
+  const claimed = new Int8Array(w * h).fill(-2);
+  for (const q of pois) {
+    const disk: number[] = [];
+    for (let y = Math.floor(q.y) - 2; y <= Math.floor(q.y) + 2; y++)
+      for (let x = Math.floor(q.x) - 2; x <= Math.floor(q.x) + 2; x++)
+        if (inside(x, y) && level[y * w + x]! >= 0 && Math.hypot(x + 0.5 - q.x, y + 0.5 - q.y) <= 2.3) disk.push(y * w + x);
+    // Clareiras vizinhas ficam no mesmo andar (senão uma parede cairia entre elas).
+    let lv = level[Math.floor(q.y) * w + Math.floor(q.x)]!;
+    for (const i of disk) if (claimed[i]! > -2) lv = claimed[i]!;
+    for (const i of disk) level[i] = claimed[i] = lv;
+    for (let y = Math.floor(q.y) - 2; y <= Math.floor(q.y) + 2; y++)
+      for (let x = Math.floor(q.x) - 2; x <= Math.floor(q.x) + 2; x++) {
+        if (!inside(x, y) || level[y * w + x]! < 0) continue;
+        if (Math.hypot(x + 0.5 - q.x, y + 0.5 - q.y) <= 1.2) nearPoi[y * w + x] = 1;
+      }
+  }
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      if (Math.hypot(x + 0.5 - safe.x, y + 0.5 - safe.y) < safe.r + 0.5 || (arena && Math.hypot(x + 0.5 - arena.x, y + 0.5 - arena.y) < arena.r + 0.5))
+        nearPoi[y * w + x] = 1;
+
+  // Tiles "de base" (antes das paredes); as rampas são escritas aqui.
+  const base = tiles.slice();
+  const ramps: Ramp[] = [];
+  const W1 = w + 1;
+  const heights = new Float32Array(W1 * (h + 1));
+  const levelH = (l: number) => (l < 0 ? GORGE_DEPTH : l * FLOOR_H);
+  /** Recalcula paredes e alturas a partir dos andares e das rampas. */
+  const finalize = () => {
+    tiles.set(base);
+    const eff = new Int8Array(level);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const lv = level[i]!;
+        if (lv < 0) continue;
+        let wall = false;
+        let rim = false;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            if ((!dx && !dy) || !inside(x + dx, y + dy)) continue;
+            const n = level[(y + dy) * w + x + dx]!;
+            if (n < 0) rim = true;
+            else if (n > lv) wall = true;
+          }
+        if (rim) eff[i] = WATER_LEVEL; // a borda do desfiladeiro desce até o rio
+        const t = base[i] as Tile;
+        if ((wall || rim) && t !== Tile.Bridge && t !== Tile.Ramp) tiles[i] = Tile.Cliff;
+      }
+    // Cada canto fica na altura do andar mais alto que o toca: andares planos, parede no tile de baixo.
+    for (let cy = 0; cy <= h; cy++)
+      for (let cx = 0; cx <= w; cx++) {
+        let hi = -Infinity;
+        for (const [tx, ty] of [
+          [cx - 1, cy - 1],
+          [cx, cy - 1],
+          [cx - 1, cy],
+          [cx, cy],
+        ] as const)
+          if (inside(tx, ty)) hi = Math.max(hi, levelH(eff[ty * w + tx]!));
+        heights[cy * W1 + cx] = hi;
+      }
+    // Rampas: altura linear do pé (andar de baixo) ao topo (andar de cima).
+    for (const r of ramps) {
+      const px = -r.dy;
+      const py = r.dx;
+      const lo = levelH(r.from);
+      for (let k = 0; k < r.len; k++)
+        for (let o = -1; o <= 1; o++) {
+          const x = r.x + k * r.dx + o * px;
+          const y = r.y + k * r.dy + o * py;
+          for (const [cx, cy] of [
+            [x, y],
+            [x + 1, y],
+            [x, y + 1],
+            [x + 1, y + 1],
+          ] as const) {
+            const t = r.dx > 0 ? cx - r.x : r.dx < 0 ? r.x + 1 - cx : r.dy > 0 ? cy - r.y : r.y + 1 - cy;
+            heights[cy * W1 + cx] = lo + (t / r.len) * r.rise * FLOOR_H;
+          }
+        }
+    }
+    // Qualquer tile caminhável que não ficou plano (ladeando uma rampa) vira parede.
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const t = tiles[y * w + x] as Tile;
+        if (BLOCKING.has(t) || t === Tile.Ramp || t === Tile.Bridge) continue;
+        const a = heights[y * W1 + x]!;
+        if (heights[y * W1 + x + 1] !== a || heights[(y + 1) * W1 + x] !== a || heights[(y + 1) * W1 + x + 1] !== a) tiles[y * w + x] = Tile.Cliff;
+      }
+  };
+  finalize();
+
+  // Conectividade: cada área caminhável isolada ganha uma rampa até o que já se alcança.
+  const walkable = (x: number, y: number) => inside(x, y) && !BLOCKING.has(get(x, y));
+  const startIdx = Math.floor(safe.y) * w + Math.floor(safe.x);
+  /** Distância a pé (em passos) do lugar seguro até cada tile; -1 = inalcançável. */
+  const computeReach = () => {
+    const reachD = new Int32Array(w * h).fill(-1);
+    const q = [startIdx];
+    reachD[startIdx] = 0;
+    for (let k = 0; k < q.length; k++) {
+      const i = q[k]!;
+      for (const [dx, dy] of N4) {
+        const nx = (i % w) + dx;
+        const ny = ((i / w) | 0) + dy;
+        if (!walkable(nx, ny) || reachD[ny * w + nx]! >= 0) continue;
+        reachD[ny * w + nx] = reachD[i]! + 1;
+        q.push(ny * w + nx);
+      }
+    }
+    return reachD;
+  };
+  for (let iter = 0; iter < 40; iter++) {
+    const reachD = computeReach();
+    // Componentes ainda isolados.
+    const comp = new Int32Array(w * h).fill(-1);
+    const sizes: Array<[number, number]> = [];
+    for (let i = 0; i < w * h; i++) {
+      if (reachD[i]! >= 0 || comp[i] !== -1 || !walkable(i % w, (i / w) | 0)) continue;
+      const st = [i];
+      comp[i] = i;
+      for (let k = 0; k < st.length; k++) {
+        const j = st[k]!;
+        for (const [dx, dy] of N4) {
+          const nx = (j % w) + dx;
+          const ny = ((j / w) | 0) + dy;
+          if (!walkable(nx, ny) || reachD[ny * w + nx]! >= 0 || comp[ny * w + nx] !== -1) continue;
           comp[ny * w + nx] = i;
           st.push(ny * w + nx);
         }
       }
-      if (size > bestSize) {
-        bestSize = size;
-        bestComp = i;
+      if (st.length > 7) sizes.push([i, st.length]);
+    }
+    if (!sizes.length) break;
+    // Zonas: mesmo andar, contando árvores e rochas como chão (elas podem ser derrubadas).
+    const zone = new Int32Array(w * h).fill(-1);
+    for (let i = 0; i < w * h; i++) {
+      const t0 = tiles[i] as Tile;
+      if (zone[i] !== -1 || t0 === Tile.Cliff || t0 === Tile.Water || level[i]! < 0) continue;
+      const st = [i];
+      zone[i] = i;
+      for (let k = 0; k < st.length; k++) {
+        const j = st[k]!;
+        for (const [dx, dy] of N4) {
+          const nx = (j % w) + dx;
+          const ny = ((j / w) | 0) + dy;
+          if (!inside(nx, ny)) continue;
+          const n = ny * w + nx;
+          const t = tiles[n] as Tile;
+          if (zone[n] !== -1 || t === Tile.Cliff || t === Tile.Water || level[n] !== level[j]) continue;
+          zone[n] = i;
+          st.push(n);
+        }
       }
     }
-    if (bestComp < 0) break;
-    const cost = new Int32Array(w * h).fill(1e9);
-    const prev = new Int32Array(w * h).fill(-1);
-    const dq: number[] = [];
-    for (let i = 0; i < w * h; i++)
-      if (reach[i]) {
-        cost[i] = 0;
-        dq.push(i);
+    sizes.sort((a, b) => b[1] - a[1]);
+    let placed = false;
+    for (const [target] of sizes) {
+      const isTarget = (i: number) => comp[i] === target;
+      const isReach = (i: number) => reachD[i]! >= 0;
+      const inTargetZone = (i: number) => zone[i] === zone[target];
+      // Isolado só por árvores ou rochas no mesmo andar? Abre uma passagem entre elas.
+      {
+        const cost = new Int32Array(w * h).fill(1e9);
+        const prev = new Int32Array(w * h).fill(-1);
+        const dq: number[] = [];
+        for (let i = 0; i < w * h; i++)
+          if (isReach(i)) {
+            cost[i] = 0;
+            dq.push(i);
+          }
+        let goal = -1;
+        while (dq.length) {
+          const i = dq.shift()!;
+          if (isTarget(i)) {
+            goal = i;
+            break;
+          }
+          for (const [dx, dy] of N4) {
+            const nx = (i % w) + dx;
+            const ny = ((i / w) | 0) + dy;
+            if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
+            const j = ny * w + nx;
+            const t = get(nx, ny);
+            const step = walkable(nx, ny) ? 0 : (t === Tile.Tree || t === Tile.Rock) && level[j] === level[i] ? 1 : -1;
+            if (step < 0 || cost[i]! + step >= cost[j]!) continue;
+            cost[j] = cost[i]! + step;
+            prev[j] = i;
+            if (step === 0) dq.unshift(j);
+            else dq.push(j);
+          }
+        }
+        if (goal >= 0 && cost[goal]! <= 12) {
+          for (let i = goal; i !== -1; i = prev[i]!) if (BLOCKING.has(base[i] as Tile)) base[i] = Tile.Grass;
+          finalize();
+          placed = true;
+          break;
+        }
       }
-    let goal = -1;
-    while (dq.length) {
-      const i = dq.shift()!;
-      if (comp[i] === bestComp) {
-        goal = i;
-        break;
+      const cands: Array<{ r: Ramp; score: number }> = [];
+      // Procura a partir do topo: um tile caminhável com o andar de baixo logo atrás.
+      for (let ty0 = 1; ty0 < h - 1; ty0++)
+        for (let tx0 = 1; tx0 < w - 1; tx0++) {
+          const ti = ty0 * w + tx0;
+          if (level[ti]! < 1 || get(tx0, ty0) === Tile.Cliff) continue;
+          for (const [dx, dy] of N4) {
+            const rise = level[ti]! - level[(ty0 - dy) * w + tx0 - dx]!;
+            if (rise !== 1 && rise !== 2) continue;
+            // cut = quantos tiles da rampa ficam escavados no andar de cima (0 = rampa saliente).
+            const shapes = (rise === 1 ? [3, 2] : [5, 4]).flatMap((l) => [
+              [l, 0],
+              [l, l - 1],
+            ]);
+            for (const [len, cut] of shapes as Array<[number, number]>) {
+              const x = tx0 - (len - cut) * dx;
+              const y = ty0 - (len - cut) * dy;
+              if (!inside(x, y)) continue;
+              const px = -dy;
+              const py = dx;
+              const at = (k: number, o: number) => [x + k * dx + o * px, y + k * dy + o * py] as const;
+              const from = level[y * w + x]!;
+              if (from < 0) continue;
+              let ok = true;
+              for (let k = -1; k <= len + 1 && ok; k++)
+                for (let o = -2; o <= 2 && ok; o++) {
+                  const [tx, ty] = at(k, o);
+                  if (tx < 1 || ty < 1 || tx >= w - 1 || ty >= h - 1) {
+                    ok = false;
+                    break;
+                  }
+                  const i = ty * w + tx;
+                  const t = get(tx, ty);
+                  if (t === Tile.Ramp || base[i] === Tile.Bridge || nearPoi[i]) ok = false;
+                  if (Math.abs(o) === 2) continue;
+                  const lv = level[i]!;
+                  if (k >= len) ok &&= lv === from + rise && t !== Tile.Cliff && t !== Tile.Water;
+                  else if (k === -1) ok &&= lv === from && (o !== 0 || walkable(tx, ty));
+                  else if (k < len - cut - 1) ok &&= lv === from && t !== Tile.Cliff && t !== Tile.Water;
+                  else if (k === len - cut - 1) ok &&= lv === from && t !== Tile.Water;
+                  else ok &&= lv === from + rise && t !== Tile.Cliff && t !== Tile.Water;
+                }
+              if (!ok) continue;
+              const [fx, fy] = at(-1, 0);
+              const foot = fy * w + fx;
+              // O topo (3 x 2 tiles, árvores serão derrubadas) precisa encostar na outra área.
+              let topReach = -1;
+              let topTarget = false;
+              for (let k = len; k <= len + 1; k++)
+                for (let o = -1; o <= 1; o++) {
+                  const [tx, ty] = at(k, o);
+                  const i = ty * w + tx;
+                  if (isReach(i) && (topReach < 0 || reachD[i]! < topReach)) topReach = reachD[i]!;
+                  if (inTargetZone(i)) topTarget = true;
+                }
+              let score: number;
+              if (isReach(foot) && topTarget) score = reachD[foot]!;
+              else if (topReach >= 0 && inTargetZone(foot)) score = topReach;
+              else continue;
+              score += (len === 3 || len === 5 ? 0 : 6) + (rise - 1) * 4 + (cut ? 3 : 0);
+              cands.push({ r: { x, y, dx, dy, len, from, rise }, score });
+            }
+          }
+        }
+      cands.sort((a, b) => a.score - b.score);
+      for (const { r } of cands.slice(0, 30)) {
+        const saved = base.slice();
+        ramps.push(r);
+        for (let k = 0; k <= r.len + 1; k++)
+          for (let o = -1; o <= 1; o++) {
+            const x = r.x + k * r.dx - o * r.dy;
+            const y = r.y + k * r.dy + o * r.dx;
+            const i = y * w + x;
+            if (k < r.len) base[i] = Tile.Ramp;
+            else if (BLOCKING.has(base[i] as Tile)) base[i] = Tile.Grass;
+          }
+        finalize();
+        // A rampa (com suas paredes laterais) não pode cortar nenhum caminho que já existia.
+        const after = computeReach();
+        // (no máximo um cantinho sem saída de poucos tiles, e nunca um ponto de interesse)
+        let ok = after[startIdx]! >= 0;
+        let lost = 0;
+        for (let i = 0; i < w * h && ok; i++)
+          if (reachD[i]! >= 0 && after[i]! < 0 && !BLOCKING.has(tiles[i] as Tile)) {
+            lost++;
+            if (lost > 8 || claimed[i]! > -2) ok = false;
+          }
+        let gained = 0;
+        for (let i = 0; i < w * h; i++) if (after[i]! >= 0 && reachD[i]! < 0) gained++;
+        ok &&= gained > 0;
+        if (ok) {
+          placed = true;
+          break;
+        }
+        ramps.pop();
+        base.set(saved);
+        finalize();
       }
-      for (const [dx, dy] of N4) {
-        const nx = (i % w) + dx;
-        const ny = ((i / w) | 0) + dy;
-        if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
-        const t = get(nx, ny);
-        const step = walkable(nx, ny) ? 0 : t === Tile.Cliff ? 1 : -1;
-        if (step < 0) continue;
-        const j = ny * w + nx;
-        if (cost[i]! + step >= cost[j]!) continue;
-        cost[j] = cost[i]! + step;
-        prev[j] = i;
-        if (step === 0) dq.unshift(j);
-        else dq.push(j);
-      }
+      if (placed) break;
     }
-    if (goal < 0) break;
-    const path: number[] = [];
-    for (let i = goal; i !== -1; i = prev[i]!) path.unshift(i);
-    let first = 0;
-    for (let k = 0; k < path.length; k++) if (reach[path[k]!]) first = k;
-    const ramp = path.slice(first);
-    const centerH = (i: number) => corners(i % w, (i / w) | 0).reduce((a, b) => a + b, 0) / 4;
-    const h0 = centerH(ramp[0]!);
-    const h1 = centerH(ramp[ramp.length - 1]!);
-    ramp.forEach((i, k) => {
-      const x = i % w;
-      const y = (i / w) | 0;
-      if (get(x, y) === Tile.Cliff) set(x, y, Tile.Grass);
-      const v = h0 + ((h1 - h0) * k) / Math.max(1, ramp.length - 1);
-      for (const [cx, cy] of [
-        [x, y],
-        [x + 1, y],
-        [x, y + 1],
-        [x + 1, y + 1],
-      ] as const)
-        heights[cy * W1 + cx] = v;
-    });
-    markCliffs();
+    if (!placed) break;
   }
 
   const pathYs = new Float32Array(w + 1);
@@ -601,6 +922,8 @@ export function buildRegion(id: RegionId): GameMap {
     w,
     h,
     heights,
+    floors: level,
+    ramps,
     pathY: pathYs,
     places: spec.places,
     tiles,

@@ -2,7 +2,7 @@ import { AFFINITY_COLORS } from '../../sim/flow/affinity';
 import { NPCS } from '../../sim/psyche/dialogues';
 import type { Simulation } from '../../sim/sim';
 import { SPELLS } from '../../sim/techniques';
-import { heightAt, Tile, type GameMap } from '../../sim/world/map';
+import { FLOOR_H, heightAt, Tile, type GameMap } from '../../sim/world/map';
 
 /**
  * Mapa da região, pintado com a mesma paleta do mundo 3D: grama morna, encostas de
@@ -54,7 +54,7 @@ export function drawBase(map: GameMap, scale: number): HTMLCanvasElement {
         const depth = Math.min(1, Math.max(0, -hgt / 2.6));
         c = [WATER[0] * (1 - depth * 0.25), WATER[1] * (1 - depth * 0.2), WATER[2] * (1 - depth * 0.1)];
       } else if (slope > 0.75 || t === Tile.Cliff) c = ROCK;
-      else if (onPath(x, y) || t === Tile.Bridge) c = PATH;
+      else if (onPath(x, y) || t === Tile.Bridge || t === Tile.Ramp) c = PATH;
       else if (t === Tile.Sanctuary) c = SANCT;
       else if (t === Tile.Arena) c = ARENA;
       else {
@@ -62,7 +62,7 @@ export function drawBase(map: GameMap, scale: number): HTMLCanvasElement {
         const base = t === Tile.Tree ? GRASS_DARK : GRASS;
         c = [base[0] * (0.92 + k * 0.12), base[1] * (0.92 + k * 0.1), base[2] * (0.9 + k * 0.08)];
       }
-      const lift = 1 + Math.max(0, hgt) * 0.025;
+      const lift = 1 + Math.max(0, hgt) * 0.04;
       const i = (py * W + px) * 4;
       img.data[i] = Math.min(255, c[0] * shade * lift);
       img.data[i + 1] = Math.min(255, c[1] * shade * lift);
@@ -71,7 +71,7 @@ export function drawBase(map: GameMap, scale: number): HTMLCanvasElement {
     }
   g.putImageData(img, 0, 0);
 
-  // Curvas de nível discretas (marrom translúcido), a cada 0,8 m.
+  // Curvas de nível discretas (marrom translúcido): uma no meio de cada parede entre andares.
   g.strokeStyle = 'rgba(70, 52, 30, 0.22)';
   g.lineWidth = Math.max(1, scale / 10);
   g.beginPath();
@@ -83,8 +83,8 @@ export function drawBase(map: GameMap, scale: number): HTMLCanvasElement {
       const lo = Math.min(...cs);
       const hi = Math.max(...cs);
       if (hi - lo < 0.01 || lo < -0.3) continue;
-      for (let k = Math.ceil(lo / 0.8); k * 0.8 < hi; k++) {
-        const th = k * 0.8;
+      for (let k = Math.ceil(lo / FLOOR_H - 0.5); (k + 0.5) * FLOOR_H < hi; k++) {
+        const th = (k + 0.5) * FLOOR_H;
         const pts: Array<[number, number]> = [];
         const edges: Array<[number, number, number, number, number, number]> = [
           [x, y, cs[0]!, x + 1, y, cs[1]!],

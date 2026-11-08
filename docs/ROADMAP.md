@@ -27,6 +27,7 @@ Fonte de verdade do design: o GDD "Sistema de Aura, Psique e Maestria" (document
 ## v0.3 — segunda região
 
 - [x] Gerador de regiões genérico (relevo, penhascos, rampas, clareiras) com auditoria automática
+- [x] Relevo em andares (estilo Tibia): cada andar plano, paredes de rocha entre andares e rampas de 3 tiles (salientes ou escavadas) por onde jogador e monstros sobem e descem
 - [x] Planalto de Varn (tier 2): acampamento, Capitã Lys e o dilema do prisioneiro, floresta de outono
 - [x] Viagem entre regiões (passagem abre ao vencer o Guardião), exploração salva por região
 - [x] Lançador de Espinhos: mantém distância, avisa com linha no chão, projétil desviável
