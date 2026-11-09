@@ -42,6 +42,7 @@ import {
 } from '../../sim/techniques';
 import { SLOT_KEYS } from '../keys';
 import type { Sfx } from '../sfx';
+import type { PlaytestRecorder } from '../playtest';
 import { escapeHtml, hintTip } from '../util';
 import {
   affinityRadar,
@@ -100,6 +101,9 @@ export class Panels {
   onClose: () => void = () => {};
   onQuit: () => void = () => {};
   sfx: Sfx | null = null;
+  /** sessão de playtest em andamento (botão "Encerrar sessão" na pausa) */
+  playtest: PlaytestRecorder | null = null;
+  private playtestMsg = '';
   private selectedElo = 2;
   private selectedNode: MasteryId = 'basic';
   /** Grade de Elos: o Elo, ou o catálogo para escolher a magia / uma Restrição */
@@ -973,6 +977,14 @@ export class Panels {
       if (a === 'close' || a === 'resume') this.close();
       if (a === 'help') this.open('help');
       if (a === 'quit') this.onQuit();
+      if (a === 'end-playtest' && this.playtest) {
+        this.playtestMsg = 'Gravando…';
+        this.render();
+        void this.playtest.finish().then((msg) => {
+          this.playtestMsg = `${msg} Uma nova sessão começou.`;
+          this.render();
+        });
+      }
       if (a === 'mute' && this.sfx) {
         this.sfx.toggleMute();
         this.render();
@@ -1018,6 +1030,17 @@ export class Panels {
         <input type="range" min="0" max="1" step="0.05" value="${this.sfx?.volume ?? 0.6}" data-vol/>
         <button class="btn" data-a="mute">${this.sfx?.muted ? 'Ligar' : 'Silenciar'}</button>
       </div>
+      ${
+        this.playtest
+          ? `<div class="pt-pause">
+        <b><span class="pt-rec"></span> Sessão de playtest</b>
+        <p class="muted small">${escapeHtml(this.playtest.summary())}</p>
+        <p class="muted small">Enter, durante o jogo, deixa uma anotação. Quando terminar de jogar, encerre: o relatório vai para a pasta <b>playtests/</b> do projeto.</p>
+        <button class="btn" data-a="end-playtest">Encerrar sessão e gravar relatório</button>
+        ${this.playtestMsg ? `<p class="small pt-msg">${escapeHtml(this.playtestMsg)}</p>` : ''}
+      </div>`
+          : ''
+      }
       <p class="muted small" style="text-align:center;margin:10px 0 0">Tecla <kbd>\`</kbd> abre o painel de playtest.</p>`,
     );
     this.root.querySelector<HTMLInputElement>('[data-vol]')?.addEventListener('input', (e) => {

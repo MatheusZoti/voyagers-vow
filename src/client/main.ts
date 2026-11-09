@@ -16,6 +16,12 @@ import { DebugPanel, loadTuning } from './ui/debug';
 import { DialogueBox } from './ui/dialogue';
 import { Panels } from './ui/panels';
 import { creationScreen, titleScreen } from './ui/screens';
+import { PlaytestRecorder } from './playtest';
+
+/** Teste de mapa vindo do editor (?playtest=1): não grava sessão de playtest. */
+const mapTest = new URLSearchParams(location.search).has('playtest');
+/** Sessão de playtest guiado: sempre ligada no servidor de desenvolvimento. */
+const recorder = import.meta.env.DEV && !mapTest ? new PlaytestRecorder() : null;
 
 const gameEl = document.getElementById('game')!;
 const hudEl = document.getElementById('hud')!;
@@ -87,6 +93,14 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
   const hud = new Hud(hudEl, sim);
   const panels = new Panels(screenEl, sim);
   panels.sfx = sfx;
+  panels.playtest = recorder;
+  recorder?.attach(sim);
+  // Registra os painéis abertos (inclusive por clique nas abas).
+  const openPanel = panels.open.bind(panels);
+  panels.open = (id) => {
+    openPanel(id);
+    recorder?.ui(id);
+  };
   const input = new InputController(view.renderer.domElement);
   const dialogue = new DialogueBox(dialogEl, sim);
   const debug = new DebugPanel(debugEl, sim);
@@ -127,6 +141,12 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
     if (dialogue.open) return;
     if (code === 'Backquote' || code === 'F2') return debug.toggle();
     if (panels.handleKey(code)) return;
+    // Enter: anotação do playtest (o jogo pausa enquanto você escreve).
+    if ((code === 'Enter' || code === 'NumpadEnter') && recorder && !panels.current) {
+      setPaused(true);
+      recorder.openNote(() => setPaused(false));
+      return;
+    }
     const map: Record<string, 'psyche' | 'stats' | 'elos' | 'codex' | 'mastery' | 'map' | 'help'> = {
       KeyC: 'psyche',
       KeyI: 'stats',
@@ -148,6 +168,7 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
     const id = map[code];
     if (id) {
       panels.toggle(id);
+      if (panels.current) recorder?.ui(panels.current);
       setPaused(panels.current !== null);
       sfx.ui();
     }
@@ -167,6 +188,7 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
     if (!running) return;
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
+    if (!paused) recorder?.frame(dt);
     debug.tick(dt);
     if (!paused && hitstop > 0) {
       // Congelado no impacto: o mundo quase para, a tela ainda treme.
@@ -180,7 +202,9 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
           acc -= TICK;
           const aim = view.screenToGround(input.cursor.x, input.cursor.y);
           const fallback = { x: sim.player.pos.x + sim.player.facing.x, y: sim.player.pos.y + sim.player.facing.y };
-          const events = sim.step(input.poll(aim, fallback));
+          const cmd = input.poll(aim, fallback);
+          const events = sim.step(cmd);
+          recorder?.afterStep(events, TICK, cmd.move.x !== 0 || cmd.move.y !== 0);
           view.handleEvents(events);
           hud.handleEvents(events);
           sfx.handle(events, c.affinity);
@@ -216,10 +240,13 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
   };
   raf = requestAnimationFrame(frame);
 
-  const onUnload = () => saveCharacter(c);
+  const onUnload = () => {
+    saveCharacter(c);
+    recorder?.save();
+  };
   window.addEventListener('beforeunload', onUnload);
   // Exposto para depuração no console.
-  (window as unknown as { vv: unknown }).vv = { sim, view };
+  (window as unknown as { vv: unknown }).vv = { sim, view, recorder };
 
   stopGame = () => {
     running = false;

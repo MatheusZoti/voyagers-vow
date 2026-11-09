@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
@@ -65,10 +65,42 @@ function mapsApi(): Plugin {
   };
 }
 
+/** Relatórios de playtest: PUT /__playtest/<id> grava playtests/<id>.json (só no servidor de desenvolvimento). */
+function playtestApi(): Plugin {
+  const dir = fileURLToPath(new URL('./playtests/', import.meta.url));
+  return {
+    name: 'voyagers-playtest-api',
+    configureServer(server) {
+      server.middlewares.use('/__playtest', (req, res) => {
+        const send = (code: number, body: unknown) => {
+          res.statusCode = code;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify(body));
+        };
+        const id = decodeURIComponent((req.url ?? '/').split('?')[0]!.replace(/^\/+|\/+$/g, ''));
+        if (req.method !== 'PUT' || !/^[0-9T-]+$/.test(id)) return send(400, { error: 'pedido inválido' });
+        let body = '';
+        req.setEncoding('utf8');
+        req.on('data', (c: string) => (body += c));
+        req.on('end', () => {
+          try {
+            JSON.parse(body);
+            if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+            writeFileSync(`${dir}${id}.json`, body, 'utf8');
+            send(200, { ok: true, file: `playtests/${id}.json` });
+          } catch (e) {
+            send(400, { error: String(e) });
+          }
+        });
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: './',
   server: { port: 5173 },
-  plugins: [mapsApi()],
+  plugins: [mapsApi(), playtestApi()],
   build: {
     chunkSizeWarningLimit: 900,
     rollupOptions: { input: { main: `${root}index.html`, editor: `${root}editor.html` } },

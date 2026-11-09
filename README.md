@@ -46,6 +46,10 @@ npm run build
 | Ajuda · Pausa (volume) | H · Esc |
 | Painel de playtest | ` (crase) ou F2 |
 
+## Sessão de playtest
+
+Com `npm run dev`, o jogo grava uma sessão de playtest enquanto você joga (só observa; nunca mexe no save): mortes e quem matou, lutas contra o chefe, itens, níveis, tempo em cada lugar, onde você ficou preso e o uso das mecânicas. Um roteiro no canto direito marca sozinho o que vale experimentar. **Enter** deixa uma anotação (fica marcada no lugar, no nível e na vida daquele momento). **Esc → Encerrar sessão** grava o relatório em `playtests/<data>.json` (fora do git).
+
 ## Balanceamento
 
 `npm test` roda um bot que joga cenários fixos (Carniçais, matilha, Bruto, Guardião) com as cinco afinidades e imprime tempo de luta e vida perdida. Sem equipamento o Guardião no nível 4 é difícil de propósito; com o kit esperado do tier 1 (qualidade Boa) o bot hábil o vence no nível 5 com sufoco. Os testes falham se usar a Maré deixar de fazer diferença clara contra ele ou se o kit do tier deixar de bastar. Para ver a tabela:
