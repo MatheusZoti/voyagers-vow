@@ -2,6 +2,9 @@ import { itemDef, itemName, QUALITY_NAMES, type Item } from '../sim/items';
 import type { SimEvent, Simulation } from '../sim/sim';
 import { floorLevel } from '../sim/world/map';
 import { STRONG_VALUE } from '../sim/psyche/values';
+import { EMOTION_IDS, type EmotionId } from '../sim/psyche/emotions';
+import { displayLevel } from '../sim/mastery';
+import { SPELLS, type SpellId } from '../sim/techniques';
 
 /**
  * Sessão de playtest guiado. Enquanto você joga, registra o que aconteceu (mortes, lutas
@@ -72,22 +75,29 @@ export interface PlaytestLog {
     shifts?: Array<{ t: number; cause: string; changes: string[] }>;
     /** Falas de NPCs que notaram você */
     greetings?: Array<{ t: number; npc: string; text: string }>;
+    /** Quando cada emoção apareceu forte (≥ 25%) */
+    emotions?: Array<{ t: number; id: string }>;
   };
+  /** Maestria: cada nível novo de magia e o estado final */
+  mastery?: { ups: Array<{ t: number; spell: string; level: number }>; end: Record<string, number> };
+  /** Grade de Elos no fim: magia, Restrições e nível efetivo de cada Elo aberto */
+  elosEnd?: Array<{ elo: number; spell: string | null; restrictions: string[]; effective: number | null; valueBonus: number }>;
 }
 
-/** Roteiro: o que vale experimentar na sessão (marca sozinho). Foco: a Psique simplificada (Valores e emoções). */
+/** Roteiro: o que vale experimentar na sessão (marca sozinho). Foco: Psique simplificada, Maestria e Restrições. */
 export const CHECKLIST: Array<{ id: string; label: string }> = [
   { id: 'talk', label: 'Escolher numa situação com alguém' },
-  { id: 'whisper', label: 'Sentir um sussurro (algo mudou em você)' },
+  { id: 'whisper', label: 'Sentir um sussurro (um Valor mudou)' },
   { id: 'surrender', label: 'Decidir o destino de um inimigo rendido' },
   { id: 'shrine', label: 'Decidir o que fazer num altar' },
-  { id: 'distress', label: 'Encontrar o viajante cercado' },
   { id: 'greeting', label: 'Ouvir um NPC comentar sobre você' },
-  { id: 'emotion', label: 'Sentir uma emoção mudar o combate (Fúria, Medo, Calma)' },
+  { id: 'emotion', label: 'Sentir uma emoção no combate (Fúria, Medo, Calma)' },
   { id: 'psyche', label: 'Abrir a Psique (C) e ver "Como você mudou"' },
+  { id: 'mastery', label: 'Subir a Maestria de uma magia (aba M)' },
+  { id: 'restriction', label: 'Pôr uma Restrição num Elo (K)' },
+  { id: 'codex', label: 'Ver a Tendência dos Elos no Grimório (G)' },
   { id: 'tide', label: 'Fazer uma Maré perfeita' },
   { id: 'boss', label: 'Derrotar o Guardião da Ponte' },
-  { id: 'varn', label: 'Chegar ao Planalto de Varn' },
   { id: 'notes', label: 'Deixar 3 anotações (Enter)' },
 ];
 
@@ -166,7 +176,9 @@ export class PlaytestRecorder {
         this.log = null;
       }
       if (!this.log || this.log.character.name !== sim.c.name) this.log = fresh(sim);
-      // Sessão antiga com outro roteiro: os passos novos começam em aberto.
+      // Sessão antiga com outro roteiro: os passos novos começam em aberto e os que saíram somem.
+      const ids = new Set(CHECKLIST.map((s) => s.id));
+      for (const id of Object.keys(this.log.checklist)) if (!ids.has(id)) delete this.log.checklist[id];
       for (const s of CHECKLIST) this.log.checklist[s.id] ??= null;
     }
     const c = sim.c;
@@ -236,7 +248,31 @@ export class PlaytestRecorder {
       }
     } else if (movedNow > 0.004) this.stuckAcc = 0;
     if (floorLevel(sim.map, p.pos.x, p.pos.y) !== floorLevel(sim.map, this.lastPos.x, this.lastPos.y) && floorLevel(sim.map, p.pos.x, p.pos.y) >= 1) this.check('ramp');
-    if (Object.values(sim.c.psyche.emotions).some((e) => e && e.intensity >= 0.25)) this.check('emotion');
+    // Emoções: registra quando cada uma aparece forte.
+    for (const id of EMOTION_IDS) {
+      const strong = (c.psyche.emotions[id]?.intensity ?? 0) >= 0.25;
+      if (strong && !this.emoOn.has(id)) {
+        this.emoOn.add(id);
+        (L.psyche ??= { whispers: [], milestones: [], valuesEnd: {}, strongEnd: [] }).emotions ??= [];
+        L.psyche.emotions!.push({ t: round(L.playS, 0), id });
+        this.check('emotion');
+      } else if (!strong) this.emoOn.delete(id);
+    }
+    // Maestria: cada nível novo.
+    const ms = (L.mastery ??= { ups: [], end: {} });
+    for (const id of c.knownSpells) {
+      const lvl = displayLevel(c.mastery[id]);
+      const was = this.masteryLvl[id];
+      if (was !== undefined && lvl > was) {
+        ms.ups.push({ t: round(L.playS, 0), spell: SPELLS[id].name, level: lvl });
+        this.check('mastery');
+      }
+      this.masteryLvl[id] = lvl;
+    }
+    // Restrições postas nos Elos.
+    const nPacts = c.elos.reduce((n, e) => n + (e.unlocked ? e.restrictions.length : 0), 0);
+    if (nPacts > this.pactCount) this.check('restriction');
+    this.pactCount = nPacts;
     this.lastPos = { ...p.pos };
     const cause = c.shifts[0]?.cause;
     if (cause) for (const [re, id] of SHIFT_STEPS) if (re.test(cause)) this.check(id);
@@ -379,6 +415,9 @@ export class PlaytestRecorder {
     }
   }
   private bossHpLost = 0;
+  private emoOn = new Set<EmotionId>();
+  private masteryLvl: Partial<Record<SpellId, number>> = {};
+  private pactCount = Infinity;
 
   private itemRow(it: Item): PlaytestLog['items']['picked'][number] {
     return { t: round(this.log!.playS, 0), name: itemName(it), quality: QUALITY_NAMES[it.quality - 1] ?? '?', tier: itemDef(it)?.tier ?? 0 };
@@ -399,6 +438,7 @@ export class PlaytestRecorder {
     this.log.uiOpened[panel] = (this.log.uiOpened[panel] ?? 0) + 1;
     if (panel === 'stats') this.check('stats');
     if (panel === 'psyche') this.check('psyche');
+    if (panel === 'codex') this.check('codex');
   }
 
   addNote(text: string): void {
@@ -435,6 +475,23 @@ export class PlaytestRecorder {
         cause: sh.cause,
         changes: sh.changes.map((ch) => `${ch.id}${ch.dir > 0 ? '↑' : '↓'}`),
       }));
+    }
+    if (this.sim) {
+      const sim = this.sim;
+      const c = sim.c;
+      (this.log.mastery ??= { ups: [], end: {} }).end = Object.fromEntries(c.knownSpells.map((id) => [SPELLS[id].name, Math.round(c.mastery[id].level * 10) / 10]));
+      this.log.elosEnd = c.elos
+        .filter((e) => e.unlocked)
+        .map((e) => {
+          const info = e.technique ? sim.slotInfo(e) : null;
+          return {
+            elo: e.level,
+            spell: e.technique ? SPELLS[e.technique as SpellId].name : null,
+            restrictions: [...e.restrictions],
+            effective: info?.effective ?? null,
+            valueBonus: info?.valueBonus ?? 0,
+          };
+        });
     }
     try {
       localStorage.setItem(KEY, JSON.stringify(this.log));
