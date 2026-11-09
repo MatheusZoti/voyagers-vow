@@ -9,7 +9,11 @@ describe('Balanceamento (bot)', () => {
   it('imprime o relatório', () => {
     const lines = ['', 'cenário'.padEnd(34) + ['vigor', 'mutation', 'forge', 'dominion', 'projection'].map((a) => a.padStart(18)).join('')];
     for (const [name, rs] of byScenario) {
-      lines.push(name.padEnd(34) + rs.map((r) => `${r.won ? 'V' : 'X'} ${r.seconds}s ${r.hpLostPct}%`.padStart(18)).join(''));
+      const cell = (a: string) => {
+        const r = rs.find((x) => x.affinity === a);
+        return (r ? `${r.won ? 'V' : 'X'} ${r.seconds}s ${r.hpLostPct}%` : '—').padStart(18);
+      };
+      lines.push(name.padEnd(34) + ['vigor', 'mutation', 'forge', 'dominion', 'projection'].map(cell).join(''));
     }
     console.log(lines.join('\n'));
     expect(rows.length).toBeGreaterThan(0);
@@ -25,6 +29,13 @@ describe('Balanceamento (bot)', () => {
       expect(r.won, r.affinity).toBe(true);
       expect(r.hpLostPct, r.affinity).toBeGreaterThan(40);
     }
+  });
+
+  // Playtest 09/11: um atirador de Projeção venceu o Guardião no nível 3 sem equipamento.
+  // A pedra arremessada (mira à frente) agora cobra quem só mantém distância.
+  it('atirador: sem kit no nível 3 não passa fácil; com o kit do tier 1 no nível 5, vence', () => {
+    for (const r of byScenario.get('Guardião (nv 3, atirador)')!) expect(!r.won || r.hpLostPct > 80, r.affinity).toBe(true);
+    for (const r of byScenario.get('Guardião (nv 5, atirador, kit T1)')!) expect(r.won, r.affinity).toBe(true);
   });
 
   // Sem equipamentos, o Guardião no nível 4 é difícil de propósito:

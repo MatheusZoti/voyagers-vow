@@ -52,6 +52,8 @@ export interface Character {
   nextItemUid: number;
   /** Eco da última morte (XP e itens para recuperar), ou null */
   echo: Echo | null;
+  /** tutoriais já vistos/concluídos (ex.: tideShown, tideDone) */
+  hints: Record<string, number>;
 }
 
 /** Saves de antes dos equipamentos ganham equipamento e mochila vazios. */
@@ -60,9 +62,11 @@ export function ensureGear(c: Character): void {
   if (!Array.isArray(c.bag)) c.bag = [];
   if (!c.nextItemUid) c.nextItemUid = 1;
   if (c.echo === undefined) c.echo = null;
+  if (!c.hints) c.hints = {};
 }
 
-export const xpToNext = (level: number) => Math.round(100 * Math.pow(level, 1.6));
+/** XP para o próximo nível. (Playtest 09/11: nível 5 em 8 min era rápido demais; agora ~1,8× mais.) */
+export const xpToNext = (level: number) => Math.round(150 * Math.pow(level, 1.7));
 export const maxHpFor = (c: Character) => computeStats(c).hp;
 
 /** Elos liberados pela progressão: 1 e 2 no início, 3 no nível 3, 4 no nível 5, 5 ao vencer o chefe. */
@@ -115,6 +119,7 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
     bag: [],
     nextItemUid: 1,
     echo: null,
+    hints: {},
   };
   refreshEloUnlocks(c);
   elos[0]!.technique = first;

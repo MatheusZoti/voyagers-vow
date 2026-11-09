@@ -13,8 +13,12 @@ import type { Enemy, EnemyKind } from '../src/sim/world/entities';
  */
 
 const MELEE_SPELLS: SpellId[] = ['votePunch', 'conjuredBlade', 'repel'];
+let botSide = 1;
+/** golpes pesados que o atirador já está esquivando (id do inimigo) */
+const dodging = new Set<number>();
+let lastBotPos = { x: 0, y: 0 };
 
-function botInput(sim: Simulation, ids: Set<number>, skill: number): PlayerInput {
+function botInput(sim: Simulation, ids: Set<number>, skill: number, sniper = false): PlayerInput {
   const p = sim.player;
   const input = emptyInput();
   const foes = sim.enemies.filter((e) => ids.has(e.id) && e.state !== 'dead');
@@ -27,21 +31,42 @@ function botInput(sim: Simulation, ids: Set<number>, skill: number): PlayerInput
 
   // Ameaças: esmagamento pesado (usa a Maré) e golpe em cone de elite (recua).
   const heavy = all.find((e) => e.state === 'windup' && e.attack?.heavy && dist(e.attackTarget, p.pos) <= e.attack.radius + 0.8);
+  for (const e of all) if (e.state !== 'windup') dodging.delete(e.id);
   const cone = all.find(
     (e) => e.state === 'windup' && e.def.elite && e.attack?.type === 'melee' && dist(e.pos, p.pos) <= e.attack.range + e.def.radius + 0.6,
   );
-  if (skill > 0 && heavy) {
+  if (skill > 0 && heavy && sniper) {
+    // Atirador: a pedra mira onde ele VAI estar — inverte o passo lateral e, no fim, gira a Maré.
+    if (!dodging.has(heavy.id)) {
+      dodging.add(heavy.id);
+      botSide = -botSide;
+    }
+    const away = normalize({ x: p.pos.x - heavy.attackTarget.x, y: p.pos.y - heavy.attackTarget.y });
+    input.move = away.x || away.y ? away : { x: botSide, y: 0 };
+    input.tideSteps = heavy.timer < 0.45 ? -2 - tideLevel(p.tide.target) : 0;
+  } else if (skill > 0 && heavy) {
     // Fica e gira a Maré para a defesa no instante do golpe.
     input.tideSteps = heavy.timer < 0.45 ? -2 - tideLevel(p.tide.target) : 0;
   } else if (skill > 0 && cone) {
     input.move = normalize({ x: p.pos.x - cone.pos.x, y: p.pos.y - cone.pos.y });
     input.tideSteps = -tideLevel(p.tide.target);
+  } else if (sniper) {
+    // Atirador (como no playtest de 09/11): fica a 6–8,5 m, anda de lado e recua se chegam perto.
+    if (skill > 0) input.tideSteps = -tideLevel(p.tide.target);
+    const away = normalize({ x: p.pos.x - target.pos.x, y: p.pos.y - target.pos.y });
+    const side = { x: -away.y * botSide, y: away.x * botSide };
+    if (d < 6) input.move = normalize({ x: away.x + side.x * 0.6, y: away.y + side.y * 0.6 });
+    else if (d > 8.5) input.move = sim.pathDir(p.pos, target.pos);
+    else input.move = side;
+    // Encostou numa parede: troca de lado.
+    if (Math.hypot(p.pos.x - lastBotPos.x, p.pos.y - lastBotPos.y) < 0.01 && (input.move.x || input.move.y)) botSide = -botSide;
+    lastBotPos = { ...p.pos };
   } else {
     // Hábil: luta com a Maré no centro e desce para «« nos golpes pesados.
     if (skill > 0) input.tideSteps = -tideLevel(p.tide.target);
     if (d > 1.6) input.move = sim.pathDir(p.pos, target.pos);
   }
-  input.basic = d < 2.1;
+  input.basic = !sniper && d < 2.1;
 
   for (const slot of sim.c.elos) {
     if (!slot.unlocked || !slot.technique || (p.slotCd[slot.level] ?? 0) > 0) continue;
@@ -78,7 +103,7 @@ export interface ScenarioResult {
 
 export function runScenario(
   affinity: Affinity,
-  scenario: { name: string; level: number; kinds: Array<{ kind: EnemyKind; n: number }>; skill: number; limit?: number; kit?: number },
+  scenario: { name: string; level: number; kinds: Array<{ kind: EnemyKind; n: number }>; skill: number; limit?: number; kit?: number; sniper?: boolean },
 ): ScenarioResult {
   const c = createCharacter('Bot', affinity, 77);
   c.level = scenario.level;
@@ -107,7 +132,7 @@ export function runScenario(
   let t = 0;
   for (; t < limit; t += TICK) {
     const hpBefore = sim.player.hp;
-    const ev = sim.step(botInput(sim, ids, scenario.skill));
+    const ev = sim.step(botInput(sim, ids, scenario.skill, scenario.sniper));
     for (const e of ev) if (e.t === 'perfectTide') perfect++;
     if (sim.player.hp < hpBefore) lost += hpBefore - sim.player.hp;
     if (sim.player.dead) break;
@@ -146,10 +171,16 @@ export const SCENARIOS = [
   { name: 'Bruto (nv 3, kit T1)', level: 3, kinds: [{ kind: 'brute' as const, n: 1 }], skill: 1, kit: 1 },
   { name: 'Guardião (nv 4, hábil, kit T1)', level: 4, kinds: [{ kind: 'boss' as const, n: 1 }], skill: 1, kit: 1 },
   { name: 'Guardião (nv 5, hábil, kit T1)', level: 5, kinds: [{ kind: 'boss' as const, n: 1 }], skill: 1, kit: 1 },
+  // Atirador: o estilo do playtest de 09/11 (Projeção mantendo distância).
+  { name: 'Guardião (nv 3, atirador)', level: 3, kinds: [{ kind: 'boss' as const, n: 1 }], skill: 1, sniper: true },
+  { name: 'Guardião (nv 5, atirador, kit T1)', level: 5, kinds: [{ kind: 'boss' as const, n: 1 }], skill: 1, sniper: true, kit: 1 },
 ];
+
+/** Cenários do atirador só fazem sentido para quem tem magias de longe. */
+export const SNIPER_AFFINITIES: Affinity[] = ['projection'];
 
 export function balanceReport(): ScenarioResult[] {
   const out: ScenarioResult[] = [];
-  for (const s of SCENARIOS) for (const a of AFFINITY_RING) out.push(runScenario(a, s));
+  for (const s of SCENARIOS) for (const a of AFFINITY_RING) if (!s.sniper || SNIPER_AFFINITIES.includes(a)) out.push(runScenario(a, s));
   return out;
 }

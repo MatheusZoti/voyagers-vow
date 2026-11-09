@@ -65,6 +65,12 @@ export class GameView {
   private tideDef: THREE.Mesh;
   private tideShown = -1;
   private impetusLight: THREE.PointLight;
+  /**
+   * Luzes fixas para o brilho de coisas no chão (grimórios, itens raros). Criar ou remover
+   * luzes faz o Three.js recompilar todos os shaders (~0,7 s de travada), então elas são
+   * sempre as mesmas e só mudam de lugar, cor e intensidade.
+   */
+  private glowLights: THREE.PointLight[] = [];
   private trapMeshes: THREE.Group[] = [];
   private echoMesh: THREE.Group;
   private dangerRing: THREE.Mesh;
@@ -156,6 +162,11 @@ export class GameView {
     const silence = new THREE.Group();
     this.aura = { veil, impetus, gaze, silence };
     for (const o of Object.values(this.aura)) this.player.root.add(o);
+    for (let i = 0; i < 3; i++) {
+      const l = new THREE.PointLight('#ffffff', 0, 4, 2);
+      this.glowLights.push(l);
+      this.scene.add(l);
+    }
     this.impetusLight = new THREE.PointLight('#ff8a2a', 0, 6, 2);
     this.impetusLight.position.y = 1.2;
     this.player.root.add(this.impetusLight);
@@ -653,8 +664,7 @@ export class GameView {
         );
         halo.rotation.x = -Math.PI / 2;
         halo.position.y = -0.75;
-        const light = new THREE.PointLight(color, 3, 4, 2);
-        g.add(book, halo, light);
+        g.add(book, halo);
         g.position.set(d.pos.x, this.gh(d.pos.x, d.pos.y) + 0.9, d.pos.y);
         this.scene.add(g);
         this.dropMeshes.set(d.id, g);
@@ -666,6 +676,7 @@ export class GameView {
     for (const [id, g] of this.dropMeshes) {
       if (!sim.drops.some((d) => d.id === id)) {
         this.scene.remove(g);
+        disposeGroup(g);
         this.dropMeshes.delete(id);
       }
     }
@@ -686,7 +697,6 @@ export class GameView {
         );
         beam.position.y = 0.8;
         g.add(bundle, strap, beam);
-        if (d.item.quality >= 3) g.add(new THREE.PointLight(color, 1.6, 3, 2));
         g.position.set(d.pos.x, this.gh(d.pos.x, d.pos.y) + 0.18, d.pos.y);
         this.scene.add(g);
         this.itemMeshes.set(d.id, g);
@@ -697,9 +707,28 @@ export class GameView {
     for (const [id, g] of this.itemMeshes) {
       if (!sim.itemDrops.some((d) => d.id === id)) {
         this.scene.remove(g);
+        disposeGroup(g);
         this.itemMeshes.delete(id);
       }
     }
+    // As luzes fixas vão para as coisas brilhantes mais perto de você.
+    const shiny: Array<{ x: number; y: number; h: number; color: string; power: number }> = [];
+    for (const d of sim.drops)
+      if (sim.isExplored(d.pos.x, d.pos.y))
+        shiny.push({ x: d.pos.x, y: d.pos.y, h: 0.9, color: AFFINITY_COLORS[SPELLS[d.spell].affinity], power: 3 });
+    for (const d of sim.itemDrops)
+      if (d.item.quality >= 3 && sim.isExplored(d.pos.x, d.pos.y))
+        shiny.push({ x: d.pos.x, y: d.pos.y, h: 0.5, color: QUALITY_COLORS[d.item.quality - 1] ?? '#ffffff', power: 1.6 });
+    const pp = sim.player.pos;
+    shiny.sort((a, b) => Math.hypot(a.x - pp.x, a.y - pp.y) - Math.hypot(b.x - pp.x, b.y - pp.y));
+    this.glowLights.forEach((l, i) => {
+      const s = shiny[i];
+      l.intensity = s ? s.power : 0;
+      if (s) {
+        l.color.set(s.color);
+        l.position.set(s.x, this.gh(s.x, s.y) + s.h, s.y);
+      }
+    });
     // Espinhos em voo.
     for (const pr of sim.projectiles) {
       let m = this.projMeshes.get(pr.id);
@@ -799,4 +828,15 @@ function lerpAngle(a: number, b: number, t: number): number {
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
   return a + d * t;
+}
+
+/** Libera geometrias e materiais de um grupo removido da cena. */
+function disposeGroup(g: THREE.Object3D): void {
+  g.traverse((o) => {
+    const m = o as THREE.Mesh;
+    m.geometry?.dispose();
+    const mt = m.material as THREE.Material | THREE.Material[] | undefined;
+    if (Array.isArray(mt)) mt.forEach((x) => x.dispose());
+    else mt?.dispose();
+  });
 }

@@ -41,7 +41,7 @@ npm run build
 | Magias nos Elos 1–8 | 1 · 2 · 3 · 4 · Q · E · R · F (botão direito = Elo 1) |
 | Conversar | Clique no NPC |
 | Posturas (toque de novo para sair) | Shift Silêncio · Tab Olhar |
-| Maré: «« « • » »» (±15% por degrau, −1% de Fluxo/s por degrau) | Roda do mouse (ou Z / X) |
+| Maré: «« « • » »» (±15% por degrau, −1% de Fluxo/s por degrau e sem regenerar Fluxo fora do centro) | Roda do mouse (ou Z / X) |
 | Psique · Atributos · Grade de Elos · Grimório · Maestria · Mapa | C · I · K · G · M · N |
 | Ajuda · Pausa (volume) | H · Esc |
 | Painel de playtest | ` (crase) ou F2 |
@@ -52,7 +52,7 @@ Com `npm run dev`, o jogo grava uma sessão de playtest enquanto você joga (só
 
 ## Balanceamento
 
-`npm test` roda um bot que joga cenários fixos (Carniçais, matilha, Bruto, Guardião) com as cinco afinidades e imprime tempo de luta e vida perdida. Sem equipamento o Guardião no nível 4 é difícil de propósito; com o kit esperado do tier 1 (qualidade Boa) o bot hábil o vence no nível 5 com sufoco. Os testes falham se usar a Maré deixar de fazer diferença clara contra ele ou se o kit do tier deixar de bastar. Para ver a tabela:
+`npm test` roda um bot que joga cenários fixos (Carniçais, matilha, Bruto, Guardião) com as cinco afinidades e imprime tempo de luta e vida perdida. Sem equipamento o Guardião no nível 4 é difícil de propósito; com o kit esperado do tier 1 (qualidade Boa) o bot hábil o vence no nível 5 com sufoco. Um bot **atirador** (Projeção mantendo distância, como no playtest) também enfrenta o Guardião: sem equipamento no nível 3 ele não passa fácil; com o kit do tier 1 no nível 5, vence. Os testes falham se usar a Maré deixar de fazer diferença clara, se o kit do tier deixar de bastar ou se o atirador voltar a vencer fácil. Para ver a tabela:
 
 ```bash
 npx vitest run tests/balance.test.ts --silent=false

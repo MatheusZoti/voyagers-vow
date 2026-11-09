@@ -227,7 +227,8 @@ export function lootPool(tier: number): string[] {
 }
 
 /** Chance de uma criatura deixar um equipamento ao morrer. */
-export const ITEM_DROP_CHANCE: Record<string, number> = { grunt: 0.1, stalker: 0.14, slinger: 0.14, brute: 0.45, boss: 1 };
+/** (Playtest 09/11: 11 itens em 6 min era demais — kit completo aos 8 min.) */
+export const ITEM_DROP_CHANCE: Record<string, number> = { grunt: 0.04, stalker: 0.06, slinger: 0.06, brute: 0.25, boss: 1 };
 
 /** Uma linha de texto para cada atributo do item (para fichas e dicas). */
 export const ITEM_STAT_NAMES: Record<ItemStat, string> = {

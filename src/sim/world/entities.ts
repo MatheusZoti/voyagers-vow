@@ -18,6 +18,10 @@ export interface AttackDef {
   radius: number;
   heavy: boolean;
   cooldown: number;
+  /** só usa este golpe com o alvo a pelo menos esta distância (ataques de longe) */
+  minRange?: number;
+  /** mira à frente de quem se move: fração do preparo usada para prever a posição */
+  lead?: number;
 }
 
 export interface EnemyDef {
@@ -140,6 +144,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
       { id: 'swipe', type: 'melee', range: 3, windup: 0.85, recover: 0.7, damage: 11, radius: 3, heavy: false, cooldown: 2.2 },
       { id: 'slam', type: 'slam', range: 8, windup: 1.3, recover: 1.1, damage: 56, radius: 3.4, heavy: true, cooldown: 5.5 },
       { id: 'charge', type: 'charge', range: 12, windup: 0.8, recover: 1.0, damage: 22, radius: 1.8, heavy: false, cooldown: 7 },
+      // Contra quem luta de longe: arranca uma pedra e arremessa onde você VAI estar.
+      { id: 'boulder', type: 'slam', range: 18, minRange: 7, windup: 1.25, recover: 0.9, damage: 34, radius: 2.4, heavy: true, cooldown: 3.5, lead: 0.75 },
     ],
     respawn: 120,
   },
@@ -224,8 +230,8 @@ export interface Projectile {
 
 /** Tier da região: vida, dano e XP dos inimigos. */
 export const tierScale = (tier: number) => ({
-  hp: 1 + 0.45 * (tier - 1),
-  power: 1 + 0.3 * (tier - 1),
+  hp: 1 + 0.6 * (tier - 1),
+  power: 1 + 0.4 * (tier - 1),
   xp: 1 + 0.6 * (tier - 1),
   level: 2 * (tier - 1),
 });

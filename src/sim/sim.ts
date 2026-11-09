@@ -136,6 +136,7 @@ export type SimEvent =
   | { t: 'learn'; spell: SpellId; x: number; y: number }
   | { t: 'itemPickup'; x: number; y: number; quality: number }
   | { t: 'echoRecovered'; x: number; y: number }
+  | { t: 'hint'; id: 'perfectTide'; duration: number }
   | { t: 'dialogue'; id: DialogueId }
   | { t: 'telegraphLine'; x: number; y: number; dir: Vec2; length: number; width: number; duration: number }
   | { t: 'shot'; x: number; y: number }
@@ -193,6 +194,9 @@ export class Simulation {
   private traveling = false;
   private exitWarnAt = -99;
   events: SimEvent[] = [];
+  /** velocidade do jogador no último passo (m/s), para inimigos mirarem à frente */
+  private playerVel: Vec2 = { x: 0, y: 0 };
+  private lastPlayerPos: Vec2 = { x: 0, y: 0 };
   /** eventos gerados fora de um passo (ações do painel): saem no próximo passo */
   private outbox: SimEvent[] = [];
   mods: FlowMods;
@@ -471,6 +475,10 @@ export class Simulation {
   step(input: PlayerInput, dt = TICK): SimEvent[] {
     this.events = this.outbox;
     this.outbox = [];
+    const before = this.player.pos;
+    this.playerVel = { x: (before.x - this.lastPlayerPos.x) / dt, y: (before.y - this.lastPlayerPos.y) / dt };
+    if (Math.hypot(this.playerVel.x, this.playerVel.y) > 12) this.playerVel = { x: 0, y: 0 }; // teleporte/renascer
+    this.lastPlayerPos = { ...before };
     this.time += dt;
     this.c.playTime += dt;
     const p = this.player;
@@ -594,7 +602,8 @@ export class Simulation {
     const flowMax = this.flowMax();
     p.flow -= def.drain * this.mods.postureDrain * dt;
     p.flow -= tideDrain(p.tide.value) * flowMax * this.mods.tideDrain * dt;
-    if (this.time >= p.flowLockUntil) {
+    // Manter a Maré fora do centro custa: drena e o Fluxo não se regenera.
+    if (this.time >= p.flowLockUntil && tideLevel(p.tide.value) === 0) {
       p.flow += this.stats().flowRegen * def.regenMult * this.mods.regen * TUNING.flowRegen * dt;
     }
     if (p.flow <= 0) {
@@ -1232,6 +1241,18 @@ export class Simulation {
     return null;
   }
 
+  /**
+   * Tutorial da Maré perfeita: nas primeiras vezes que um golpe pesado vai cair em você,
+   * avisa (o cliente desacelera o tempo e mostra o que fazer). Para de vez na primeira Maré perfeita.
+   */
+  private maybeTideHint(target: Vec2, radius: number, windup: number): void {
+    const h = this.c.hints;
+    if (h.tideDone || (h.tideShown ?? 0) >= 3 || this.player.dead) return;
+    if (dist(target, this.player.pos) > radius + 0.6) return;
+    h.tideShown = (h.tideShown ?? 0) + 1;
+    this.events.push({ t: 'hint', id: 'perfectTide', duration: windup });
+  }
+
   /** Itens dissonantes vestidos (contra os seus Valores). */
   dissonantGear(): number {
     return Object.values(this.c.equipment).filter((it) => it && resonanceState(it, this.c.psyche.values) === 'contrary').length;
@@ -1352,6 +1373,10 @@ export class Simulation {
     if (perfect) {
       this.events.push({ t: 'perfectTide', x: p.pos.x, y: p.pos.y });
       this.notice('Maré perfeita!', 'good');
+      if (!this.c.hints.tideDone) {
+        this.c.hints.tideDone = 1;
+        this.notice('Maré perfeita: girar para a defesa no último instante de um golpe pesado corta o dano pela metade e treina a Maré.', 'info');
+      }
       this.feel('perfectTide');
       this.train('tide', 20, this.currentRisk(opts.source));
     }
@@ -1650,7 +1675,11 @@ export class Simulation {
             e.timer = windup;
             e.windupTotal = windup;
             e.facing = normalize(toPlayer);
-            e.attackTarget = atk.type === 'slam' ? { ...p.pos } : { x: e.pos.x + e.facing.x * atk.range, y: e.pos.y + e.facing.y * atk.range };
+            e.attackTarget =
+              atk.type === 'slam'
+                ? { x: p.pos.x + this.playerVel.x * windup * (atk.lead ?? 0), y: p.pos.y + this.playerVel.y * windup * (atk.lead ?? 0) }
+                : { x: e.pos.x + e.facing.x * atk.range, y: e.pos.y + e.facing.y * atk.range };
+            if (atk.heavy && atk.type === 'slam') this.maybeTideHint(e.attackTarget, atk.radius, windup);
             if (atk.type === 'slam')
               this.events.push({ t: 'telegraph', x: e.attackTarget.x, y: e.attackTarget.y, r: atk.radius, duration: windup, heavy: atk.heavy });
             else if (atk.type === 'charge')
@@ -1837,7 +1866,10 @@ export class Simulation {
   private chooseAttack(e: Enemy, d: number): AttackDef | null {
     const ready = e.def.attacks.filter((a) => (e.cooldowns[a.id] ?? 0) <= 0);
     // Pesados primeiro (mais interessantes), depois investida à distância, depois corpo a corpo.
-    const slam = ready.find((a) => a.type === 'slam' && d < a.range && d > 1.2);
+    // Longe demais para o corpo a corpo: quem tem golpe de longe usa sempre.
+    const lob = ready.find((a) => a.minRange !== undefined && d >= a.minRange && d < a.range);
+    if (lob) return this.arm(e, lob);
+    const slam = ready.find((a) => a.type === 'slam' && a.minRange === undefined && d < a.range && d > 1.2);
     if (slam && this.rng.chance(e.def.boss ? 0.5 : 0.35)) return this.arm(e, slam);
     const charge = ready.find((a) => a.type === 'charge' && d > 5 && d < a.range);
     if (charge) return this.arm(e, charge);

@@ -173,7 +173,10 @@ export class Hud {
     const shown = Math.min(fmax, p.flow + sim.mods.flowDisplayBias * fmax);
     this.flow.style.width = `${(shown / fmax) * 100}%`;
     this.flow.classList.toggle('locked', sim.time < p.flowLockUntil);
-    this.flowText.textContent = `Fluxo ${Math.floor(shown)}`;
+    // Maré fora do centro: o Fluxo não regenera e escoa (a barra mostra isso).
+    const draining = tideLevel(p.tide.value) !== 0;
+    this.flow.classList.toggle('draining', draining);
+    this.flowText.textContent = draining ? `Fluxo ${Math.floor(shown)} ▼ Maré` : `Fluxo ${Math.floor(shown)}`;
     this.xp.style.width = `${(c.xp / xpToNext(c.level)) * 100}%`;
 
     const dom = dominant(psy);

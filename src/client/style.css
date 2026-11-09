@@ -1000,3 +1000,52 @@ input.name {
   opacity: 1;
   filter: none;
 }
+
+/* Maré fora do centro: o Fluxo escoa (faixas correndo para a esquerda) */
+.bar-fill.flow.draining {
+  background-image: repeating-linear-gradient(-60deg, rgba(255, 255, 255, 0.22) 0 6px, transparent 6px 14px);
+  background-size: 28px 100%;
+  animation: flow-drain 0.7s linear infinite;
+}
+@keyframes flow-drain {
+  to {
+    background-position: -28px 0;
+  }
+}
+
+/* Tutorial da Maré perfeita */
+.tide-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 160px;
+  transform: translateX(-50%);
+  z-index: 30;
+  pointer-events: none;
+  background: rgba(24, 26, 36, 0.94);
+  border: 1px solid rgba(111, 208, 255, 0.55);
+  border-radius: 16px;
+  padding: 10px 16px;
+  color: #e9eaf0;
+  font: 14px/1.45 Inter, sans-serif;
+  text-align: center;
+  box-shadow: 0 0 30px rgba(111, 208, 255, 0.25);
+  animation: tide-hint-in 0.18s ease-out;
+}
+.tide-hint b {
+  display: block;
+  font: 700 16px Cinzel, serif;
+  color: #6fd0ff;
+  margin-bottom: 2px;
+}
+.tide-hint kbd {
+  font: 600 12px Inter, sans-serif;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 5px;
+  padding: 0 5px;
+}
+@keyframes tide-hint-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}

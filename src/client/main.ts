@@ -180,6 +180,17 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
   let last = performance.now();
   let acc = 0;
   let hitstop = 0;
+  /** câmera lenta do tutorial (fator do tempo e quanto falta, em segundos reais) */
+  let slow = { factor: 1, left: 0 };
+  let hintEl: HTMLDivElement | null = null;
+  const showTideHint = (windup: number) => {
+    slow = { factor: 0.35, left: windup / 0.35 };
+    hintEl?.remove();
+    hintEl = document.createElement('div');
+    hintEl.className = 'tide-hint';
+    hintEl.innerHTML = `<b>Golpe pesado vindo!</b>Quando o círculo vermelho estiver para fechar, gire a Maré para a <b style="display:inline;font:inherit;color:#6fd0ff">defesa</b>: roda do mouse ↓ ou <kbd>Z</kbd>. Maré perfeita = metade do dano.`;
+    document.body.append(hintEl);
+  };
   let saveTimer = 0;
   let raf = 0;
   let running = true;
@@ -197,7 +208,17 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
       view.render(dt * 0.06);
     } else {
       if (!paused) {
-        acc += dt;
+        // Tutorial: o tempo anda devagar enquanto o golpe pesado se prepara.
+        if (slow.left > 0) {
+          slow.left -= dt;
+          acc += dt * slow.factor;
+          if (slow.left <= 0) {
+            slow = { factor: 1, left: 0 };
+            const el = hintEl;
+            hintEl = null;
+            setTimeout(() => el?.remove(), 1200);
+          }
+        } else acc += dt;
         while (acc >= TICK) {
           acc -= TICK;
           const aim = view.screenToGround(input.cursor.x, input.cursor.y);
@@ -211,6 +232,7 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
           for (const ev of events) {
             if (ev.t === 'dialogue') openDialogue(() => dialogue.show(ev.id));
             if (ev.t === 'travel') travel = { to: ev.to, arrive: ev.arrive };
+            if (ev.t === 'hint' && ev.id === 'perfectTide') showTideHint(ev.duration);
           }
           if (travel) break;
           hitstop = Math.max(hitstop, hitstopFor(events));
@@ -249,6 +271,7 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
   (window as unknown as { vv: unknown }).vv = { sim, view, recorder };
 
   stopGame = () => {
+    hintEl?.remove();
     running = false;
     cancelAnimationFrame(raf);
     window.removeEventListener('beforeunload', onUnload);
