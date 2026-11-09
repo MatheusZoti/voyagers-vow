@@ -77,18 +77,27 @@ export interface PlaytestLog {
   };
 }
 
-/** Roteiro: o que vale experimentar na sessão (marca sozinho). */
+/** Roteiro: o que vale experimentar na sessão (marca sozinho). Foco: as 4 fases da Psique. */
 export const CHECKLIST: Array<{ id: string; label: string }> = [
-  { id: 'talk', label: 'Conversar com alguém' },
-  { id: 'stats', label: 'Abrir a aba Atributos (I)' },
-  { id: 'spell', label: 'Usar uma magia' },
+  { id: 'talk', label: 'Escolher numa situação com alguém' },
+  { id: 'whisper', label: 'Sentir um sussurro (algo mudou em você)' },
+  { id: 'surrender', label: 'Decidir o destino de um inimigo rendido' },
+  { id: 'shrine', label: 'Decidir o que fazer num altar' },
+  { id: 'distress', label: 'Encontrar o viajante cercado' },
+  { id: 'greeting', label: 'Ouvir um NPC comentar sobre você' },
+  { id: 'fame', label: 'Ganhar fama numa região' },
+  { id: 'psyche', label: 'Abrir a Psique (C) e ver "Como você mudou"' },
   { id: 'tide', label: 'Fazer uma Maré perfeita' },
-  { id: 'ramp', label: 'Subir uma rampa até outro andar' },
-  { id: 'equip', label: 'Vestir um equipamento' },
-  { id: 'brute', label: 'Derrotar um Bruto de Pedra' },
   { id: 'boss', label: 'Derrotar o Guardião da Ponte' },
   { id: 'varn', label: 'Chegar ao Planalto de Varn' },
   { id: 'notes', label: 'Deixar 3 anotações (Enter)' },
+];
+
+/** Atos marcados pela causa registrada em "Como você mudou". */
+const SHIFT_STEPS: Array<[RegExp, string]> = [
+  [/rendido/, 'surrender'],
+  [/moedas/, 'shrine'],
+  [/viajante (cercado|para trás)/, 'distress'],
 ];
 
 function fresh(sim: Simulation): PlaytestLog {
@@ -159,6 +168,8 @@ export class PlaytestRecorder {
         this.log = null;
       }
       if (!this.log || this.log.character.name !== sim.c.name) this.log = fresh(sim);
+      // Sessão antiga com outro roteiro: os passos novos começam em aberto.
+      for (const s of CHECKLIST) this.log.checklist[s.id] ??= null;
     }
     const c = sim.c;
     this.lastPos = { ...sim.player.pos };
@@ -228,6 +239,8 @@ export class PlaytestRecorder {
     } else if (movedNow > 0.004) this.stuckAcc = 0;
     if (floorLevel(sim.map, p.pos.x, p.pos.y) !== floorLevel(sim.map, this.lastPos.x, this.lastPos.y) && floorLevel(sim.map, p.pos.x, p.pos.y) >= 1) this.check('ramp');
     this.lastPos = { ...p.pos };
+    const cause = c.shifts[0]?.cause;
+    if (cause) for (const [re, id] of SHIFT_STEPS) if (re.test(cause)) this.check(id);
 
     // Magias: a recarga de um Elo subiu = ele foi usado.
     for (const slot of c.elos) {
@@ -310,6 +323,7 @@ export class PlaytestRecorder {
           break;
         case 'whisper':
           for (const it of ev.items) psy.whispers.push({ t: round(L.playS, 0), text: it.text });
+          this.check('whisper');
           break;
         case 'milestone':
           psy.milestones.push({ t: round(L.playS, 0), title: ev.title });
@@ -319,9 +333,11 @@ export class PlaytestRecorder {
           break;
         case 'npcSay':
           (psy.greetings ??= []).push({ t: round(L.playS, 0), npc: ev.npc, text: ev.text });
+          this.check('greeting');
           break;
         case 'fame':
           (psy.fame ??= []).push({ t: round(L.playS, 0), region: ev.region, label: ev.label });
+          this.check('fame');
           break;
         case 'itemPickup': {
           const it = c.bag[c.bag.length - 1];
@@ -390,6 +406,7 @@ export class PlaytestRecorder {
     if (!this.log || !panel) return;
     this.log.uiOpened[panel] = (this.log.uiOpened[panel] ?? 0) + 1;
     if (panel === 'stats') this.check('stats');
+    if (panel === 'psyche') this.check('psyche');
   }
 
   addNote(text: string): void {
