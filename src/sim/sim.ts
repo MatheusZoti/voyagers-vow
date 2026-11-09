@@ -11,8 +11,6 @@ import {
 import { equipError, evaluateSlot, PACTS, trimMods, type EffectiveInfo, type EloSlot } from './elos';
 import { AFFINITY_COLORS, AFFINITY_NAMES } from './flow/affinity';
 import {
-  BASE_FLOW_MAX,
-  BASE_FLOW_REGEN,
   computeFlowMods,
   createTide,
   POSTURES,
@@ -60,6 +58,7 @@ import {
 import { armorReduction, ENEMIES, SPELL_DROP_CHANCE, tierScale, type Projectile, type AttackDef, type Echo, type Enemy, type EnemyKind, type SpellDrop, type Trap } from './world/entities';
 import { exitAt, inCircle, isBlocked, moveWithCollision, type GameMap, type RegionId } from './world/map';
 import { buildRegion, regionName } from './world/regions';
+import { computeStats, type CharacterStats } from './stats';
 import { TUNING } from './tuning';
 
 export const TICK = 1 / 30;
@@ -352,13 +351,25 @@ export class Simulation {
     return this.c.playTime;
   }
 
+  private statsKey = '';
+  private statsCache: CharacterStats | null = null;
+  /** Atributos derivados do personagem (recalculados quando nível, Maestria ou Pactos mudam). */
+  stats(): CharacterStats {
+    const c = this.c;
+    const key = `${c.level}|${c.lifeCostLost}|${displayLevel(c.mastery.capacity)}`;
+    if (key !== this.statsKey || !this.statsCache) {
+      this.statsKey = key;
+      this.statsCache = computeStats(c);
+    }
+    return this.statsCache;
+  }
+
   flowMax(): number {
-    const cap = displayLevel(this.c.mastery.capacity);
-    return (BASE_FLOW_MAX + (cap - 1) * 4) * (this.mods?.flowMaxMult ?? 1);
+    return this.stats().flowMax * (this.mods?.flowMaxMult ?? 1);
   }
 
   maxHp(): number {
-    return maxHpFor(this.c);
+    return this.stats().hp;
   }
 
   inSanctuary(p: Vec2 = this.player.pos): boolean {
@@ -557,7 +568,7 @@ export class Simulation {
     p.flow -= def.drain * this.mods.postureDrain * dt;
     p.flow -= tideDrain(p.tide.value) * flowMax * this.mods.tideDrain * dt;
     if (this.time >= p.flowLockUntil) {
-      p.flow += BASE_FLOW_REGEN * def.regenMult * this.mods.regen * TUNING.flowRegen * dt;
+      p.flow += this.stats().flowRegen * def.regenMult * this.mods.regen * TUNING.flowRegen * dt;
     }
     if (p.flow <= 0) {
       p.flow = 0;
@@ -598,7 +609,7 @@ export class Simulation {
     // Movimento.
     const dir = normalize(input.move);
     const slow = this.time < p.slowUntil ? 0.5 : 1;
-    const speed = 5.2 * this.mods.moveSpeed * slow * (p.attackAnim > 0.15 ? 0.7 : 1);
+    const speed = this.stats().speed * this.mods.moveSpeed * slow * (p.attackAnim > 0.15 ? 0.7 : 1);
     if (dir.x || dir.y) moveWithCollision(this.map, p.pos, dir.x * speed * dt, dir.y * speed * dt, 0.35);
     this.lastAim = { ...input.aim };
     const aimDir = normalize({ x: input.aim.x - p.pos.x, y: input.aim.y - p.pos.y });
@@ -748,7 +759,7 @@ export class Simulation {
       this.mods.outgoing *
       tideOutgoing(p.tide.value) *
       (tideLevel(p.tide.value) > 0 ? 1 + 0.005 * (displayLevel(this.c.mastery.impetus) - 1) : 1) *
-      (1 + 0.04 * (this.c.level - 1)) *
+      this.stats().power *
       (this.focused() ? 1.1 : 1)
     );
   }
@@ -1176,7 +1187,8 @@ export class Simulation {
     if (p.dead || this.inSanctuary()) return;
     const def = POSTURES[p.posture];
     const m = this.mods;
-    let mult = def.incomingMult * m.incoming;
+    // A Guarda (armaduras) absorve parte do golpe sempre, mesmo em defesa zero.
+    let mult = def.incomingMult * m.incoming * (1 - this.stats().guard);
     const defenseZero = this.time < p.defenseZeroUntil;
     let perfect = false;
     if (defenseZero) {

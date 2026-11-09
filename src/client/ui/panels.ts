@@ -6,6 +6,7 @@ import { EMOTION_COLORS, EMOTION_NAMES, type Emotion } from '../../sim/psyche/em
 import { CRISIS_DESC, CRISIS_NAMES } from '../../sim/psyche/psyche';
 import { STRONG_VALUE, TRAIT_GROUPS, VALUE_NAMES } from '../../sim/psyche/traits';
 import type { Simulation } from '../../sim/sim';
+import { formatStat, tierLevels, type StatLine } from '../../sim/stats';
 import {
   isSpell,
   MASTERY_NAMES,
@@ -37,11 +38,12 @@ import { CatalogState, catalogHtml, spellNeed, visibleEntries, type CatalogKind,
 import { icon } from './icons';
 import { drawBase, drawFog, drawMarkers } from './worldmap';
 
-export type TabId = 'psyche' | 'elos' | 'codex' | 'mastery' | 'map';
+export type TabId = 'psyche' | 'stats' | 'elos' | 'codex' | 'mastery' | 'map';
 export type PanelId = TabId | 'help' | 'pause';
 
 const TABS: Array<{ id: TabId; name: string; key: string }> = [
   { id: 'psyche', name: 'Psique', key: 'C' },
+  { id: 'stats', name: 'Atributos', key: 'I' },
   { id: 'elos', name: 'Grade de Elos', key: 'K' },
   { id: 'codex', name: 'Grimório', key: 'G' },
   { id: 'mastery', name: 'Maestria', key: 'M' },
@@ -160,7 +162,9 @@ export class Panels {
     const body =
       tab === 'psyche'
         ? this.psycheTab()
-        : tab === 'elos'
+        : tab === 'stats'
+          ? this.statsTab()
+          : tab === 'elos'
           ? this.elosTab()
           : tab === 'codex'
             ? this.codexTab()
@@ -366,6 +370,40 @@ export class Panels {
   // -------------------------------------------------------------------------
   // Psique
   // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // Atributos: números derivados, cada um com a conta de onde vem
+  // -------------------------------------------------------------------------
+
+  private statsTab(): string {
+    const sim = this.sim;
+    const c = sim.c;
+    const st = sim.stats();
+    const band = tierLevels(sim.map.tier);
+    const next = xpToNext(c.level);
+    const where =
+      c.level < band.min ? 'abaixo da faixa: cuidado' : c.level > band.max ? 'acima da faixa: a próxima região já te espera' : 'dentro da faixa';
+    const statCard = (l: StatLine) => `<section class="card stat-card">
+        <h4>${l.name} ${tip(l.desc)}</h4>
+        <div class="stat-big">${formatStat(l.kind, l.value)}</div>
+        <div class="stat-parts">${
+          l.parts.length
+            ? l.parts.map((p, i) => `<div class="kv"><span>${escapeHtml(p.source)}</span><b>${formatStat(l.kind, p.value, i > 0)}</b></div>`).join('')
+            : '<p class="empty-note">Nenhuma fonte ainda.</p>'
+        }</div>
+      </section>`;
+    return `<div class="grid stats">
+      <section class="card level-card">
+        <h4>Nível <em>${c.level}</em> ${tip(
+          'O nível cresce com a experiência de combate. Cada nível dá Vida e Fluxo máximo, libera Elos (3 no nível 3, 4 no nível 5) e, em breve, permitirá usar equipamentos melhores. Morrer custa experiência (penalidade de morte).',
+        )}</h4>
+        <div class="bigbar"><i style="width:${Math.min(100, (c.xp / next) * 100)}%"></i></div>
+        <div class="kv"><span>Experiência</span><b>${c.xp} / ${next}</b></div>
+        <div class="kv"><span>${escapeHtml(sim.map.name)} (tier ${sim.map.tier})</span><b>nível recomendado ${band.min}–${band.max} · ${where}</b></div>
+      </section>
+      ${st.lines.map(statCard).join('')}
+    </div>`;
+  }
 
   private psycheTab(): string {
     const c = this.sim.c;

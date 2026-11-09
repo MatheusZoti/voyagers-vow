@@ -2,7 +2,8 @@ import './style.css';
 import './ui/panels.css';
 import './ui/world-ui.css';
 import './ui/feel.css';
-import { createCharacter, type Character } from '../sim/character';
+import { createCharacter, refreshEloUnlocks, type Character } from '../sim/character';
+import { tierLevels } from '../sim/stats';
 import { Simulation, TICK, type SimEvent } from '../sim/sim';
 import { Hud } from './hud';
 import { InputController } from './input';
@@ -70,7 +71,8 @@ function hitstopFor(events: SimEvent[]): number {
 function regionCard(name: string, tier: number): void {
   const el = document.createElement('div');
   el.className = 'region-card';
-  el.innerHTML = `<span>Tier ${tier}</span><b>${name}</b>`;
+  const band = tierLevels(tier);
+  el.innerHTML = `<span>Tier ${tier} · nível ${band.min}–${band.max}</span><b>${name}</b>`;
   document.body.append(el);
   setTimeout(() => el.classList.add('out'), 2200);
   setTimeout(() => el.remove(), 3200);
@@ -125,8 +127,9 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
     if (dialogue.open) return;
     if (code === 'Backquote' || code === 'F2') return debug.toggle();
     if (panels.handleKey(code)) return;
-    const map: Record<string, 'psyche' | 'elos' | 'codex' | 'mastery' | 'map' | 'help'> = {
+    const map: Record<string, 'psyche' | 'stats' | 'elos' | 'codex' | 'mastery' | 'map' | 'help'> = {
       KeyC: 'psyche',
+      KeyI: 'stats',
       KeyK: 'elos',
       KeyG: 'codex',
       KeyM: 'mastery',
@@ -246,10 +249,14 @@ function startPlaytest(): boolean {
   registerMap(d);
   const c = createCharacter('Teste', 'vigor');
   c.region = d.id;
+  // Começa no nível de entrada do tier do mapa, com os Elos que esse nível libera.
+  c.level = tierLevels(d.tier).min;
+  refreshEloUnlocks(c);
   const tag = document.createElement('div');
-  tag.className = 'region-card';
-  tag.style.cssText = 'top:auto;bottom:90px;opacity:.85';
-  tag.innerHTML = `<span>Teste de mapa · nada é salvo</span><b>${d.name}</b>`;
+  tag.style.cssText =
+    'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:15;pointer-events:none;padding:4px 12px;border-radius:999px;' +
+    'background:rgba(20,17,14,.8);border:1px solid rgba(226,182,90,.45);color:#e2b65a;font:600 11px Inter,sans-serif;letter-spacing:.08em;text-transform:uppercase';
+  tag.textContent = `Teste de mapa · ${d.name} · nada é salvo`;
   document.body.append(tag);
   startGame(c);
   return true;

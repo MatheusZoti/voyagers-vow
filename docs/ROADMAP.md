@@ -32,10 +32,14 @@ Fonte de verdade do design: o GDD "Sistema de Aura, Psique e Maestria" (document
 - [x] Viagem entre regiões (passagem abre ao vencer o Guardião), exploração salva por região
 - [x] Lançador de Espinhos: mantém distância, avisa com linha no chão, projétil desviável
 - [x] Monstros: provocação, alerta à matilha, recuo imune quando inalcançáveis
+- [x] Atributos derivados (sem pontos para distribuir): Vida, Fluxo máximo, Regeneração, Poder, Guarda e Velocidade calculados num lugar só (`src/sim/stats.ts`), com aba Atributos (I) mostrando a origem de cada número
+- [x] Nível: +12 Vida e +3 Fluxo por nível; faixa de nível recomendada por tier de região (1–5, 5–9, …)
 
 ## Próximo
 
-- Loot de equipamentos (armas e armaduras) e chance de perdê-los ao morrer
+- Equipamentos (estilo Albion, catálogo feito à mão): Arma (muda o Golpe básico e passa a dar o Poder no lugar do nível), Cabeça, Peito (Guarda), Pés (Velocidade) e Foco (afinidade); tier = tier da região, qualidade e até 2 afixos ligados aos sistemas existentes
+- Itens na morte: chance (pela penalidade 0–3) de cair no Eco, recuperáveis
+- Ressonância de itens raros com os Valores da Psique
 
 - Sensação de jogo e equilíbrio: painel de debug para ajustar números ao vivo, impacto nos golpes (pausa no acerto, recuo), sons
 - Mais magias por afinidade e onde cada uma cai (tabela de drops por região)

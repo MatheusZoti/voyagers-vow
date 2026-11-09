@@ -40,7 +40,7 @@ npm run build
 | Conversar | Clique no NPC |
 | Posturas (toque de novo para sair) | Shift Silêncio · Tab Olhar |
 | Maré: «« « • » »» (±15% por degrau, −1% de Fluxo/s por degrau) | Roda do mouse (ou Z / X) |
-| Psique · Grade de Elos · Grimório · Maestria · Mapa | C · K · G · M · N |
+| Psique · Atributos · Grade de Elos · Grimório · Maestria · Mapa | C · I · K · G · M · N |
 | Ajuda · Pausa (volume) | H · Esc |
 | Painel de playtest | ` (crase) ou F2 |
 

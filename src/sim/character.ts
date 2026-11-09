@@ -2,6 +2,7 @@ import { isAffinity, type Affinity } from './flow/affinity';
 import { newSlot, type EloSlot } from './elos';
 import { newMastery, type MasteryRecord } from './mastery';
 import { clamp, Rng } from './math';
+import { computeStats } from './stats';
 import type { DialogueId } from './psyche/dialogues';
 import type { RegionId } from './world/map';
 import { createPsyche, type PsycheState } from './psyche/psyche';
@@ -44,7 +45,7 @@ export interface Character {
 }
 
 export const xpToNext = (level: number) => Math.round(100 * Math.pow(level, 1.6));
-export const maxHpFor = (c: Character) => Math.max(20, 100 + 12 * (c.level - 1) - c.lifeCostLost);
+export const maxHpFor = (c: Character) => computeStats(c).hp;
 
 /** Elos liberados pela progressão: 1 e 2 no início, 3 no nível 3, 4 no nível 5, 5 ao vencer o chefe. */
 export function refreshEloUnlocks(c: Character): number[] {
