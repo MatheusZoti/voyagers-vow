@@ -42,7 +42,21 @@ export const levelPower = (effective: number) => 1 + 0.3 * (effective - 1);
 // Pactos (Restrições). Lista curada.
 // ---------------------------------------------------------------------------
 
-export const PACT_IDS = ['eliteOnly', 'recentlyHit', 'lowFlow', 'missLock', 'neverFlee', 'lifeCost', 'bloodOath'] as const;
+export const PACT_IDS = [
+  'eliteOnly',
+  'recentlyHit',
+  'lowFlow',
+  'missLock',
+  'neverFlee',
+  'lifeCost',
+  'bloodOath',
+  'fullHealth',
+  'closeQuarters',
+  'surrounded',
+  'exposed',
+  'bloodPrice',
+  'mercyOath',
+] as const;
 export type PactId = (typeof PACT_IDS)[number];
 
 export interface PactDef {
@@ -113,6 +127,54 @@ export const PACTS: Record<PactId, PactDef> = {
     level: 4,
     onBreak: 'Penalidade de morte sobe 2 níveis',
     value: 'loyalty',
+    oath: true,
+  },
+  fullHealth: {
+    name: 'Só com a vida quase cheia',
+    desc: 'Só pode ser usada com a vida acima de 80%.',
+    level: 1,
+    onBreak: 'Não se aplica (restrição de estado)',
+    value: 'law',
+    oath: false,
+  },
+  closeQuarters: {
+    name: 'Só de perto',
+    desc: 'Só pode ser usada com um inimigo a até 4 m de você.',
+    level: 1,
+    onBreak: 'Não se aplica (restrição de alvo)',
+    value: 'power',
+    oath: false,
+  },
+  surrounded: {
+    name: 'Só cercado',
+    desc: 'Só pode ser usada com 3 ou mais inimigos a até 8 m de você.',
+    level: 2,
+    onBreak: 'Não se aplica (restrição de estado)',
+    value: 'vengeance',
+    oath: false,
+  },
+  exposed: {
+    name: 'O golpe me expõe',
+    desc: 'Depois de usar, você recebe +50% de dano por 4 s.',
+    level: 1,
+    onBreak: 'Penalidade automática',
+    value: 'freedom',
+    oath: false,
+  },
+  bloodPrice: {
+    name: 'Pago com sangue',
+    desc: 'Cada uso custa 8% da sua vida máxima (nunca abaixo de 1).',
+    level: 1,
+    onBreak: 'Não se aplica (custo direto)',
+    value: 'vengeance',
+    oath: false,
+  },
+  mercyOath: {
+    name: 'Juro poupar quem se rende',
+    desc: 'Se você executar um inimigo rendido, este Elo fica selado até a penitência no santuário.',
+    level: 2,
+    onBreak: 'Elo selado até cumprir uma penitência',
+    value: 'mercy',
     oath: true,
   },
 };

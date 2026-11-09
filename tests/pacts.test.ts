@@ -151,6 +151,76 @@ describe('Restrições funcionando em jogo (Punho do Voto)', () => {
   });
 });
 
+describe('Restrições novas em jogo', () => {
+  it('só com a vida quase cheia: bloqueia com 80% ou menos', () => {
+    const { sim } = setup(['fullHealth']);
+    const grunt = firstOf(sim, 'grunt');
+    sim.player.hp = sim.maxHp() * 0.7;
+    castAt(sim, grunt);
+    expect(sim.player.slotCd[2] ?? 0).toBe(0);
+    sim.player.hp = sim.maxHp();
+    castAt(sim, grunt);
+    expect(sim.player.slotCd[2]).toBeGreaterThan(0);
+  });
+
+  it('só de perto: bloqueia sem inimigo a até 4 m', () => {
+    const { sim } = setup(['closeQuarters']);
+    for (const e of sim.enemies) Object.assign(e, { state: 'dead', respawnIn: Infinity });
+    const input = emptyInput();
+    input.useSlot = 2;
+    sim.step(input);
+    expect(sim.player.slotCd[2] ?? 0).toBe(0);
+    const { sim: sim2 } = setup(['closeQuarters']);
+    castAt(sim2, firstOf(sim2, 'grunt'));
+    expect(sim2.player.slotCd[2]).toBeGreaterThan(0);
+  });
+
+  it('só cercado: precisa de 3 inimigos a até 8 m', () => {
+    const { sim } = setup(['surrounded']);
+    const grunt = firstOf(sim, 'grunt');
+    for (const e of sim.enemies) if (e !== grunt) Object.assign(e, { state: 'dead', respawnIn: Infinity });
+    castAt(sim, grunt);
+    expect(sim.player.slotCd[2] ?? 0).toBe(0);
+    const live = sim.enemies.filter((e) => e !== grunt).slice(0, 2);
+    for (const e of live) Object.assign(e, { state: 'idle', pos: { x: grunt.pos.x, y: grunt.pos.y + 1 } });
+    castAt(sim, grunt);
+    expect(sim.player.slotCd[2]).toBeGreaterThan(0);
+  });
+
+  it('o golpe me expõe: dano recebido +50% por 4 s', () => {
+    const hit = (pacts: PactId[]) => {
+      const { sim } = setup(pacts);
+      castAt(sim, firstOf(sim, 'grunt'));
+      sim.player.pos = { x: 30, y: 24 };
+      const hp = sim.player.hp;
+      sim.damagePlayer(20, { heavy: false });
+      return hp - sim.player.hp;
+    };
+    expect(hit(['exposed'])).toBeGreaterThan(hit([]) * 1.3);
+  });
+
+  it('pago com sangue: cada uso custa 8% da vida máxima, nunca mata', () => {
+    const { sim } = setup(['bloodPrice']);
+    const grunt = firstOf(sim, 'grunt');
+    const hp = sim.player.hp;
+    castAt(sim, grunt);
+    expect(hp - sim.player.hp).toBeGreaterThanOrEqual(Math.round(sim.maxHp() * 0.08));
+    sim.player.hp = 2;
+    sim.player.slotCd[2] = 0;
+    castAt(sim, grunt);
+    expect(sim.player.hp).toBeGreaterThanOrEqual(1);
+    expect(sim.player.dead).toBe(false);
+  });
+
+  it('juro poupar quem se rende: executar sela o Elo', () => {
+    const { sim, slot } = setup(['mercyOath']);
+    const brute = firstOf(sim, 'grunt');
+    Object.assign(brute, { state: 'surrendered' });
+    (sim as unknown as { executeSurrendered: (e: Enemy) => void }).executeSurrendered(brute);
+    expect(slot.sealed).toBe(true);
+  });
+});
+
 describe('Restrições e forja no Ponto', () => {
   it('só contra elites: a carga não se gasta em comuns e dispara na elite', () => {
     const { sim } = setup(['eliteOnly'], 'point');

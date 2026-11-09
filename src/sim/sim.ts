@@ -197,6 +197,8 @@ export interface PlayerState {
   pointUntil: number;
   defenseZeroUntil: number;
   lastHitTakenAt: number;
+  /** Restrição "O golpe me expõe": dano recebido +50% até este tempo */
+  exposedUntil: number;
   lastCombatAt: number;
   flowLockUntil: number;
   slowUntil: number;
@@ -302,6 +304,7 @@ export class Simulation {
       pointUntil: -1,
       defenseZeroUntil: -1,
       lastHitTakenAt: -99,
+      exposedUntil: -1,
       lastCombatAt: -99,
       flowLockUntil: -1,
       slowUntil: -1,
@@ -1004,7 +1007,7 @@ export class Simulation {
     }
   }
 
-  private breakOath(id: 'neverFlee'): void {
+  private breakOath(id: 'neverFlee' | 'mercyOath'): void {
     for (const slot of this.c.elos) {
       if (slot.restrictions.includes(id) && !slot.sealed) {
         slot.sealed = true;
@@ -1078,6 +1081,12 @@ export class Simulation {
       return this.notice('Restrição: só depois de receber dano (3 s).', 'warn');
     if (slot.restrictions.includes('lowFlow') && p.flow / this.flowMax() >= 0.3)
       return this.notice('Restrição: só com o Fluxo abaixo de 30%.', 'warn');
+    if (slot.restrictions.includes('fullHealth') && p.hp / this.maxHp() <= 0.8)
+      return this.notice('Restrição: só com a vida acima de 80%.', 'warn');
+    if (slot.restrictions.includes('closeQuarters') && !this.live().some((e) => dist(e.pos, p.pos) <= 4))
+      return this.notice('Restrição: só com um inimigo a até 4 m.', 'warn');
+    if (slot.restrictions.includes('surrounded') && this.live().filter((e) => dist(e.pos, p.pos) <= 8).length < 3)
+      return this.notice('Restrição: só cercado por 3 ou mais inimigos.', 'warn');
 
     p.flow -= cost;
     p.slotCd[level] = this.slotCooldown(slot, info);
@@ -1085,6 +1094,12 @@ export class Simulation {
       this.c.lifeCostLost += 1;
       p.hp = Math.min(p.hp, this.maxHp());
     }
+    if (slot.restrictions.includes('bloodPrice')) {
+      const price = Math.round(this.maxHp() * 0.08);
+      p.hp = Math.max(1, p.hp - price);
+      this.events.push({ t: 'damage', x: p.pos.x, y: p.pos.y, amount: price, target: 'player' });
+    }
+    if (slot.restrictions.includes('exposed')) p.exposedUntil = this.time + 4;
     if (this.contraryPacts(slot) > 0) this.c.psyche.stress = clamp(this.c.psyche.stress + 4, 0, 100);
 
     p.lastCombatAt = this.time;
@@ -1480,6 +1495,7 @@ export class Simulation {
     const emotion = this.c.psyche.traits.empathy > 60 ? { id: 'shame' as const, intensity: 0.3, duration: 30 } : { id: 'pride' as const, intensity: 0.2, duration: 10 };
     this.shape(`Executou um ${e.def.name} rendido`, { [cruel]: 3, mercy: -2 }, emotion);
     this.famed('ruthless');
+    this.breakOath('mercyOath');
     this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: Math.max(1, Math.ceil(e.hp)), target: 'enemy', id: e.id, big: true });
     this.killEnemy(e);
   }
@@ -2107,6 +2123,7 @@ export class Simulation {
     // A Guarda (armaduras) absorve parte do golpe sempre, mesmo em defesa zero.
     let mult = def.incomingMult * m.incoming * (1 - this.stats().guard);
     if (opts.source?.def.humanoid && this.fameHere() === 'ruthless') mult *= 1.15;
+    if (this.time < p.exposedUntil) mult *= 1.5;
     const defenseZero = this.time < p.defenseZeroUntil;
     let perfect = false;
     if (defenseZero) {

@@ -1,4 +1,4 @@
-import type { EloSlot, ModId, PactId } from './elos';
+import { PACT_IDS, type EloSlot, type ModId, type PactId } from './elos';
 import type { Affinity } from './flow/affinity';
 import type { Posture } from './flow/flow';
 
@@ -110,8 +110,8 @@ export const SPELL_RULES = {
   masteryPerLevel: 0.02,
 } as const;
 
-const ALL_PACTS: PactId[] = ['eliteOnly', 'recentlyHit', 'lowFlow', 'missLock', 'neverFlee', 'lifeCost', 'bloodOath'];
-const NO_MISS: PactId[] = ['eliteOnly', 'recentlyHit', 'lowFlow', 'neverFlee', 'lifeCost', 'bloodOath'];
+const ALL_PACTS: PactId[] = [...PACT_IDS];
+const NO_MISS: PactId[] = PACT_IDS.filter((id) => id !== 'missLock');
 
 export const SPELLS: Record<SpellId, SpellDef> = {
   // ----- Vigor
@@ -277,7 +277,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     desc: 'Marca o inimigo comum mais próximo da mira: por 6 s ele luta contra os próprios aliados.',
     icon: 'discord',
     // Só funciona em comuns: "só contra elites" não faz sentido.
-    pacts: ['recentlyHit', 'lowFlow', 'neverFlee', 'lifeCost', 'bloodOath'],
+    pacts: PACT_IDS.filter((id) => id !== 'eliteOnly' && id !== 'missLock'),
     mods: ['range', 'cadence'],
     fx: { shape: 'mark', charmS: 6, charmDamageMult: 1.5, charmSeekM: 12 },
   },
