@@ -1,7 +1,7 @@
 import { itemDef, itemName, QUALITY_NAMES, type Item } from '../sim/items';
 import type { SimEvent, Simulation } from '../sim/sim';
 import { floorLevel } from '../sim/world/map';
-import { STRONG_VALUE } from '../sim/psyche/traits';
+import { STRONG_VALUE } from '../sim/psyche/values';
 
 /**
  * Sessão de playtest guiado. Enquanto você joga, registra o que aconteceu (mortes, lutas
@@ -65,19 +65,17 @@ export interface PlaytestLog {
   psyche?: {
     whispers: Array<{ t: number; text: string }>;
     milestones: Array<{ t: number; title: string }>;
-    voices: Array<{ t: number; text: string }>;
     /** Valores no fim (dev; o jogador não vê números) */
     valuesEnd: Record<string, number>;
     strongEnd: string[];
     /** "Como você mudou": causas e direções (as 40 mais recentes) */
     shifts?: Array<{ t: number; cause: string; changes: string[] }>;
-    /** O mundo lembra: falas de NPCs que notaram você e fama que pegou */
+    /** Falas de NPCs que notaram você */
     greetings?: Array<{ t: number; npc: string; text: string }>;
-    fame?: Array<{ t: number; region: string; label: string }>;
   };
 }
 
-/** Roteiro: o que vale experimentar na sessão (marca sozinho). Foco: as 4 fases da Psique. */
+/** Roteiro: o que vale experimentar na sessão (marca sozinho). Foco: a Psique simplificada (Valores e emoções). */
 export const CHECKLIST: Array<{ id: string; label: string }> = [
   { id: 'talk', label: 'Escolher numa situação com alguém' },
   { id: 'whisper', label: 'Sentir um sussurro (algo mudou em você)' },
@@ -85,7 +83,7 @@ export const CHECKLIST: Array<{ id: string; label: string }> = [
   { id: 'shrine', label: 'Decidir o que fazer num altar' },
   { id: 'distress', label: 'Encontrar o viajante cercado' },
   { id: 'greeting', label: 'Ouvir um NPC comentar sobre você' },
-  { id: 'fame', label: 'Ganhar fama numa região' },
+  { id: 'emotion', label: 'Sentir uma emoção mudar o combate (Fúria, Medo, Calma)' },
   { id: 'psyche', label: 'Abrir a Psique (C) e ver "Como você mudou"' },
   { id: 'tide', label: 'Fazer uma Maré perfeita' },
   { id: 'boss', label: 'Derrotar o Guardião da Ponte' },
@@ -130,7 +128,7 @@ function fresh(sim: Simulation): PlaytestLog {
     checklist: Object.fromEntries(CHECKLIST.map((s) => [s.id, null])),
     notes: [],
     fps: { avg: 0, min: 0 },
-    psyche: { whispers: [], milestones: [], voices: [], valuesEnd: {}, strongEnd: [] },
+    psyche: { whispers: [], milestones: [], valuesEnd: {}, strongEnd: [] },
   };
 }
 
@@ -238,6 +236,7 @@ export class PlaytestRecorder {
       }
     } else if (movedNow > 0.004) this.stuckAcc = 0;
     if (floorLevel(sim.map, p.pos.x, p.pos.y) !== floorLevel(sim.map, this.lastPos.x, this.lastPos.y) && floorLevel(sim.map, p.pos.x, p.pos.y) >= 1) this.check('ramp');
+    if (Object.values(sim.c.psyche.emotions).some((e) => e && e.intensity >= 0.25)) this.check('emotion');
     this.lastPos = { ...p.pos };
     const cause = c.shifts[0]?.cause;
     if (cause) for (const [re, id] of SHIFT_STEPS) if (re.test(cause)) this.check(id);
@@ -270,7 +269,7 @@ export class PlaytestRecorder {
       this.bossHpLost = 0;
     };
 
-    const psy = (L.psyche ??= { whispers: [], milestones: [], voices: [], valuesEnd: {}, strongEnd: [] });
+    const psy = (L.psyche ??= { whispers: [], milestones: [], valuesEnd: {}, strongEnd: [] });
     for (const ev of events) {
       switch (ev.t) {
         case 'damage':
@@ -328,16 +327,9 @@ export class PlaytestRecorder {
         case 'milestone':
           psy.milestones.push({ t: round(L.playS, 0), title: ev.title });
           break;
-        case 'voice':
-          psy.voices.push({ t: round(L.playS, 0), text: ev.text });
-          break;
         case 'npcSay':
           (psy.greetings ??= []).push({ t: round(L.playS, 0), npc: ev.npc, text: ev.text });
           this.check('greeting');
-          break;
-        case 'fame':
-          (psy.fame ??= []).push({ t: round(L.playS, 0), region: ev.region, label: ev.label });
-          this.check('fame');
           break;
         case 'itemPickup': {
           const it = c.bag[c.bag.length - 1];

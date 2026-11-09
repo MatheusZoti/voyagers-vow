@@ -1,4 +1,3 @@
-import type { TraitId, Traits } from '../psyche/traits';
 
 /**
  * As cinco afinidades do padrão, no pentágono (cada uma é vizinha da anterior e da próxima):
@@ -68,44 +67,3 @@ export function minSlotFor(character: Affinity, spell: Affinity, spellMinLevel =
   return spellMinLevel + affinityPenalty(character, spell);
 }
 
-/**
- * Inclinação da personalidade: quanto os traços puxam para cada afinidade.
- * Não decide mais a afinidade (o jogador escolhe), mas aparece na ficha.
- */
-const AFFINITY_PULLS: Record<Affinity, Array<[TraitId, 1 | -1]>> = {
-  vigor: [
-    ['perseverance', 1],
-    ['sincerity', 1],
-    ['imagination', -1],
-  ],
-  mutation: [
-    ['imagination', 1],
-    ['impulsivity', 1],
-    ['sincerity', -1],
-  ],
-  forge: [
-    ['discipline', 1],
-    ['anxiety', 1],
-  ],
-  dominion: [
-    ['competitiveness', 1],
-    ['pride', 1],
-    ['empathy', -1],
-  ],
-  projection: [
-    ['wrath', 1],
-    ['impulsivity', 1],
-    ['detachment', 1],
-  ],
-};
-
-export function affinityScores(traits: Traits): Record<Affinity, number> {
-  const out = {} as Record<Affinity, number>;
-  for (const aff of AFFINITY_RING) {
-    const pulls = AFFINITY_PULLS[aff];
-    let s = 0;
-    for (const [t, dir] of pulls) s += (traits[t] - 50) * dir;
-    out[aff] = s / pulls.length;
-  }
-  return out;
-}

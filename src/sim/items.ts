@@ -1,6 +1,6 @@
 import { AFFINITY_RING, type Affinity } from './flow/affinity';
 import { clamp, type Rng } from './math';
-import { STRONG_VALUE, VALUE_NAMES, type ValueId, type Values } from './psyche/traits';
+import { STRONG_VALUE, VALUE_NAMES, type ValueId, type Values } from './psyche/values';
 
 /**
  * Equipamentos (estilo Albion): catálogo feito à mão, como as magias. O tier do item é o
@@ -175,8 +175,6 @@ export const RESONANCE_VALUES: Record<Slot, readonly ValueId[]> = {
 };
 /** Rendimento do item: alinhado, neutro, contrário. */
 export const RESONANCE_MULT = { aligned: 1.25, neutral: 1, contrary: 0.75 } as const;
-/** Estresse por segundo de combate para cada item dissonante vestido. */
-export const DISSONANCE_STRESS_PER_S = 0.15;
 
 export type ResonanceState = keyof typeof RESONANCE_MULT;
 
@@ -192,8 +190,8 @@ export function resonanceText(it: Item, values: Values): string | null {
   if (!st || !it.resonance) return null;
   const name = VALUE_NAMES[it.resonance];
   if (st === 'aligned') return `Ressoa com você: você defende ${name}. Rende +${Math.round((RESONANCE_MULT.aligned - 1) * 100)}%.`;
-  if (st === 'contrary') return `Dissonante: você é contra ${name}. Rende −${Math.round((1 - RESONANCE_MULT.contrary) * 100)}% e soma estresse em combate.`;
-  return `Pede ${name}. Se ${name} se tornar forte em você, rende +${Math.round((RESONANCE_MULT.aligned - 1) * 100)}%; se você se opuser, rende menos e pesa na mente.`;
+  if (st === 'contrary') return `Dissonante: você é contra ${name}. Rende −${Math.round((1 - RESONANCE_MULT.contrary) * 100)}%.`;
+  return `Pede ${name}. Se ${name} se tornar forte em você, rende +${Math.round((RESONANCE_MULT.aligned - 1) * 100)}%; se você se opuser, rende −${Math.round((1 - RESONANCE_MULT.contrary) * 100)}%.`;
 }
 
 /** O que este item soma à ficha para quem tem estes Valores (só os bônus mudam; penalidades, como peso, não). */

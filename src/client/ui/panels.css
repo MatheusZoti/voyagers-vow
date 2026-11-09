@@ -319,61 +319,69 @@ kbd {
   min-height: 0;
 }
 .wheel-card {
-  /* Sozinho na coluna (o pentágono foi para o Grimório): ocupa a altura e centraliza a roda. */
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.wheel-card > h4 {
-  margin-bottom: auto;
-}
-.wheel-card > :last-child {
-  margin-bottom: auto;
-}
-/* Personalidade e a fileira Valores/Memórias dividem a altura: a Personalidade
-   encolhe (os gráficos mantêm a proporção) e a fileira de baixo nunca some. */
-.traits-card {
-  flex: 0 1 430px;
-  display: flex;
-  flex-direction: column;
-}
-.traits-card .tgrid {
-  flex: 1;
-  min-height: 0;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-}
-.traits-card .tgroup {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.traits-card .traits {
-  flex: 1 1 0;
-  min-height: 70px;
-}
-.radar-card {
   flex: 1;
   display: flex;
   flex-direction: column;
 }
-.radar-card .radar {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-}
-.psy-row {
-  flex: 1 1 200px;
-  min-height: 200px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+.wheel-card .wheel {
+  margin: 0 auto;
+  max-width: 220px;
+  height: auto;
 }
 .values-card,
 .mem-card {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+.values-card {
+  flex: none;
+}
+.mem-card {
+  flex: 1;
+}
+.emo-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.emo-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  opacity: 0.55;
+}
+.emo-list li.on {
+  opacity: 1;
+}
+.emo-list .em-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--c);
+  flex: none;
+}
+.emo-list li.on .em-dot {
+  box-shadow: 0 0 8px var(--c);
+}
+.emo-list .em-txt {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 11px;
+}
+.emo-list .em-txt b {
+  font-size: 12px;
+  color: var(--c);
+}
+.emo-list .em-k {
+  font-size: 10px;
+  color: var(--c);
 }
 .mem-card h4 {
   flex-wrap: wrap;

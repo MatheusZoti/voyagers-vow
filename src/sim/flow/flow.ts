@@ -1,6 +1,6 @@
 import { approach, clamp } from '../math';
 import { intensityOf } from '../psyche/emotions';
-import { activeCrisis, stressBand, type PsycheState } from '../psyche/psyche';
+import type { PsycheState } from '../psyche/psyche';
 
 // ---------------------------------------------------------------------------
 // Posturas básicas (GDD, Pilar 1). Só uma ativa por vez. O Véu e o Ímpeto
@@ -123,54 +123,22 @@ export interface FlowMods {
   outgoing: number;
   incoming: number;
   regen: number;
-  /** multiplicador do custo de técnicas */
-  techniqueCost: number;
-  /** multiplicador do custo das posturas */
-  postureDrain: number;
   /** multiplicador da drenagem da Maré fora do centro */
   tideDrain: number;
   tideSpeed: number;
   /** multiplicador extra quando a Maré volta para a defesa */
   tideToDefense: number;
-  /** trava a Maré nesse valor (Frenesi = 1) */
-  tideLock: number | null;
+  /** força da Assinatura (Vergonha enfraquece) */
   signature: number;
-  techniquesBlocked: boolean;
-  forcedPosture: Posture | null;
-  silenceAllowed: boolean;
-  moveSpeed: number;
-  /** a Euforia faz a barra de Fluxo mentir para cima */
-  flowDisplayBias: number;
-  flowMaxMult: number;
 }
 
-/** `tide` é o valor atual da Maré (0 = defesa, 1 = ataque). */
-export function computeFlowMods(p: PsycheState, posture: Posture, tide = 0.5): FlowMods {
-  const m: FlowMods = {
-    outgoing: 1,
-    incoming: 1,
-    regen: 1,
-    techniqueCost: 1,
-    postureDrain: 1,
-    tideDrain: 1,
-    tideSpeed: 1,
-    tideToDefense: 1,
-    tideLock: null,
-    signature: 1,
-    techniquesBlocked: false,
-    forcedPosture: null,
-    silenceAllowed: true,
-    moveSpeed: 1,
-    flowDisplayBias: 0,
-    flowMaxMult: 1,
-  };
+/** As quatro emoções de combate mexem no Fluxo. `tide` é o valor atual da Maré (0 = defesa, 1 = ataque). */
+export function computeFlowMods(p: PsycheState, _posture: Posture, tide = 0.5): FlowMods {
+  const m: FlowMods = { outgoing: 1, incoming: 1, regen: 1, tideDrain: 1, tideSpeed: 1, tideToDefense: 1, signature: 1 };
   const e = p.emotions;
   const fury = intensityOf(e, 'fury');
   const fear = intensityOf(e, 'fear');
   const calm = intensityOf(e, 'calm');
-  const eup = intensityOf(e, 'euphoria');
-  const grief = intensityOf(e, 'grief');
-  const pride = intensityOf(e, 'pride');
   const shame = intensityOf(e, 'shame');
 
   const level = tideLevel(tide);
@@ -183,51 +151,13 @@ export function computeFlowMods(p: PsycheState, posture: Posture, tide = 0.5): F
   // Calma: Maré mais precisa; regeneração maior.
   m.tideSpeed *= 1 + 0.8 * calm;
   m.regen *= 1 + 0.5 * calm;
-  // Euforia: técnicas mais baratas; a barra engana.
-  m.techniqueCost *= 1 - 0.35 * eup;
-  m.flowDisplayBias = 0.18 * eup;
-  // Luto: reserva menor.
-  m.flowMaxMult *= 1 - 0.3 * grief;
-  // Orgulho: Assinatura mais forte; Silêncio indisponível.
-  m.signature *= 1 + 0.25 * pride;
-  if (pride > 0.35) m.silenceAllowed = false;
-  // Vergonha: Assinatura enfraquecida até a redenção.
+  // Vergonha: Assinatura enfraquecida até a penitência.
   m.signature *= 1 - 0.3 * shame;
-
-  // Estresse.
-  const band = stressBand(p.stress);
-  if (band === 'inspired') m.regen *= 1.3;
-  if (band === 'shaken') m.tideSpeed *= 0.6;
-
-  // Crises.
-  switch (activeCrisis(p)) {
-    case 'frenzy':
-      m.outgoing *= 1.6;
-      m.tideLock = 1;
-      m.techniqueCost *= 2;
-      m.postureDrain *= 2;
-      m.tideDrain *= 2;
-      break;
-    case 'panic':
-      m.moveSpeed *= 1.45;
-      m.forcedPosture = 'silence';
-      m.techniquesBlocked = true;
-      break;
-    case 'apathy':
-      m.regen = 0;
-      break;
-    default:
-      break;
-  }
   return m;
 }
 
 /** Avança a Maré rumo ao alvo. `masteryBonus` vem da Maestria da Maré. */
 export function tickTide(t: TideState, dt: number, mods: FlowMods, masteryBonus: number, playTime: number): void {
-  if (mods.tideLock !== null) {
-    t.value = t.target = mods.tideLock;
-    return;
-  }
   const towardDefense = t.target < t.value;
   const speed = TIDE_BASE_SPEED * mods.tideSpeed * (1 + masteryBonus) * (towardDefense ? mods.tideToDefense : 1);
   const before = t.value;

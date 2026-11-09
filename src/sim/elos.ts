@@ -1,6 +1,6 @@
 import type { Affinity } from './flow/affinity';
 import { affinityPenalty, minSlotFor } from './flow/affinity';
-import { STRONG_VALUE, type ValueId, type Values } from './psyche/traits';
+import { STRONG_VALUE, type ValueId, type Values } from './psyche/values';
 
 /**
  * Grade de Elos (GDD, Pilar 4). 8 Elos, um de cada nível. Restrições (Pactos) elevam o nível
@@ -232,7 +232,8 @@ export const newSlot = (level: number, unlocked = false): EloSlot => ({
 export interface EffectiveInfo {
   slotLevel: number;
   restrictionBonus: number;
-  alignedBonus: number;
+  /** +1 se uma Restrição tem um Valor forte a favor, −1 se tem um contra (os dois se anulam) */
+  valueBonus: number;
   affinityPenalty: number;
   effective: number;
   beyondLimit: boolean;
@@ -252,13 +253,17 @@ export function evaluateSlot(
   const row = ELO_TABLE[slot.level];
   if (!row) throw new Error(`Elo inválido: ${slot.level}`);
   const restrictionBonus = slot.restrictions.reduce((s, id) => s + PACTS[id].level, 0);
-  const alignedPact = slot.restrictions.find((id) => {
+  // Valor forte a favor de uma Restrição: +1 nível; forte contra: −1 (no máximo um de cada).
+  const valueOf = (id: PactId) => {
     const v = PACTS[id].value;
-    return v !== null && opts.values[v] >= STRONG_VALUE;
-  });
-  const alignedBonus = alignedPact ? 1 : 0;
+    return v === null ? 0 : opts.values[v];
+  };
+  const alignedPact = slot.restrictions.find((id) => valueOf(id) >= STRONG_VALUE);
+  const aligned = alignedPact !== undefined;
+  const contrary = slot.restrictions.some((id) => valueOf(id) <= -STRONG_VALUE);
+  const valueBonus = (aligned ? 1 : 0) - (contrary ? 1 : 0);
   const penalty = opts.techniqueAffinity ? affinityPenalty(opts.characterAffinity, opts.techniqueAffinity) : 0;
-  const capped = Math.min(slot.level + restrictionBonus + alignedBonus, slot.level + MAX_RESTRICTION_BONUS, MAX_EFFECTIVE);
+  const capped = Math.min(slot.level + restrictionBonus + valueBonus, slot.level + MAX_RESTRICTION_BONUS, MAX_EFFECTIVE);
   const effective = Math.max(1, capped - penalty);
   const pointsUsed = (Object.entries(slot.mods) as Array<[ModId, number]>).reduce(
     (s, [id, n]) => s + modCost(id, opts.modDiscount) * n,
@@ -267,7 +272,7 @@ export function evaluateSlot(
   return {
     slotLevel: slot.level,
     restrictionBonus,
-    alignedBonus,
+    valueBonus,
     affinityPenalty: penalty,
     effective,
     beyondLimit: effective > 8,

@@ -481,9 +481,6 @@ export class GameView {
           this.fx.pillar({ x: ev.x, y: ev.y }, '#a8e6ff', 4, 1);
           this.fx.burst({ x: ev.x, y: ev.y }, '#a8e6ff', 20, 2.6);
           break;
-        case 'voice':
-          this.say(ev.text);
-          break;
         case 'npcSay':
           this.say(ev.text, ev.npc);
           break;

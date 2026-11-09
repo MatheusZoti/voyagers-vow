@@ -2,11 +2,11 @@ import type { Character } from './character';
 import { AFFINITY_NAMES, type Affinity } from './flow/affinity';
 import { BASE_FLOW_MAX, BASE_FLOW_REGEN } from './flow/flow';
 import { itemDef, itemName, itemStats, RESONANCE_MULT, resonanceState, SLOT_NAMES, SLOTS, WEAPON_FORMS, type ItemStat, type WeaponForm } from './items';
-import { VALUE_NAMES } from './psyche/traits';
+import { VALUE_NAMES } from './psyche/values';
 
 /**
  * Atributos derivados do personagem. Não há pontos para distribuir: cada atributo é a soma
- * do que o personagem é e do que veste (nível, Maestria, equipamento, Pactos). A simulação
+ * do que o personagem é e do que veste (nível, equipamento, Pactos). A simulação
  * lê só daqui, e a ficha mostra de onde vem cada número.
  *
  * Efeitos do momento (emoções, postura, Maré) continuam na simulação, por cima destes valores.
@@ -96,7 +96,7 @@ export function computeStats(c: Character): CharacterStats {
     for (const [stat, v] of Object.entries(itemStats(it)) as Array<[ItemStat, number]>) {
       if (!v) continue;
       (gear[stat] ??= []).push({ source: `${SLOT_NAMES[slot]}: ${itemName(it)}`, value: v });
-      // Ressonância com a Psique: só mexe no que o item dá de bom.
+      // Ressonância com os Valores: só mexe no que o item dá de bom.
       if (k !== 1 && v > 0 && it.resonance)
         gear[stat]!.push({ source: `${k > 1 ? 'Ressonância' : 'Dissonância'} (${VALUE_NAMES[it.resonance]})`, value: v * (k - 1) });
     }
@@ -144,7 +144,7 @@ export function computeStats(c: Character): CharacterStats {
       kind: 'flat',
       value: flowMax,
       parts: flowParts,
-      desc: 'A reserva que paga magias, posturas e a Maré. Cresce com o nível e com a Maestria de Capacidade. O Luto encolhe a reserva no momento.',
+      desc: 'A reserva que paga magias, posturas e a Maré. Cresce com o nível e com o equipamento.',
     },
     {
       id: 'flowRegen',

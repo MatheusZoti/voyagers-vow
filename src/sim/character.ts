@@ -1,16 +1,15 @@
 import { isAffinity, minSlotFor, type Affinity } from './flow/affinity';
 import { newSlot, PACTS, type EloSlot } from './elos';
 import { masteryForElo, masteryForPact, migrateMasteryLevel, newMastery, type MasteryRecord } from './mastery';
-import { clamp, Rng } from './math';
 import type { Item, Slot } from './items';
 import type { Echo } from './world/entities';
 import type { PsycheShift } from './psyche/shifts';
-import type { FameCounts } from './psyche/fame';
 import { computeStats } from './stats';
 import type { DialogueId } from './psyche/dialogues';
 import type { RegionId } from './world/map';
 import { createPsyche, type PsycheState } from './psyche/psyche';
-import { neutralTraits, neutralValues, TRAIT_IDS } from './psyche/traits';
+import { neutralValues, VALUE_IDS } from './psyche/values';
+import { EMOTION_IDS } from './psyche/emotions';
 import { isSpell, MASTERY_IDS, sanitizeSlot, SPELLS, STARTER_SPELLS, type MasteryId, type SpellId } from './techniques';
 
 /** Personagem persistente: o que o servidor guardaria entre sessões. */
@@ -29,7 +28,7 @@ export interface Character {
   elos: EloSlot[];
   /** grimório: magias que o personagem já aprendeu */
   knownSpells: SpellId[];
-  /** conversas já vividas (cada uma molda a personalidade uma vez) */
+  /** conversas já vividas (cada uma molda os Valores uma vez) */
   dialogues: DialogueId[];
   /** livros do mundo já lidos */
   booksRead: string[];
@@ -56,7 +55,7 @@ export interface Character {
   echo: Echo | null;
   /** tutoriais já vistos/concluídos (ex.: tideShown, tideDone) */
   hints: Record<string, number>;
-  /** como a personalidade mudou, com a causa (mais recente primeiro) */
+  /** como os Valores mudaram, com a causa (mais recente primeiro) */
   shifts: PsycheShift[];
   /** o seu algoz: a criatura que te derrubou da última vez (onde ela vive) */
   nemesis: { region: string; kind: string; home: { x: number; y: number }; name: string } | null;
@@ -64,8 +63,6 @@ export interface Character {
   shrines: Record<string, 'taken' | 'left'>;
   /** o que aconteceu nas situações (consequências e ecos), ex.: stranger=trusted, oath=sworn */
   flags: Record<string, string | number>;
-  /** fama por região: o que se fala de você em cada lugar */
-  fame: Record<string, FameCounts>;
 }
 
 /** Saves de antes dos equipamentos ganham equipamento e mochila vazios. */
@@ -79,7 +76,23 @@ export function ensureGear(c: Character): void {
   if (c.nemesis === undefined) c.nemesis = null;
   if (!c.shrines) c.shrines = {};
   if (!c.flags) c.flags = {};
-  if (!c.fame) c.fame = {};
+}
+
+/**
+ * Psique simplificada (09/11): só Valores, as quatro emoções de combate e a história de mudanças.
+ * Saves antigos perdem traços, estresse, Crise, memórias e fama; os Valores ficam.
+ */
+export function ensurePsyche(c: Character): void {
+  const old = (c.psyche ?? {}) as Partial<PsycheState> & Record<string, unknown>;
+  const values = neutralValues();
+  for (const v of VALUE_IDS) if (typeof old.values?.[v] === 'number') values[v] = old.values[v];
+  const emotions: PsycheState['emotions'] = {};
+  for (const id of EMOTION_IDS) if (old.emotions?.[id]) emotions[id] = old.emotions[id];
+  c.psyche = { values, emotions };
+  delete (c as unknown as { fame?: unknown }).fame;
+  c.shifts = (Array.isArray(c.shifts) ? c.shifts : [])
+    .map((sh) => ({ ...sh, changes: sh.changes.filter((ch) => ch.kind === 'value') }))
+    .filter((sh) => sh.changes.length);
 }
 
 /** XP para o próximo nível. (Playtest 09/11: nível 5 em 8 min era rápido demais; agora ~1,8× mais.) */
@@ -132,20 +145,17 @@ export function eloUnlockHint(c: Character, level: number): string {
 }
 
 /**
- * Sem questionário: o jogador escolhe nome e afinidade. A personalidade nasce quase neutra
- * (com um leve ruído) e é moldada pelas conversas e ações no jogo.
+ * Sem questionário: o jogador escolhe nome e afinidade. Os Valores nascem neutros e são
+ * moldados pelas escolhas no jogo.
  */
 export function createCharacter(name: string, affinity: Affinity, seed = Date.now() & 0x7fffffff): Character {
-  const rng = new Rng(seed);
-  const traits = neutralTraits();
-  for (const t of TRAIT_IDS) traits[t] = clamp(50 + rng.range(-6, 6), 0, 100);
   const elos = Array.from({ length: 8 }, (_, i) => newSlot(i + 1));
   const [first, second] = STARTER_SPELLS[affinity];
   const c: Character = {
     version: 2,
     name,
     seed,
-    psyche: createPsyche(traits, neutralValues()),
+    psyche: createPsyche(neutralValues()),
     affinity,
     region: 'vale',
     level: 1,
@@ -172,7 +182,6 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
     nemesis: null,
     shrines: {},
     flags: {},
-    fame: {},
   };
   refreshEloUnlocks(c);
   elos[0]!.technique = first;
@@ -192,6 +201,7 @@ export function migrateCharacter(raw: unknown): Character | null {
     if (!c.region) c.region = 'vale';
     ensureMastery(c as Character);
     ensureGear(c as Character);
+    ensurePsyche(c as Character);
     // A regra de liberar Elos mudou (sempre em ordem): corrige saves com buracos na Grade.
     refreshEloUnlocks(c as Character);
     return c as Character;
@@ -231,6 +241,7 @@ export function migrateCharacter(raw: unknown): Character | null {
   delete (migrated as unknown as { answers?: unknown }).answers;
   ensureMastery(migrated);
   ensureGear(migrated);
+  ensurePsyche(migrated);
   return migrated;
 }
 

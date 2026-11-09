@@ -1,14 +1,10 @@
 import { AFFINITY_COLORS, AFFINITY_NAMES } from '../sim/flow/affinity';
 import { POSTURES, TIDE_LEVELS, tideLabel, tideLevel, type Posture } from '../sim/flow/flow';
 import { xpToNext } from '../sim/character';
-import { EMOTION_COLORS, EMOTION_NAMES } from '../sim/psyche/emotions';
-import { CRISIS_NAMES, dominant, STRESS_BAND_NAMES, stressBand } from '../sim/psyche/psyche';
-import { EMOTION_EFFECTS } from '../sim/psyche/shifts';
-import { TRAIT_GROUPS, type TraitId } from '../sim/psyche/traits';
+import { EMOTION_COLORS, EMOTION_EFFECTS, EMOTION_NAMES } from '../sim/psyche/emotions';
+import { dominant } from '../sim/psyche/psyche';
 
-/** Cor de cada traço pelo grupo (a mesma da aba Psique); Valores em dourado. */
-const GROUP_COLOR: Record<string, string> = { Temperamento: '#ff7a6a', Mente: '#6fd0ff', Social: '#7ee0a8', 'Ambição': '#e2b65a' };
-const TRAIT_COLOR = Object.fromEntries(Object.entries(TRAIT_GROUPS).flatMap(([g, ids]) => ids.map((id) => [id, GROUP_COLOR[g]!]))) as Record<TraitId, string>;
+/** Sussurros de Valor em dourado. */
 const VALUE_COLOR = '#f0cf7a';
 import type { NoticeTone, SimEvent, Simulation } from '../sim/sim';
 import { TECHNIQUES, type TechniqueId } from '../sim/techniques';
@@ -28,7 +24,7 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): 
   return el;
 };
 
-/** HUD em DOM: só o essencial em combate (emoção dominante + estresse), o resto na ficha. */
+/** HUD em DOM: só o essencial em combate (emoção dominante e o efeito dela), o resto na ficha. */
 export class Hud {
   private hp = h('div', 'bar-fill hp');
   private hpText = h('span', 'bar-text');
@@ -36,10 +32,6 @@ export class Hud {
   private flowText = h('span', 'bar-text');
   private xp = h('div', 'xp-fill');
   private emotion = h('div', 'emotion');
-  private stress = h('div', 'stress-fill');
-  private stressLabel = h('span', 'stress-label');
-  private crisis = h('div', 'crisis-tag');
-  private banner = h('div', 'banner');
   private notices = h('div', 'notices');
   private bossBar = h('div', 'boss');
   private bossFill = h('div', 'boss-fill');
@@ -55,7 +47,7 @@ export class Hud {
   /** efeito da emoção dominante no combate, em palavras */
   private emoEffect = h('div', 'emo-effect');
   private lastEmo = '';
-  /** sussurros da Psique (mudanças de traço e Valor) */
+  /** sussurros da Psique (mudanças de Valor) */
   private whispers = h('div', 'whispers');
   private vignette = h('div', 'vignette');
   private prevCd: number[] = [];
@@ -72,10 +64,8 @@ export class Hud {
 
     // Topo esquerdo: Psique.
     const psy = h('div', 'panel psyche');
-    const stressBar = h('div', 'stress-bar');
-    stressBar.append(this.stress);
     const txt = h('div', 'psy-text');
-    txt.append(this.emotion, this.emoEffect, stressBar, this.stressLabel, this.crisis);
+    txt.append(this.emotion, this.emoEffect);
     psy.append(this.miniWheel, txt);
     psy.title = 'Psique (C)';
     root.append(psy, this.whispers);
@@ -94,7 +84,7 @@ export class Hud {
     this.bossBar.append(bb);
     root.append(this.bossBar);
 
-    root.append(this.banner, this.notices, this.hint);
+    root.append(this.notices, this.hint);
 
     // Barra inferior.
     const bottom = h('div', 'bottom');
@@ -157,12 +147,12 @@ export class Hud {
     }
   }
 
-  /** Sussurro: uma linha discreta, na cor do traço ou do Valor, que some sozinha. */
+  /** Sussurro: uma linha discreta, em dourado, que some sozinha. */
   private pushWhisper(items: Array<{ kind: 'trait' | 'value'; id: string; dir: 1 | -1; text: string }>): void {
     for (const it of items) {
       const el = h('div', `whisper ${it.dir > 0 ? 'up' : 'down'}`);
       el.textContent = it.text;
-      el.style.setProperty('--c', it.kind === 'value' ? VALUE_COLOR : (TRAIT_COLOR[it.id as TraitId] ?? '#cfd8e3'));
+      el.style.setProperty('--c', VALUE_COLOR);
       this.whispers.append(el);
       setTimeout(() => el.classList.add('fade'), 5200);
       setTimeout(() => el.remove(), 6400);
@@ -182,12 +172,6 @@ export class Hud {
   }
 
   pushNotice(text: string, tone: NoticeTone = 'info'): void {
-    if (tone === 'crisis') {
-      this.banner.textContent = text;
-      this.banner.className = 'banner show';
-      clearTimeout((this.banner as unknown as { _t?: number })._t);
-      (this.banner as unknown as { _t?: number })._t = window.setTimeout(() => (this.banner.className = 'banner'), 3200);
-    }
     const n = h('div', `notice ${tone}`);
     n.textContent = text;
     this.notices.prepend(n);
@@ -206,9 +190,8 @@ export class Hud {
     this.vignette.classList.toggle('low', !p.dead && p.hp / maxHp < 0.3);
     this.hp.style.width = `${(p.hp / maxHp) * 100}%`;
     this.hpText.textContent = `${Math.ceil(p.hp)} / ${maxHp}`;
-    // A Euforia faz a barra de Fluxo mentir para cima.
     const fmax = sim.flowMax();
-    const shown = Math.min(fmax, p.flow + sim.mods.flowDisplayBias * fmax);
+    const shown = Math.min(fmax, p.flow);
     this.flow.style.width = `${(shown / fmax) * 100}%`;
     this.flow.classList.toggle('locked', sim.time < p.flowLockUntil);
     // Maré fora do centro: o Fluxo não regenera e escoa (a barra mostra isso).
@@ -238,27 +221,20 @@ export class Hud {
       this.emotion.style.opacity = '0.7';
     }
     // Mini roda de emoções: só redesenha quando algo muda de forma visível.
-    const wheelKey = `${Math.round(psy.stress / 4)}|${Object.values(psy.emotions)
+    const wheelKey = `${Object.values(psy.emotions)
       .map((e) => `${e!.id}${Math.round(e!.intensity * 20)}`)
       .join(',')}`;
     if (wheelKey !== this.lastWheel) {
       this.lastWheel = wheelKey;
-      this.miniWheel.innerHTML = emotionWheel(psy.emotions, psy.stress, { size: 64, labels: false });
+      this.miniWheel.innerHTML = emotionWheel(psy.emotions, { size: 64, labels: false });
     }
-    const band = stressBand(psy.stress);
-    this.stress.style.width = `${psy.stress}%`;
-    this.stress.dataset.band = band;
-    this.stressLabel.textContent = STRESS_BAND_NAMES[band];
-    const cr = psy.crisis;
-    this.crisis.textContent = cr.phase === 'active' ? CRISIS_NAMES[cr.id] : cr.phase === 'warning' ? `${CRISIS_NAMES[cr.id]} em ${cr.remaining.toFixed(1)} s` : '';
-    this.crisis.className = `crisis-tag ${cr.phase}`;
 
     const tideLvl = tideLevel(p.tide.target);
     for (const k of this.postures) k.el.classList.toggle('active', p.posture === k.id);
 
     this.tideFill.style.width = `${p.tide.value * 100}%`;
     this.tideMarker.style.left = `${p.tide.target * 100}%`;
-    this.tideText.textContent = sim.mods.tideLock !== null ? `travada · ${tideLabel(tideLvl)}` : tideLabel(tideLvl);
+    this.tideText.textContent = tideLabel(tideLvl);
     this.tideText.dataset.lvl = String(tideLvl);
 
     // Elos.
@@ -304,7 +280,7 @@ export class Hud {
       this.status.innerHTML = tags.join(' ');
       let hint = '';
       if (p.dead) hint = 'Você caiu… renascendo no santuário.';
-      else if (sim.meditating()) hint = c.elos.some((e) => e.sealed) ? 'Cumprindo a penitência…' : 'Meditando. O estresse cai e a Calma chega.';
+      else if (sim.meditating()) hint = c.elos.some((e) => e.sealed) ? 'Cumprindo a penitência…' : 'Meditando. A Calma chega.';
       else if (sim.inSanctuary()) hint = `${sim.map.safeName}: <b>Shift</b> Silêncio para meditar · <b>K</b> Grade de Elos · <b>C</b> Ficha`;
       else if (sim.map.shrines.some((s) => !c.shrines[s.id] && Math.hypot(s.x - p.pos.x, s.y - p.pos.y) < 3.5)) hint = 'Um altar com oferendas. <b>Clique</b> nele para decidir.';
       else if (sim.enemies.some((e) => e.state === 'surrendered' && Math.hypot(e.pos.x - p.pos.x, e.pos.y - p.pos.y) < 9))

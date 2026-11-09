@@ -2,14 +2,11 @@ import { AFFINITY_COLORS, AFFINITY_NAMES, AFFINITY_RING, minSlotFor } from '../.
 import { canAddRestriction, PACTS, trimMods, type EffectiveInfo, type ModId, type PactId } from '../../sim/elos';
 import { eloUnlockHint, xpToNext } from '../../sim/character';
 import { displayLevel, MASTERY_MAX, maxEloFor, maxPactLevelFor, masteryForPact, xpForLevel } from '../../sim/mastery';
-import { EMOTION_COLORS, EMOTION_NAMES, type Emotion } from '../../sim/psyche/emotions';
-import { CRISIS_DESC, CRISIS_NAMES } from '../../sim/psyche/psyche';
-import { STRONG_VALUE, TRAIT_GROUPS, VALUE_NAMES } from '../../sim/psyche/traits';
+import { EMOTION_COLORS, EMOTION_EFFECTS, EMOTION_IDS, EMOTION_NAMES, EMOTION_SOURCES } from '../../sim/psyche/emotions';
+import { STRONG_VALUE, VALUE_NAMES } from '../../sim/psyche/values';
 import type { Simulation } from '../../sim/sim';
 import { formatStat, tierLevels, type StatLine } from '../../sim/stats';
 import { regionName } from '../../sim/world/regions';
-import { shiftName } from '../../sim/psyche/shifts';
-import { FAME_COLOR, FAME_NOUN, fameOf } from '../../sim/psyche/fame';
 import {
   BAG_SIZE,
   formatItemStat,
@@ -46,7 +43,6 @@ import {
   forgeEqualizer,
   levelLadder,
   pactPips,
-  traitSliders,
   valuesEqualizer,
 } from './charts';
 import { CatalogState, catalogHtml, spellNeed, visibleEntries, type CatalogKind, type PickContext } from './catalog';
@@ -65,17 +61,6 @@ const TABS: Array<{ id: TabId; name: string; key: string }> = [
   { id: 'map', name: 'Mapa', key: 'N' },
 ];
 
-const GROUP_COLORS: Record<string, string> = {
-  Temperamento: '#ff7a6a',
-  Mente: '#6fd0ff',
-  Social: '#7ee0a8',
-  'Ambição': '#e2b65a',
-};
-/** Cor de cada traço pelo seu grupo (para as mudanças na aba Psique). */
-const TRAIT_GROUP_COLOR: Record<string, string> = Object.fromEntries(
-  Object.entries(TRAIT_GROUPS).flatMap(([g, ids]) => ids.map((id) => [id, GROUP_COLORS[g] ?? '#cfd8e3'])),
-);
-
 /** "?" no título de um card: explicação no hover (ou foco pelo teclado). */
 const tip = hintTip;
 
@@ -93,7 +78,6 @@ export class Panels {
   /** Grade de Elos: o Elo, ou o catálogo para escolher a magia / uma Restrição */
   private eloView: 'elo' | CatalogKind = 'elo';
   private codexKind: CatalogKind = 'spells';
-  private memTab: 'recent' | 'long' | 'shifts' = 'recent';
   /** estado próprio de cada catálogo: a busca do Elo não vaza para o Grimório */
   private pickCat = new CatalogState();
   private codexCat = new CatalogState();
@@ -259,7 +243,7 @@ export class Panels {
 
   private onClick(e: MouseEvent): void {
     const t = (e.target as HTMLElement).closest<HTMLElement>(
-      '[data-tab],[data-a],[data-gear-eq],[data-gear-bag],[data-gear-act],[data-mem],[data-elo],[data-mod],[data-node],[data-open],[data-open-pact],[data-rm-pact],[data-codex],[data-pick],[data-cat-act],[data-f-aff],[data-f-level],[data-f-kind],[data-goto-pact],[data-goto-spell]',
+      '[data-tab],[data-a],[data-gear-eq],[data-gear-bag],[data-gear-act],[data-elo],[data-mod],[data-node],[data-open],[data-open-pact],[data-rm-pact],[data-codex],[data-pick],[data-cat-act],[data-f-aff],[data-f-level],[data-f-kind],[data-goto-pact],[data-goto-spell]',
     );
     if (!t) return;
     const c = this.sim.c;
@@ -278,10 +262,6 @@ export class Panels {
     if (t.dataset.gearAct) return this.gearAction(t.dataset.gearAct);
     if (t.dataset.node) {
       this.selectedNode = t.dataset.node as SpellId;
-      return this.render();
-    }
-    if (t.dataset.mem) {
-      this.memTab = t.dataset.mem as 'recent' | 'long' | 'shifts';
       return this.render();
     }
     if (t.dataset.elo) {
@@ -568,29 +548,18 @@ export class Panels {
     </div>`;
   }
 
-  /** "Como você mudou": cada ato marcante com setas para o que mexeu (sem números). */
+  /** "Como você mudou": cada escolha com setas para os Valores que mexeu (sem números). */
   private shiftList(): string {
     const c = this.sim.c;
-    // O mundo lembra: o que se fala de você em cada região (sem números).
-    const fame = Object.keys(c.fame)
-      .map((r) => [r, fameOf(c.fame[r])] as const)
-      .filter((x) => x[1])
-      .map(([r, tag]) => `<i class="sh-chip fame" style="--c:${FAME_COLOR[tag!]}">${escapeHtml(regionName(r))}: conhecido pela ${FAME_NOUN[tag!]}</i>`)
-      .join('');
-    const fameRow = fame ? `<div class="fame-row"><small>O que dizem de você</small><span class="sh-chips">${fame}</span></div>` : '';
-    if (!c.shifts.length) return fameRow +  `<p class="empty-note">Conversas, lutas e escolhas mudam quem você é. Cada mudança aparece aqui, com o que a causou.</p>`;
+    if (!c.shifts.length) return `<p class="empty-note">Suas escolhas mudam o que você defende. Cada mudança aparece aqui, com o que a causou.</p>`;
     const ago = (t: number) => {
       const m = Math.max(0, Math.round((c.playTime - t) / 60));
       return m < 1 ? 'agora' : m < 60 ? `há ${m} min` : `há ${Math.round(m / 60)} h`;
     };
-    return `${fameRow}<ol class="shift-list">${c.shifts
+    return `<ol class="shift-list">${c.shifts
       .map(
         (s) => `<li><span class="sh-cause">${escapeHtml(s.cause)}</span><span class="sh-when">${ago(s.t)}</span><span class="sh-chips">${s.changes
-          .map((ch) => {
-            const name = shiftName(ch.kind, ch.id);
-            const col = ch.kind === 'value' ? '#f0cf7a' : (TRAIT_GROUP_COLOR[ch.id] ?? '#cfd8e3');
-            return `<i class="sh-chip ${ch.kind}" style="--c:${col}">${escapeHtml(name)} ${ch.dir > 0 ? '↑' : '↓'}</i>`;
-          })
+          .map((ch) => `<i class="sh-chip value" style="--c:#f0cf7a">${escapeHtml(VALUE_NAMES[ch.id])} ${ch.dir > 0 ? '↑' : '↓'}</i>`)
           .join('')}</span></li>`,
       )
       .join('')}</ol>`;
@@ -599,74 +568,33 @@ export class Panels {
   private psycheTab(): string {
     const c = this.sim.c;
     const p = c.psyche;
-    const active = (Object.values(p.emotions) as Emotion[]).sort((a, b) => b.intensity - a.intensity);
-    const crisis =
-      p.crisis.phase === 'active'
-        ? `<div class="alert bad"><b>${CRISIS_NAMES[p.crisis.id]}</b> ${CRISIS_DESC[p.crisis.id]}</div>`
-        : p.crisis.phase === 'warning'
-          ? `<div class="alert warn"><b>${CRISIS_NAMES[p.crisis.id]}</b> se aproxima.</div>`
-          : '';
-    const groups = Object.entries(TRAIT_GROUPS)
-      .map(
-        ([g, ids]) => `<div class="tgroup" style="--g:${GROUP_COLORS[g]}"><h5>${g}</h5>${traitSliders(p.traits, ids, GROUP_COLORS[g]!)}</div>`,
-      )
-      .join('');
-    const memList = (list: typeof p.shortMemory, long: boolean) =>
-      list.length
-        ? `<ol class="timeline ${long ? 'long' : ''}">${list
-            .map(
-              (m) =>
-                `<li style="--c:${EMOTION_COLORS[m.emotion]}"><span class="tl-dot"></span><span class="tl-text">${m.text}</span><span class="tl-meta">${EMOTION_NAMES[m.emotion]}${m.count > 1 ? ` · ×${m.count}` : ''}</span></li>`,
-            )
-            .join('')}</ol>`
-        : `<p class="empty-note">${long ? 'Eventos fortes ou repetidos viram memórias marcantes — e mudam quem você é.' : 'Nada marcante ainda.'}</p>`;
-    const memTab = this.memTab;
-    const memCount = (n: number) => `<small>${n}</small>`;
+    const emoRows = EMOTION_IDS.map((id) => {
+      const k = p.emotions[id]?.intensity ?? 0;
+      return `<li class="${k > 0.02 ? 'on' : ''}" style="--c:${EMOTION_COLORS[id]}">
+        <span class="em-dot"></span>
+        <span class="em-txt"><b>${EMOTION_NAMES[id]}</b><small>${EMOTION_EFFECTS[id]}</small><small class="muted">Vem de: ${EMOTION_SOURCES[id]}</small></span>
+        <span class="em-k">${k > 0.66 ? 'intensa' : k > 0.33 ? 'moderada' : k > 0.02 ? 'leve' : ''}</span>
+      </li>`;
+    }).join('');
     return `<div class="grid psy">
       <div class="psy-col">
       <section class="card wheel-card">
-        <h4>Agora ${tip(
-          'Suas emoções do momento e o estresse (no centro). Cada emoção muda o Fluxo em combate: Fúria fortalece o Ímpeto e deixa a Maré lenta para voltar à defesa; Medo fortalece o Véu e encarece o Ímpeto; Calma acelera a Maré e a regeneração; Euforia barateia as magias, mas faz a barra de Fluxo mentir; Luto encolhe a reserva; Orgulho fortalece a Assinatura e impede o Silêncio; Vergonha a enfraquece. Estresse alto vira Crise: medite em Silêncio no santuário para baixar.',
-        )}</h4>
-        ${emotionWheel(p.emotions, p.stress)}
-        ${crisis}
-        <div class="emo-legend">${
-          active.length
-            ? active
-                .slice(0, 4)
-                .map((e) => `<span style="--c:${EMOTION_COLORS[e.id]}"><i></i>${EMOTION_NAMES[e.id]}</span>`)
-                .join('')
-            : '<span class="muted">Sereno — nenhuma emoção forte.</span>'
-        }</div>
+        <h4>Agora ${tip('Como você está nesta luta. Quatro emoções, cada uma com um gatilho e um efeito no Fluxo. Elas passam sozinhas; a Vergonha só sai com a penitência no santuário.')}</h4>
+        ${emotionWheel(p.emotions)}
+        <ul class="emo-list">${emoRows}</ul>
       </section>
       </div>
       <div class="psy-col">
-      <section class="card traits-card">
-        <h4>Personalidade ${tip(
-          '16 traços, cada um entre dois polos. Eles decidem a ressonância das magias: as que combinam com você custam menos Fluxo. Mudam devagar com o que você faz e com memórias marcantes. Os traços mais fortes aparecem destacados; passe o mouse numa linha para ler a frase.',
-        )}</h4>
-        <div class="tgrid">${groups}</div>
-      </section>
-      <div class="psy-row">
       <section class="card values-card">
         <h4>Valores ${tip(
-          'O que você defende, de contra (−) a favor (+). Agir a favor de um valor traz emoção boa; agir contra traz culpa ou raiva. Um valor forte (dourado) dá +1 nível à primeira Restrição alinhada a ele em cada Elo. Usar uma Restrição contra os seus valores soma estresse a cada uso.',
+          `Quem você é: o que você defende, de contra (−) a favor (+). Mudam só com escolhas: poupar ou executar, ajudar ou abandonar, pegar ou deixar, o que você responde. Um Valor forte (dourado) dá +1 nível a uma Restrição alinhada a ele e faz itens que o pedem renderem mais. Um Valor forte contra tira 1 nível dessas Restrições e enfraquece esses itens. NPCs comentam os seus Valores mais marcados.`,
         )}</h4>
         ${valuesEqualizer(p.values)}
       </section>
       <section class="card mem-card">
-        <h4>Memórias ${tip(
-          'Recentes: os últimos 8 eventos que mexeram com você (×N = quantas vezes). Marcantes: eventos muito fortes ou repetidos ficam para sempre e, ao entrar aqui, deslocam sua personalidade um pouco. Cada cor é a emoção que o evento despertou.',
-        )}
-          <span class="segs mini">
-            <button class="seg ${memTab === 'recent' ? 'on' : ''}" data-mem="recent">Recentes ${memCount(p.shortMemory.length)}</button>
-            <button class="seg ${memTab === 'long' ? 'on' : ''}" data-mem="long">Marcantes ${memCount(p.longMemory.length)}</button>
-            <button class="seg ${memTab === 'shifts' ? 'on' : ''}" data-mem="shifts">Como você mudou ${memCount(c.shifts.length)}</button>
-          </span>
-        </h4>
-        <div class="mem-scroll" data-keep-scroll="mem">${memTab === 'recent' ? memList(p.shortMemory, false) : memTab === 'long' ? memList(p.longMemory, true) : this.shiftList()}</div>
+        <h4>Como você mudou <small class="muted">${c.shifts.length}</small> ${tip('Cada escolha que mexeu nos seus Valores, com a causa. ↑ cresce, ↓ perde força.')}</h4>
+        <div class="mem-scroll" data-keep-scroll="mem">${this.shiftList()}</div>
       </section>
-      </div>
       </div>
     </div>`;
   }
@@ -1033,7 +961,7 @@ export class Panels {
       <div class="tips">
         <div class="tipc">${icon('tide', 22)}<p>Quando o chão ficar vermelho sob você, gire a Maré para a defesa <b>no instante</b> do golpe: Maré perfeita.</p></div>
         <div class="tipc">${icon('gaze', 22)}<p>O Olhar revela Espreitadores em Sombra e armadilhas.</p></div>
-        <div class="tipc">${icon('silence', 22)}<p>Medite no santuário em Silêncio para baixar o estresse antes que vire Crise.</p></div>
+        <div class="tipc">${icon('silence', 22)}<p>Medite no santuário em Silêncio: a Calma chega, e um Elo selado volta depois da penitência.</p></div>
         <div class="tipc">${icon('signature', 22)}<p>A cada 3 acertos do Punho do Voto no mesmo alvo, o golpe ignora a armadura.</p></div>
       </div>`,
     );

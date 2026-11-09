@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createCharacter, migrateCharacter } from '../src/sim/character';
 import { DIALOGUES } from '../src/sim/psyche/dialogues';
-import { TRAIT_IDS, VALUE_IDS } from '../src/sim/psyche/traits';
+import { VALUE_IDS } from '../src/sim/psyche/values';
 import { emptyInput, Simulation, TICK, type SimEvent } from '../src/sim/sim';
 import { SPELL_IDS, SPELLS, STARTER_SPELLS, type SpellId } from '../src/sim/techniques';
 import type { Affinity } from '../src/sim/flow/affinity';
@@ -158,26 +158,22 @@ describe('Grimórios e livros', () => {
   });
 });
 
-describe('Personalidade por diálogos e ações', () => {
-  it('os diálogos cobrem os 16 traços e os 8 valores', () => {
-    const traits = new Set<string>();
+describe('Valores por diálogos e ações', () => {
+  it('os diálogos cobrem os 8 valores, e toda escolha move algum', () => {
     const values = new Set<string>();
     for (const d of Object.values(DIALOGUES))
       for (const o of d.options) {
-        Object.keys(o.traits).forEach((t) => traits.add(t));
+        expect(Object.keys(o.values).length, o.text).toBeGreaterThan(0);
         Object.keys(o.values).forEach((v) => values.add(v));
       }
-    expect([...traits].sort()).toEqual([...TRAIT_IDS].sort());
     expect([...values].sort()).toEqual([...VALUE_IDS].sort());
   });
 
-  it('responder ao Mestre Oren muda a personalidade e libera a próxima conversa', () => {
+  it('responder ao Mestre Oren muda os Valores e libera a próxima conversa', () => {
     const sim = new Simulation(createCharacter('Teste', 'vigor', 3), 5);
     expect(sim.dialogueFor('oren')?.id).toBe('exercise');
-    const before = sim.c.psyche.traits.discipline;
     const reply = sim.answerDialogue('exercise', 0);
     expect(reply).toBeTruthy();
-    expect(sim.c.psyche.traits.discipline).toBeGreaterThan(before + 4);
     expect(sim.c.psyche.values.loyalty).toBe(12);
     expect(sim.answerDialogue('exercise', 1)).toBeNull(); // cada conversa molda uma vez só
     expect(sim.dialogueFor('oren')).toBeNull(); // as próximas pedem nível 2 ou uma morte
@@ -185,7 +181,7 @@ describe('Personalidade por diálogos e ações', () => {
     expect(sim.dialogueFor('oren')?.id).toBe('lostFight');
   });
 
-  it('fugir ferido para o santuário com inimigos atrás reduz a Coragem', () => {
+  it('fugir ferido para o santuário com inimigos atrás dá Medo e sobe a Liberdade', () => {
     const sim = new Simulation(createCharacter('Teste', 'vigor', 3), 5);
     const g = sim.enemies.find((e) => e.kind === 'grunt')!;
     const s = sim.map.sanctuary;
@@ -194,10 +190,11 @@ describe('Personalidade por diálogos e ações', () => {
     g.aggro = true;
     g.pos = { x: s.x + s.r + 3, y: s.y };
     sim.player.hp = sim.maxHp() * 0.3;
-    const courage = sim.c.psyche.traits.courage;
+    const freedom = sim.c.psyche.values.freedom;
     sim.player.pos = { x: s.x + s.r - 1, y: s.y };
     sim.step(emptyInput());
-    expect(sim.c.psyche.traits.courage).toBeLessThan(courage);
+    expect(sim.c.psyche.values.freedom).toBeGreaterThan(freedom);
+    expect(sim.c.psyche.emotions.fear).toBeDefined();
   });
 
   it('a ponte dispara o evento de diálogo uma vez', () => {

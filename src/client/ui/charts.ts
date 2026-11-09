@@ -4,8 +4,7 @@ import { AFFINITY_COLORS, AFFINITY_NAMES, AFFINITY_RING, hexDistance, type Affin
 import { displayLevel, type MasteryRecord } from '../../sim/mastery';
 import { clamp } from '../../sim/math';
 import { EMOTION_COLORS, EMOTION_NAMES, type EmotionId, type EmotionMap } from '../../sim/psyche/emotions';
-import { STRESS_BAND_NAMES, stressBand, type StressBand } from '../../sim/psyche/psyche';
-import { TRAIT_POLES, traitPhrase, VALUE_IDS, VALUE_NAMES, valuePhrase, type TraitId, type Traits, type Values } from '../../sim/psyche/traits';
+import { VALUE_IDS, VALUE_NAMES, valuePhrase, type Values } from '../../sim/psyche/values';
 import { SPELLS, type MasteryId, type SpellId, type TechniqueDef } from '../../sim/techniques';
 import { escapeHtml } from '../util';
 import { icon } from './icons';
@@ -105,13 +104,10 @@ export function affinityRadar(c: Character, weights: Record<Affinity, number>): 
 }
 
 // ---------------------------------------------------------------------------
-// Roda de emoções (referência: roda em pétalas) com o estresse no centro
+// Roda de emoções (referência: roda em pétalas): as quatro emoções de combate
 // ---------------------------------------------------------------------------
 
-/** Positivas à direita, negativas à esquerda. */
-const WHEEL_ORDER: EmotionId[] = ['joy', 'euphoria', 'pride', 'calm', 'fear', 'grief', 'shame', 'fury'];
-
-const BAND_COLOR: Record<StressBand, string> = { inspired: '#7fe3ff', stable: '#7ed37a', shaken: '#ffae3a', crisis: '#ff3a2a' };
+const WHEEL_ORDER: EmotionId[] = ['calm', 'fear', 'shame', 'fury'];
 
 function sector(cx: number, cy: number, r0: number, r1: number, a0: number, a1: number): string {
   const [x0, y0] = polar(cx, cy, r1, a0);
@@ -122,13 +118,13 @@ function sector(cx: number, cy: number, r0: number, r1: number, a0: number, a1: 
   return `M${f(x0)},${f(y0)} A${r1},${r1} 0 ${large} 1 ${f(x1)},${f(y1)} L${f(x2)},${f(y2)} A${r0},${r0} 0 ${large} 0 ${f(x3)},${f(y3)}Z`;
 }
 
-export function emotionWheel(emotions: EmotionMap, stress: number, opts: { size?: number; labels?: boolean } = {}): string {
+export function emotionWheel(emotions: EmotionMap, opts: { size?: number; labels?: boolean } = {}): string {
   const S = opts.size ?? 280;
   const cx = S / 2;
   const cy = S / 2;
   const R = S / 2 - 6;
   const r0 = R * 0.34;
-  const step = (Math.PI * 2) / 8;
+  const step = (Math.PI * 2) / WHEEL_ORDER.length;
   const gap = opts.labels === false ? 0.05 : 0.035;
   const round = opts.labels === false ? 2 : 6;
   const petals = WHEEL_ORDER.map((id, i) => {
@@ -151,78 +147,20 @@ export function emotionWheel(emotions: EmotionMap, stress: number, opts: { size?
       }
     </g>`;
   }).join('');
-  const band = stressBand(stress);
+  let dom: EmotionId | null = null;
+  for (const id of WHEEL_ORDER) if ((emotions[id]?.intensity ?? 0) > (dom ? emotions[dom]!.intensity : 0.02)) dom = id;
   const rr = r0 - (opts.labels === false ? 5 : 10);
-  const circ = 2 * Math.PI * rr;
   const center =
     opts.labels === false
       ? ''
-      : `<text x="${cx}" y="${cy - 2}" text-anchor="middle" class="w-band" fill="${BAND_COLOR[band]}">${STRESS_BAND_NAMES[band]}</text><text x="${cx}" y="${cy + 13}" text-anchor="middle" class="w-sub">estresse</text>`;
+      : `<text x="${cx}" y="${cy + 4}" text-anchor="middle" class="w-band" fill="${dom ? EMOTION_COLORS[dom] : '#cfd8e3'}">${dom ? EMOTION_NAMES[dom] : 'Sereno'}</text>`;
   return `<svg class="wheel" viewBox="0 0 ${S} ${S}" width="${S}" height="${S}" role="img" aria-label="Emoções">
     ${petals}
     <circle cx="${cx}" cy="${cy}" r="${rr}" class="w-track" stroke-width="${opts.labels === false ? 3 : 5}"/>
-    <circle cx="${cx}" cy="${cy}" r="${rr}" fill="none" stroke="${BAND_COLOR[band]}" stroke-width="${opts.labels === false ? 3 : 5}" stroke-linecap="round"
-      stroke-dasharray="${f((circ * stress) / 100)} ${f(circ)}" transform="rotate(-90 ${cx} ${cy})"/>
     ${center}
   </svg>`;
 }
 
-// ---------------------------------------------------------------------------
-// Traços como sliders bipolares com trilha luminosa (referência: polos + trilha)
-// ---------------------------------------------------------------------------
-
-export function traitSliders(traits: Traits, ids: TraitId[], color: string): string {
-  const W = 380;
-  const rowH = 40;
-  const H = ids.length * rowH + 8;
-  const x0 = 106;
-  const x1 = 274;
-  const glow = nextId('tg');
-  const pts: Array<[number, number]> = ids.map((id, i) => [x0 + (traits[id] / 100) * (x1 - x0), 22 + i * rowH]);
-  const pill = (x: number, y: number, text: string, anchor: 'start' | 'end') => {
-    const w = text.length * 6.6 + 16;
-    const rx = anchor === 'end' ? x - w + 8 : x - 8;
-    return `<rect x="${f(rx)}" y="${y - 10}" width="${f(w)}" height="19" rx="9.5" class="pole-pill"/>`;
-  };
-  const rows = ids.map((id, i) => {
-    const y = 22 + i * rowH;
-    const v = traits[id];
-    const [lo, hi] = TRAIT_POLES[id];
-    const phrase = traitPhrase(id, v);
-    const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => `<line x1="${f(x0 + t * (x1 - x0))}" x2="${f(x0 + t * (x1 - x0))}" y1="${y - 3}" y2="${y + 3}" class="tick"/>`).join('');
-    return `<g class="trow"><title>${escapeHtml(phrase ? phrase.charAt(0).toUpperCase() + phrase.slice(1) : 'Equilibrado')}</title>
-      ${v <= 38 ? pill(x0 - 14, y, lo, 'end') : ''}${v >= 62 ? pill(x1 + 14, y, hi, 'start') : ''}
-      <text x="${x0 - 14}" y="${y + 3.5}" text-anchor="end" class="pole ${v <= 38 ? 'hot' : ''}">${lo}</text>
-      <text x="${x1 + 14}" y="${y + 3.5}" text-anchor="start" class="pole ${v >= 62 ? 'hot' : ''}">${hi}</text>
-      <line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" class="track"/>${ticks}
-      <rect x="${x0 - 10}" y="${y - 16}" width="${x1 - x0 + 20}" height="32" fill="transparent"/>
-    </g>`;
-  }).join('');
-  const dots = pts
-    .map(([x, y], i) => {
-      const extreme = Math.abs(traits[ids[i]!] - 50) >= 30;
-      return `<circle cx="${f(x)}" cy="${y}" r="${extreme ? 7 : 5.5}" class="tdot ${extreme ? 'hot' : ''}" ${extreme ? `style="--c:${color}"` : ''}/>`;
-    })
-    .join('');
-  return `<svg class="traits" viewBox="0 0 ${W} ${H}" role="img">
-    <!-- Área do filtro em unidades do SVG: em % ela segue a caixa da linha, que é estreita quando
-         os traços estão alinhados, e o brilho saía cortado num retângulo. -->
-    <defs><filter id="${glow}" filterUnits="userSpaceOnUse" x="-40" y="-40" width="${W + 80}" height="${H + 80}"><feGaussianBlur stdDeviation="7"/></filter></defs>
-    <path d="${smoothOpen(pts)}" stroke="${color}" stroke-width="16" fill="none" opacity=".55" filter="url(#${glow})" stroke-linecap="round"/>
-    <path d="${smoothOpen(pts)}" stroke="${color}" stroke-width="1.2" fill="none" opacity=".5"/>
-    ${rows}${dots}
-  </svg>`;
-}
-
-// ---------------------------------------------------------------------------
-// Valores como equalizador (referência: equalizador com pílulas)
-// ---------------------------------------------------------------------------
-
-/**
- * Valores em pílulas de equalizador, em HTML: as colunas ocupam a largura do card,
- * as pílulas esticam na altura disponível e o texto mantém tamanho fixo e legível
- * (o SVG antigo encolhia inteiro, texto junto, em telas menores).
- */
 export function valuesEqualizer(values: Values): string {
   const cols = VALUE_IDS.map((id) => {
     const v = Math.max(-50, Math.min(50, values[id])) / 50; // −1 … 1
@@ -255,7 +193,7 @@ export function valuesEqualizer(values: Values): string {
 export function levelLadder(info: EffectiveInfo): string {
   const base = info.slotLevel;
   const withRestr = Math.min(base + info.restrictionBonus, base + 4, 12);
-  const withAligned = Math.min(base + info.restrictionBonus + info.alignedBonus, base + 4, 12);
+  const withAligned = Math.min(base + info.restrictionBonus + Math.max(0, info.valueBonus), base + 4, 12);
   const capped = withAligned;
   const cells = Array.from({ length: 12 }, (_, i) => {
     const n = i + 1;
@@ -273,7 +211,7 @@ export function levelLadder(info: EffectiveInfo): string {
     }
     if (n > info.effective && n <= capped) {
       cls += ' lost';
-      tip = 'Penalidade de afinidade';
+      tip = info.valueBonus < 0 ? 'Afinidade ou Valor contrário' : 'Penalidade de afinidade';
     }
     if (n > base + 4) cls += ' out';
     if (n > 8) cls += ' beyond';
@@ -284,7 +222,8 @@ export function levelLadder(info: EffectiveInfo): string {
     <div class="ladder-legend">
       <span><i class="lg base"></i>Elo ${base}</span>
       ${info.restrictionBonus ? `<span><i class="lg restr"></i>+${Math.min(info.restrictionBonus, 4)} Restrições</span>` : ''}
-      ${info.alignedBonus ? `<span><i class="lg aligned"></i>+1 valor forte</span>` : ''}
+      ${info.valueBonus > 0 ? `<span><i class="lg aligned"></i>+1 valor forte</span>` : ''}
+      ${info.valueBonus < 0 ? `<span><i class="lg lost"></i>−1 valor contrário</span>` : ''}
       ${info.affinityPenalty ? `<span><i class="lg lost"></i>−${info.affinityPenalty} afinidade</span>` : ''}
       <span class="muted">teto Elo + 4 · 9–12 Além-limite</span>
     </div>`;

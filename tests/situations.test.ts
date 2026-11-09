@@ -211,10 +211,10 @@ describe('Raposa, ponte, batedor e altar', () => {
       inner(sim).hitEnemy(s, s.maxHp * 0.1, { ignoreArmor: true, source: 'spell' });
       return asked;
     };
-    // Executar também dá fama de crueldade em Varn: em vez de se render, o Lançador pensa em fugir.
-    expect(chanceUsed(0)).toBe(0.5);
-    // Soltar dá fama de piedade: 0,8 + 0,25, no teto de 0,9.
-    expect(chanceUsed(1)).toBe(0.9);
+    // Executar: os Lançadores lembram e não se rendem mais.
+    expect(chanceUsed(0)).toBe(0);
+    // Soltar: o batedor conta aos outros; rendem-se bem mais (0,8).
+    expect(chanceUsed(1)).toBe(0.8);
   });
 
   it('prometer a Ilsa deixar o altar e pegar as moedas é quebrar a palavra', () => {

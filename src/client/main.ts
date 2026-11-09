@@ -74,22 +74,21 @@ function hitstopFor(events: SimEvent[]): number {
 }
 
 /** Cartão com o nome da região ao entrar nela. */
-function regionCard(name: string, tier: number, fame: string | null): void {
+function regionCard(name: string, tier: number): void {
   const el = document.createElement('div');
   el.className = 'region-card';
   const band = tierLevels(tier);
-  // O mundo lembra: se você já tem fama aqui, o cartão diz qual.
-  el.innerHTML = `<span>Tier ${tier} · nível ${band.min}–${band.max}</span><b>${name}</b>${fame ? `<em>Aqui você é ${fame}.</em>` : ''}`;
+  el.innerHTML = `<span>Tier ${tier} · nível ${band.min}–${band.max}</span><b>${name}</b>`;
   document.body.append(el);
-  setTimeout(() => el.classList.add('out'), fame ? 3200 : 2200);
-  setTimeout(() => el.remove(), fame ? 4200 : 3200);
+  setTimeout(() => el.classList.add('out'), 2200);
+  setTimeout(() => el.remove(), 3200);
 }
 
 function startGame(c: Character, arrive?: { x: number; y: number }): void {
   screenEl.className = 'screen';
   screenEl.innerHTML = '';
   const sim = new Simulation(c, 99, arrive);
-  regionCard(sim.map.name, sim.map.tier, sim.fameLabel());
+  regionCard(sim.map.name, sim.map.tier);
   const view = new GameView(gameEl, floatersEl, sim);
   const hud = new Hud(hudEl, sim);
   const panels = new Panels(screenEl, sim);

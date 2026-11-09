@@ -79,7 +79,7 @@ export class DebugPanel {
         <button data-a="spells">Todas as magias</button>
         <button data-a="boss">Ir ao chefe</button>
         <button data-a="home">Lugar seguro</button>
-        <button data-a="calm">Zerar estresse</button>
+        <button data-a="calm">Limpar emoções</button>
       </div>
       <div class="dbg-actions">
         <button data-a="copy" class="wide">Copiar valores</button>
@@ -122,7 +122,7 @@ export class DebugPanel {
           p.pos = { ...sim.map.playerStart };
           return;
         case 'calm':
-          sim.c.psyche.stress = 20;
+          sim.c.psyche.emotions = {};
           return;
         case 'copy': {
           const text = JSON.stringify(TUNING, null, 2);

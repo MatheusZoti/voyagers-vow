@@ -1,9 +1,9 @@
 import { AFFINITY_COLORS, AFFINITY_NAMES, AFFINITY_RING, minSlotFor, type Affinity } from '../../sim/flow/affinity';
 import { canAddRestriction, ELO_TABLE, MOD_IDS, MODS, PACT_IDS, PACTS, type EloSlot, type ModId, type PactId } from '../../sim/elos';
-import { displayLevel } from '../../sim/mastery';
-import { STRONG_VALUE, VALUE_IDS, VALUE_NAMES, type ValueId } from '../../sim/psyche/traits';
+import { displayLevel, maxEloFor } from '../../sim/mastery';
+import { STRONG_VALUE, VALUE_IDS, VALUE_NAMES, type ValueId } from '../../sim/psyche/values';
 import type { Simulation } from '../../sim/sim';
-import { NATURE_NAMES, resonance, SPELL_RULES, SPELLS, type SpellDef, type SpellId } from '../../sim/techniques';
+import { SPELL_RULES, SPELLS, type SpellDef, type SpellId } from '../../sim/techniques';
 import { escapeHtml, hintTip } from '../util';
 import { affinityRadar, pactPips } from './charts';
 import { icon } from './icons';
@@ -491,13 +491,6 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
   const color = AFFINITY_COLORS[s.affinity];
   const need = spellNeed(sim, id);
   const where = whereEquipped(sim, id);
-  const res = resonance(s.tags, c.psyche.traits);
-  const resText =
-    res > 1
-      ? `<span class="good">Forte</span>: −${pct(1 - 1 / res)} de custo.`
-      : res < 1
-        ? `<span class="bad">Fraca</span>: +${pct(1 / Math.max(0.5, res) - 1)} de custo.`
-        : 'Neutra.';
 
   let preview = '';
   let action = '';
@@ -552,11 +545,8 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
     <h6 class="cd-sub">Forja nesta magia <small>${s.mods.length} de ${MOD_IDS.length} modificadores</small></h6>
     <ul class="cd-mods">${mods}</ul>
     <dl class="cd-facts">
-      <div><dt>Natureza ${hintTip(
-        'O jeito de agir da magia. Cada natureza combina com traços da sua personalidade: agressiva com Coragem e Ira; protetora com Empatia e Disciplina; enganadora com pouca Sinceridade; paciente com Perseverança e Disciplina. Essa combinação define a Ressonância.',
-      )}</dt><dd>${s.tags.length ? s.tags.map((t) => NATURE_NAMES[t].charAt(0).toUpperCase() + NATURE_NAMES[t].slice(1)).join(' e ') : '—'}</dd></div>
+      <div><dt>Maestria</dt><dd>${displayLevel(c.mastery[id])} · até o Elo ${maxEloFor(spellNeed(sim, id), displayLevel(c.mastery[id]))}</dd></div>
       ${ctx ? `<div><dt>Equipada</dt><dd>${where ? `Elo ${where.level}` : 'Não'}</dd></div>` : ''}
-      <div><dt>Ressonância ${hintTip('O quanto a natureza da magia combina com a sua personalidade. Muda o custo de Fluxo.')}</dt><dd>${resText}</dd></div>
     </dl>
     <h6 class="cd-sub">Restrições compatíveis <small>${s.pacts.length} de ${PACT_IDS.length}</small></h6>
     <div class="cd-chips">${pacts}</div>
@@ -572,9 +562,9 @@ function pactDetail(sim: Simulation, id: PactId, ctx: PickContext | null): strin
   const valueText = d.value
     ? `${VALUE_NAMES[d.value]}: ${
         v >= STRONG_VALUE
-          ? '<span class="good">forte em você</span>. A primeira Restrição alinhada de um Elo conta +1 nível.'
+          ? '<span class="good">forte em você</span>. Uma Restrição alinhada dá +1 nível ao Elo.'
           : v <= -STRONG_VALUE
-            ? '<span class="bad">contra os seus valores</span>. Cada uso soma estresse.'
+            ? '<span class="bad">contra os seus valores</span>. Tira 1 nível do Elo.'
             : 'neutro em você.'
       }`
     : 'Nenhum valor ligado.';

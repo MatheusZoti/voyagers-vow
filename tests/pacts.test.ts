@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createCharacter } from '../src/sim/character';
 import { evaluateSlot, levelPower, newSlot, PACT_IDS, PACTS, pointsForLevel, type PactId } from '../src/sim/elos';
 import { emptyInput, Simulation, TICK } from '../src/sim/sim';
-import { neutralValues } from '../src/sim/psyche/traits';
+import { neutralValues } from '../src/sim/psyche/values';
 import { sanitizeSlot, TECHNIQUES } from '../src/sim/techniques';
 import type { Enemy } from '../src/sim/world/entities';
 

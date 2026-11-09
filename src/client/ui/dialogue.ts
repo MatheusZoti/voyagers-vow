@@ -14,7 +14,7 @@ const IDLE_LINES: Record<NpcId, string> = {
 };
 
 /**
- * Caixa de diálogo. As escolhas moldam a personalidade, mas o jogador nunca vê
+ * Caixa de diálogo. As escolhas moldam os Valores, mas o jogador nunca vê
  * o que cada resposta mede: só a reação de quem fala.
  */
 export class DialogueBox {

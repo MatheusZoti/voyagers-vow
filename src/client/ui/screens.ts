@@ -54,7 +54,7 @@ function pentagon(selected: Affinity): string {
 
 /**
  * Criação: o jogador escolhe nome e estilo de poder inicial. Sem questionário —
- * a personalidade nasce das conversas e ações dentro do jogo.
+ * os Valores nascem das escolhas dentro do jogo.
  */
 export function creationScreen(root: HTMLElement, onDone: (name: string, affinity: Affinity) => void): void {
   root.className = 'screen create';
@@ -96,7 +96,7 @@ export function creationScreen(root: HTMLElement, onDone: (name: string, affinit
           </div>
           <label class="name-field"><span>Nome</span><input class="name" maxlength="18" placeholder="Seu nome" value="${escapeHtml(name)}"/></label>
           <button class="btn primary big" data-a="go">Entrar no Vale da Ponte</button>
-          <p class="fine">Sua personalidade não é escolhida aqui: ela nasce do que você diz às pessoas do vale e do que faz em combate.</p>
+          <p class="fine">Quem você é não se escolhe aqui: seus Valores nascem do que você decide no vale — poupar ou executar, ajudar ou seguir, pegar ou deixar.</p>
         </div>
       </div>`;
     const input = root.querySelector<HTMLInputElement>('input.name')!;

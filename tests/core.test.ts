@@ -11,11 +11,10 @@ import {
   recordUse,
 } from '../src/sim/mastery';
 import { reactTo } from '../src/sim/psyche/emotions';
-import { chooseCrisis, createPsyche, psycheEvent, tickPsyche } from '../src/sim/psyche/psyche';
-import { neutralTraits, neutralValues } from '../src/sim/psyche/traits';
+import { createPsyche, psycheEvent, tickPsyche } from '../src/sim/psyche/psyche';
+import { neutralValues } from '../src/sim/psyche/values';
 import { createCharacter, eloUnlockHint, refreshEloUnlocks } from '../src/sim/character';
 
-const ctx = { playTime: 0, inCombat: true, meditating: false, unmetNeeds: 0 };
 
 describe('Pentágono de afinidades', () => {
   it('distâncias seguem o desenho: Vigor vizinha de Projeção e Mutação, distante de Domínio e Forja', () => {
@@ -86,8 +85,18 @@ describe('Grade de Elos', () => {
     const s = newSlot(2, true);
     s.restrictions = ['eliteOnly'];
     const info = evaluateSlot(s, { ...base, values, techniqueAffinity: null });
-    expect(info.alignedBonus).toBe(1);
+    expect(info.valueBonus).toBe(1);
     expect(info.effective).toBe(4);
+  });
+
+  it('Restrição de um Valor que você despreza tira 1 nível', () => {
+    const values = neutralValues();
+    values.power = -30;
+    const s = newSlot(2, true);
+    s.restrictions = ['eliteOnly'];
+    const info = evaluateSlot(s, { ...base, values, techniqueAffinity: null });
+    expect(info.valueBonus).toBe(-1);
+    expect(info.effective).toBe(2);
   });
 
   it('afinidade distante vira penalidade de nível', () => {
@@ -130,56 +139,40 @@ describe('Maestria', () => {
 });
 
 describe('Psique', () => {
-  it('quase-morte: Medo no ansioso, Euforia no impulsivo', () => {
-    const anxious = neutralTraits();
-    anxious.anxiety = 90;
-    anxious.courage = 20;
-    const reckless = neutralTraits();
-    reckless.impulsivity = 90;
-    reckless.courage = 85;
-    expect(reactTo('nearDeath', anxious)[0]!.id).toBe('fear');
-    expect(reactTo('nearDeath', reckless)[0]!.id).toBe('euphoria');
+  it('gatilhos fixos: quase-morte dá Medo, golpe pesado dá Fúria, Maré perfeita dá Calma', () => {
+    expect(reactTo('nearDeath')!.id).toBe('fear');
+    expect(reactTo('heavyHit')!.id).toBe('fury');
+    expect(reactTo('perfectTide')!.id).toBe('calm');
+    expect(reactTo('pactBroken')!.id).toBe('shame');
   });
 
-  it('Crise escolhida pelos traços', () => {
-    const t = neutralTraits();
-    t.wrath = 90;
-    expect(chooseCrisis(t)).toBe('frenzy');
-    t.wrath = 40;
-    t.anxiety = 95;
-    expect(chooseCrisis(t)).toBe('panic');
+  it('as emoções passam sozinhas; a penitência apaga a Vergonha', () => {
+    const p = createPsyche(neutralValues());
+    psycheEvent(p, 'heavyHit');
+    expect(p.emotions.fury).toBeDefined();
+    for (let i = 0; i < 100; i++) tickPsyche(p, 0.1);
+    expect(p.emotions.fury).toBeUndefined();
+    psycheEvent(p, 'pactBroken');
+    for (let i = 0; i < 100; i++) tickPsyche(p, 0.1);
+    expect(p.emotions.shame).toBeDefined();
+    psycheEvent(p, 'redemption');
+    expect(p.emotions.shame).toBeUndefined();
+    expect(p.emotions.calm).toBeDefined();
   });
 
-  it('estresse crítico avisa 3 s antes e então entra em Crise', () => {
-    const t = neutralTraits();
-    t.wrath = 90;
-    const p = createPsyche(t, neutralValues());
-    p.stress = 90;
-    const n1 = tickPsyche(p, 0.1, ctx);
-    expect(n1.some((n) => n.type === 'crisisWarning')).toBe(true);
-    expect(p.crisis.phase).toBe('warning');
-    for (let i = 0; i < 31; i++) tickPsyche(p, 0.1, ctx);
-    expect(p.crisis.phase).toBe('active');
-    const mods = computeFlowMods(p, 'open');
-    expect(mods.tideLock).toBe(1);
-    expect(mods.techniqueCost).toBeGreaterThanOrEqual(2);
-  });
-
-  it('memória curta guarda no máximo 8 e promove eventos fortes', () => {
-    const p = createPsyche(neutralTraits(), neutralValues());
-    const courageBefore = p.traits.courage;
-    psycheEvent(p, 'killBoss', 0);
-    expect(p.longMemory.some((m) => m.kind === 'killBoss')).toBe(true);
-    expect(p.traits.courage).toBeGreaterThan(courageBefore);
-    const kinds = ['nearDeath', 'heavyHit', 'killElite', 'killStreak', 'perfectTide', 'meditate', 'death', 'pactBroken', 'redemption'] as const;
-    kinds.forEach((k, i) => psycheEvent(p, k, i));
-    expect(p.shortMemory.length).toBeLessThanOrEqual(8);
+  it('cada emoção mexe no Fluxo', () => {
+    const p = createPsyche(neutralValues());
+    const base = computeFlowMods(p, 'open', 0.5);
+    p.emotions.calm = { id: 'calm', intensity: 1, remaining: 10, duration: 10 };
+    expect(computeFlowMods(p, 'open', 0.5).regen).toBeGreaterThan(base.regen);
+    p.emotions.shame = { id: 'shame', intensity: 1, remaining: 10, duration: 10 };
+    expect(computeFlowMods(p, 'open', 0.5).signature).toBeLessThan(1);
   });
 });
 
 describe('Maré', () => {
   it('Fúria deixa a Maré lenta para voltar à defesa', () => {
-    const p = createPsyche(neutralTraits(), neutralValues());
+    const p = createPsyche(neutralValues());
     const calmTide = createTide();
     const furyTide = createTide();
     shiftTide(calmTide, -5);

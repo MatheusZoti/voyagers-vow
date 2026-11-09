@@ -57,27 +57,6 @@ describe('Ressonância dos itens com a Psique', () => {
     expect(sim.stats().guard).toBeCloseTo(0.1);
   });
 
-  it('lutar vestindo algo dissonante soma estresse; fora de combate, não', () => {
-    const run = (value: number, fighting: boolean) => {
-      const c = createCharacter('Teste', 'vigor', 3);
-      c.equipment.chest = vest(1, 'vengeance');
-      c.psyche.values.vengeance = value;
-      const sim = new Simulation(c, 5);
-      for (const e of sim.enemies) Object.assign(e, { state: 'dead', respawnIn: Infinity });
-      sim.player.pos = { x: sim.map.sanctuary.x + sim.map.sanctuary.r + 6, y: sim.map.sanctuary.y };
-      c.psyche.stress = 0;
-      for (let i = 0; i < 10 / TICK; i++) {
-        if (fighting) sim.player.lastCombatAt = sim.time;
-        sim.step(emptyInput());
-      }
-      return c.psyche.stress;
-    };
-    const dissonant = run(-50, true);
-    expect(dissonant).toBeGreaterThan(run(0, true) + 1);
-    expect(dissonant).toBeGreaterThan(run(50, true) + 1);
-    expect(run(-50, false)).toBeLessThan(dissonant - 1);
-  });
-
   it('vestir avisa se o item ressoa ou é dissonante', () => {
     const c = createCharacter('Teste', 'vigor', 3);
     c.psyche.values.nature = -60;

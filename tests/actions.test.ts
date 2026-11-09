@@ -101,7 +101,7 @@ describe('Algoz', () => {
     const ev = back.step(emptyInput());
     expect(back.c.psyche.values.vengeance).toBe(v + 5);
     expect(back.c.nemesis).toBeNull();
-    expect(ev.some((e) => e.t === 'voice')).toBe(true);
+    expect(ev.some((e) => e.t === 'whisper')).toBe(true);
   });
 });
 
