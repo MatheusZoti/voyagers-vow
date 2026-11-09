@@ -1,6 +1,7 @@
 import { itemDef, itemName, QUALITY_NAMES, type Item } from '../sim/items';
 import type { SimEvent, Simulation } from '../sim/sim';
 import { floorLevel } from '../sim/world/map';
+import { STRONG_VALUE } from '../sim/psyche/traits';
 
 /**
  * Sessão de playtest guiado. Enquanto você joga, registra o que aconteceu (mortes, lutas
@@ -60,6 +61,15 @@ export interface PlaytestLog {
   checklist: Record<string, number | null>;
   notes: PlaytestNote[];
   fps: { avg: number; min: number };
+  /** Sinal e voz: o que a Psique mostrou ao jogador */
+  psyche?: {
+    whispers: Array<{ t: number; text: string }>;
+    milestones: Array<{ t: number; title: string }>;
+    voices: Array<{ t: number; text: string }>;
+    /** Valores no fim (dev; o jogador não vê números) */
+    valuesEnd: Record<string, number>;
+    strongEnd: string[];
+  };
 }
 
 /** Roteiro: o que vale experimentar na sessão (marca sozinho). */
@@ -106,6 +116,7 @@ function fresh(sim: Simulation): PlaytestLog {
     checklist: Object.fromEntries(CHECKLIST.map((s) => [s.id, null])),
     notes: [],
     fps: { avg: 0, min: 0 },
+    psyche: { whispers: [], milestones: [], voices: [], valuesEnd: {}, strongEnd: [] },
   };
 }
 
@@ -241,6 +252,7 @@ export class PlaytestRecorder {
       this.bossHpLost = 0;
     };
 
+    const psy = (L.psyche ??= { whispers: [], milestones: [], voices: [], valuesEnd: {}, strongEnd: [] });
     for (const ev of events) {
       switch (ev.t) {
         case 'damage':
@@ -290,6 +302,15 @@ export class PlaytestRecorder {
         }
         case 'echoRecovered':
           L.echoes.recovered++;
+          break;
+        case 'whisper':
+          for (const it of ev.items) psy.whispers.push({ t: round(L.playS, 0), text: it.text });
+          break;
+        case 'milestone':
+          psy.milestones.push({ t: round(L.playS, 0), title: ev.title });
+          break;
+        case 'voice':
+          psy.voices.push({ t: round(L.playS, 0), text: ev.text });
           break;
         case 'itemPickup': {
           const it = c.bag[c.bag.length - 1];
@@ -383,6 +404,13 @@ export class PlaytestRecorder {
   save(): void {
     if (!this.log) return;
     this.log.updatedAt = new Date().toISOString();
+    if (this.sim && this.log.psyche) {
+      const v = this.sim.c.psyche.values;
+      this.log.psyche.valuesEnd = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, Math.round(x)]));
+      this.log.psyche.strongEnd = Object.entries(v)
+        .filter(([, x]) => Math.abs(x) >= STRONG_VALUE)
+        .map(([k, x]) => `${k}${x > 0 ? '+' : '−'}`);
+    }
     try {
       localStorage.setItem(KEY, JSON.stringify(this.log));
     } catch {

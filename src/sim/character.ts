@@ -4,6 +4,7 @@ import { newMastery, type MasteryRecord } from './mastery';
 import { clamp, Rng } from './math';
 import type { Item, Slot } from './items';
 import type { Echo } from './world/entities';
+import type { PsycheShift } from './psyche/shifts';
 import { computeStats } from './stats';
 import type { DialogueId } from './psyche/dialogues';
 import type { RegionId } from './world/map';
@@ -54,6 +55,8 @@ export interface Character {
   echo: Echo | null;
   /** tutoriais já vistos/concluídos (ex.: tideShown, tideDone) */
   hints: Record<string, number>;
+  /** como a personalidade mudou, com a causa (mais recente primeiro) */
+  shifts: PsycheShift[];
 }
 
 /** Saves de antes dos equipamentos ganham equipamento e mochila vazios. */
@@ -63,6 +66,7 @@ export function ensureGear(c: Character): void {
   if (!c.nextItemUid) c.nextItemUid = 1;
   if (c.echo === undefined) c.echo = null;
   if (!c.hints) c.hints = {};
+  if (!Array.isArray(c.shifts)) c.shifts = [];
 }
 
 /** XP para o próximo nível. (Playtest 09/11: nível 5 em 8 min era rápido demais; agora ~1,8× mais.) */
@@ -120,6 +124,7 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
     nextItemUid: 1,
     echo: null,
     hints: {},
+    shifts: [],
   };
   refreshEloUnlocks(c);
   elos[0]!.technique = first;

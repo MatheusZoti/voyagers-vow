@@ -8,6 +8,7 @@ import { STRONG_VALUE, TRAIT_GROUPS, VALUE_NAMES } from '../../sim/psyche/traits
 import type { Simulation } from '../../sim/sim';
 import { formatStat, tierLevels, type StatLine } from '../../sim/stats';
 import { regionName } from '../../sim/world/regions';
+import { shiftName } from '../../sim/psyche/shifts';
 import {
   BAG_SIZE,
   formatItemStat,
@@ -77,6 +78,10 @@ const GROUP_COLORS: Record<string, string> = {
   Social: '#7ee0a8',
   'Ambição': '#e2b65a',
 };
+/** Cor de cada traço pelo seu grupo (para as mudanças na aba Psique). */
+const TRAIT_GROUP_COLOR: Record<string, string> = Object.fromEntries(
+  Object.entries(TRAIT_GROUPS).flatMap(([g, ids]) => ids.map((id) => [id, GROUP_COLORS[g] ?? '#cfd8e3'])),
+);
 
 const SPELL_MASTERY = '+2% de efeito por nível; −1,5% de custo de Fluxo por nível; −1 no custo dos modificadores a cada 5 níveis.';
 
@@ -109,7 +114,7 @@ export class Panels {
   /** Grade de Elos: o Elo, ou o catálogo para escolher a magia / uma Restrição */
   private eloView: 'elo' | CatalogKind = 'elo';
   private codexKind: CatalogKind = 'spells';
-  private memTab: 'recent' | 'long' = 'recent';
+  private memTab: 'recent' | 'long' | 'shifts' = 'recent';
   /** estado próprio de cada catálogo: a busca do Elo não vaza para o Grimório */
   private pickCat = new CatalogState();
   private codexCat = new CatalogState();
@@ -297,7 +302,7 @@ export class Panels {
       return this.render();
     }
     if (t.dataset.mem) {
-      this.memTab = t.dataset.mem as 'recent' | 'long';
+      this.memTab = t.dataset.mem as 'recent' | 'long' | 'shifts';
       return this.render();
     }
     if (t.dataset.elo) {
@@ -584,6 +589,27 @@ export class Panels {
     </div>`;
   }
 
+  /** "Como você mudou": cada ato marcante com setas para o que mexeu (sem números). */
+  private shiftList(): string {
+    const c = this.sim.c;
+    if (!c.shifts.length) return `<p class="empty-note">Conversas, lutas e escolhas mudam quem você é. Cada mudança aparece aqui, com o que a causou.</p>`;
+    const ago = (t: number) => {
+      const m = Math.max(0, Math.round((c.playTime - t) / 60));
+      return m < 1 ? 'agora' : m < 60 ? `há ${m} min` : `há ${Math.round(m / 60)} h`;
+    };
+    return `<ol class="shift-list">${c.shifts
+      .map(
+        (s) => `<li><span class="sh-cause">${escapeHtml(s.cause)}</span><span class="sh-when">${ago(s.t)}</span><span class="sh-chips">${s.changes
+          .map((ch) => {
+            const name = shiftName(ch.kind, ch.id);
+            const col = ch.kind === 'value' ? '#f0cf7a' : (TRAIT_GROUP_COLOR[ch.id] ?? '#cfd8e3');
+            return `<i class="sh-chip ${ch.kind}" style="--c:${col}">${escapeHtml(name)} ${ch.dir > 0 ? '↑' : '↓'}</i>`;
+          })
+          .join('')}</span></li>`,
+      )
+      .join('')}</ol>`;
+  }
+
   private psycheTab(): string {
     const c = this.sim.c;
     const p = c.psyche;
@@ -655,9 +681,10 @@ export class Panels {
           <span class="segs mini">
             <button class="seg ${memTab === 'recent' ? 'on' : ''}" data-mem="recent">Recentes ${memCount(p.shortMemory.length)}</button>
             <button class="seg ${memTab === 'long' ? 'on' : ''}" data-mem="long">Marcantes ${memCount(p.longMemory.length)}</button>
+            <button class="seg ${memTab === 'shifts' ? 'on' : ''}" data-mem="shifts">Como você mudou ${memCount(c.shifts.length)}</button>
           </span>
         </h4>
-        <div class="mem-scroll" data-keep-scroll="mem">${memTab === 'recent' ? memList(p.shortMemory, false) : memList(p.longMemory, true)}</div>
+        <div class="mem-scroll" data-keep-scroll="mem">${memTab === 'recent' ? memList(p.shortMemory, false) : memTab === 'long' ? memList(p.longMemory, true) : this.shiftList()}</div>
       </section>
       </div>
       </div>

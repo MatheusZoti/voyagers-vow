@@ -7,6 +7,8 @@ import type { Vec2 } from '../../sim/math';
 import type { SimEvent, Simulation } from '../../sim/sim';
 import type { Enemy } from '../../sim/world/entities';
 import { floorAt } from '../../sim/world/map';
+import { EMOTION_COLORS } from '../../sim/psyche/emotions';
+import { dominant } from '../../sim/psyche/psyche';
 import { QUALITY_COLORS } from '../../sim/items';
 import { Effects } from './fx';
 import {
@@ -71,6 +73,10 @@ export class GameView {
    * sempre as mesmas e só mudam de lugar, cor e intensidade.
    */
   private glowLights: THREE.PointLight[] = [];
+  /** anel no chão com a cor da emoção dominante */
+  private emoRing!: THREE.Mesh;
+  /** balão da voz interna (um de cada vez) */
+  private bubble: { el: HTMLDivElement; age: number; life: number } | null = null;
   private trapMeshes: THREE.Group[] = [];
   private echoMesh: THREE.Group;
   private dangerRing: THREE.Mesh;
@@ -167,6 +173,13 @@ export class GameView {
       this.glowLights.push(l);
       this.scene.add(l);
     }
+    this.emoRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.62, 0.9, 40),
+      new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    this.emoRing.rotation.x = -Math.PI / 2;
+    this.emoRing.position.y = 0.07;
+    this.player.root.add(this.emoRing);
     this.impetusLight = new THREE.PointLight('#ff8a2a', 0, 6, 2);
     this.impetusLight.position.y = 1.2;
     this.player.root.add(this.impetusLight);
@@ -422,6 +435,9 @@ export class GameView {
         case 'echoRecovered':
           this.fx.pillar({ x: ev.x, y: ev.y }, '#a8e6ff', 4, 1);
           this.fx.burst({ x: ev.x, y: ev.y }, '#a8e6ff', 20, 2.6);
+          break;
+        case 'voice':
+          this.say(ev.text);
           break;
         case 'itemPickup': {
           const color = QUALITY_COLORS[ev.quality - 1] ?? '#ffffff';
@@ -781,10 +797,40 @@ export class GameView {
     this.updateFloaters(dt);
   }
 
+  /** Voz interna: um balão curto sobre a cabeça do personagem. */
+  say(text: string): void {
+    this.bubble?.el.remove();
+    const el = document.createElement('div');
+    el.className = 'voice-bubble';
+    el.textContent = text;
+    this.floaterLayer.appendChild(el);
+    this.bubble = { el, age: 0, life: 3.4 };
+  }
+
   private updateFloaters(dt: number): void {
     const w = this.renderer.domElement.clientWidth;
     const h = this.renderer.domElement.clientHeight;
     const v = new THREE.Vector3();
+    // Aura da emoção dominante (só quando ela pesa).
+    const dom = dominant(this.sim.c.psyche);
+    const mat0 = this.emoRing.material as THREE.MeshBasicMaterial;
+    if (dom && dom.intensity >= 0.2) {
+      mat0.color.set(EMOTION_COLORS[dom.id]);
+      mat0.opacity = (0.12 + 0.4 * dom.intensity) * (0.8 + 0.2 * Math.sin(this.time * 3));
+    } else mat0.opacity = 0;
+    if (this.bubble) {
+      const b = this.bubble;
+      b.age += dt;
+      v.copy(this.player.root.position);
+      v.y += 2.5;
+      v.project(this.camera);
+      b.el.style.transform = `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, -100%)`;
+      b.el.style.opacity = String(Math.min(1, b.age * 6, (b.life - b.age) * 2));
+      if (b.age >= b.life) {
+        b.el.remove();
+        this.bubble = null;
+      }
+    }
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       const f = this.floaters[i]!;
       f.age += dt;
@@ -819,6 +865,7 @@ export class GameView {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     for (const f of this.floaters) f.el.remove();
+    this.bubble?.el.remove();
     for (const n of this.npcs) n.label.remove();
   }
 }

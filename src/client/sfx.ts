@@ -251,6 +251,9 @@ export class Sfx {
         case 'echoRecovered':
           this.learn();
           break;
+        case 'milestone':
+          this.learn();
+          break;
         case 'levelUp':
           this.levelUp();
           break;

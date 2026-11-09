@@ -38,8 +38,26 @@ import {
 } from './mastery';
 import { angleBetween, clamp, dist, normalize, Rng, type Vec2 } from './math';
 import type { PsycheEventKind } from './psyche/emotions';
-import { applyDialogueChoice, DIALOGUES, type DialogueDef, type DialogueId, type NpcId } from './psyche/dialogues';
-import { psycheEvent, tickPsyche, type PsycheNotice } from './psyche/psyche';
+import { applyDialogueChoice, DIALOGUES, NPCS, type DialogueDef, type DialogueId, type NpcId } from './psyche/dialogues';
+import { eventText, psycheEvent, tickPsyche, type PsycheNotice } from './psyche/psyche';
+import {
+  diff,
+  SHIFT_HISTORY_MAX,
+  SHIFT_MIN,
+  snapshot,
+  strongState,
+  VOICE_ALWAYS,
+  VOICE_GAP_S,
+  voiceLine,
+  WHISPER_GAP_S,
+  WHISPER_TRAIT,
+  WHISPER_VALUE,
+  whisperText,
+  type Snapshot,
+  type StrongState,
+  type VoiceMoment,
+} from './psyche/shifts';
+import { VALUE_IDS, VALUE_NAMES, type ValueId } from './psyche/traits';
 import { STRONG_VALUE } from './psyche/traits';
 import {
   isSpell,
@@ -60,6 +78,14 @@ import { exitAt, inCircle, isBlocked, moveWithCollision, type GameMap, type Regi
 import { buildRegion, regionName } from './world/regions';
 import { computeStats, type CharacterStats } from './stats';
 import { BAG_SIZE, ITEM_DROP_CHANCE, itemDef, itemMinLevel, itemName, lootPool, QUALITY_NAMES, resonanceState, resonanceText, rollItem, rollQuality, SLOTS, WEAPON_FORMS, DISSONANCE_STRESS_PER_S, type ItemDrop, type Slot } from './items';
+
+/** Eventos da Psique que fazem o personagem falar. */
+const VOICE_FOR: Partial<Record<PsycheEventKind, VoiceMoment>> = {
+  nearDeath: 'nearDeath',
+  killBoss: 'killBoss',
+  perfectTide: 'perfectTide',
+  killStreak: 'killStreak',
+};
 
 /** Quanto tempo de jogo o Eco espera por você (s). */
 export const ECHO_LIFE_S = 30 * 60;
@@ -137,6 +163,9 @@ export type SimEvent =
   | { t: 'itemPickup'; x: number; y: number; quality: number }
   | { t: 'echoRecovered'; x: number; y: number }
   | { t: 'hint'; id: 'perfectTide'; duration: number }
+  | { t: 'whisper'; items: Array<{ kind: 'trait' | 'value'; id: string; dir: 1 | -1; text: string }> }
+  | { t: 'milestone'; value: ValueId; state: StrongState; title: string; lines: string[] }
+  | { t: 'voice'; text: string }
   | { t: 'dialogue'; id: DialogueId }
   | { t: 'telegraphLine'; x: number; y: number; dir: Vec2; length: number; width: number; duration: number }
   | { t: 'shot'; x: number; y: number }
@@ -199,6 +228,14 @@ export class Simulation {
   private lastPlayerPos: Vec2 = { x: 0, y: 0 };
   /** eventos gerados fora de um passo (ações do painel): saem no próximo passo */
   private outbox: SimEvent[] = [];
+  private stepping = false;
+  /** mudanças da Psique ainda não sussurradas ("trait:courage" → soma) */
+  private shiftAcc: Record<string, number> = {};
+  private lastWhisperAt = -999;
+  private lastVoiceAt = -999;
+  private whisperTick = 0;
+  /** se cada Valor está forte (a favor/contra) — para avisar quando cruza o limite */
+  private strong = {} as Record<ValueId, StrongState>;
   mods: FlowMods;
   /** tempo desta sessão (s) */
   time = 0;
@@ -257,6 +294,10 @@ export class Simulation {
     const saved = character.explored?.[this.map.id] ?? '';
     for (let i = 0; i < saved.length && i < this.explored.length; i++) this.explored[i] = saved.charCodeAt(i) === 49 ? 1 : 0;
     this.explore();
+    for (const v of VALUE_IDS) this.strong[v] = strongState(character.psyche.values[v]);
+    this.lastPlayerPos = { ...this.player.pos };
+    // Chegou de outra região: o personagem comenta.
+    if (arrive) this.outbox.push({ t: 'voice', text: voiceLine('newRegion', character.psyche.traits) });
     for (const m of Object.values(character.mastery)) m.sessionUses = 0;
     for (const slot of character.elos) {
       sanitizeSlot(slot);
@@ -357,8 +398,11 @@ export class Simulation {
     const d = DIALOGUES[id];
     const opt = d?.options[option];
     if (!d || !opt || this.c.dialogues.includes(id)) return null;
+    const before = snapshot(this.c.psyche);
     applyDialogueChoice(this.c.psyche.traits, this.c.psyche.values, opt, this.rng);
     this.c.dialogues.push(id);
+    const who = d.npc ? NPCS[d.npc].name : null;
+    this.psyShift(who ? `Conversa com ${who}: “${opt.text}”` : `“${opt.text}”`, before, true);
     return opt.reply;
   }
 
@@ -475,6 +519,7 @@ export class Simulation {
   step(input: PlayerInput, dt = TICK): SimEvent[] {
     this.events = this.outbox;
     this.outbox = [];
+    this.stepping = true;
     const before = this.player.pos;
     this.playerVel = { x: (before.x - this.lastPlayerPos.x) / dt, y: (before.y - this.lastPlayerPos.y) / dt };
     if (Math.hypot(this.playerVel.x, this.playerVel.y) > 12) this.playerVel = { x: 0, y: 0 }; // teleporte/renascer
@@ -506,7 +551,114 @@ export class Simulation {
       unmetNeeds: ((p.needs.fight < 0.2 ? 1 : 0) + (p.needs.rest < 0.2 ? 1 : 0)) / 2,
     });
     this.pushPsycheNotices(notices);
+    // Uma mudança grande que esperou o intervalo dos sussurros sai agora.
+    this.whisperTick += dt;
+    if (this.whisperTick >= 1) {
+      this.whisperTick = 0;
+      this.maybeWhisper(false);
+    }
+    this.stepping = false;
     return this.events;
+  }
+
+  /** Evento para o cliente: dentro de um passo sai junto; fora (ações do painel), no próximo. */
+  private emit(ev: SimEvent): void {
+    (this.stepping ? this.events : this.outbox).push(ev);
+  }
+
+  // -------------------------------------------------------------------------
+  // Sinal e voz: a Psique muda sem números, mas o jogador sente na hora
+  // -------------------------------------------------------------------------
+
+  /** Registra o que mudou desde `before` (com a causa), sussurra e avisa marcos. */
+  private psyShift(cause: string, before: Snapshot, immediate = false): void {
+    const c = this.c;
+    const d = diff(before, snapshot(c.psyche));
+    if (!d.length) return;
+    const changes = d
+      .filter((x) => Math.abs(x.d) >= SHIFT_MIN)
+      .map((x) => ({ kind: x.kind, id: x.id, dir: (x.d > 0 ? 1 : -1) as 1 | -1 }));
+    if (changes.length) {
+      const last = c.shifts[0];
+      if (last && last.cause === cause && this.playTime - last.t < 60) {
+        for (const ch of changes) {
+          const same = last.changes.find((x) => x.kind === ch.kind && x.id === ch.id);
+          if (same) same.dir = ch.dir;
+          else last.changes.push(ch);
+        }
+        last.t = this.playTime;
+      } else {
+        c.shifts.unshift({ t: this.playTime, cause, changes });
+        if (c.shifts.length > SHIFT_HISTORY_MAX) c.shifts.length = SHIFT_HISTORY_MAX;
+      }
+    }
+    for (const x of d) {
+      const k = `${x.kind}:${x.id}`;
+      this.shiftAcc[k] = (this.shiftAcc[k] ?? 0) + x.d;
+    }
+    this.maybeWhisper(immediate);
+    this.checkMilestones();
+  }
+
+  /** Sussurra as maiores mudanças acumuladas (no máximo duas), respeitando o intervalo. */
+  private maybeWhisper(immediate: boolean): void {
+    if (!immediate && this.playTime - this.lastWhisperAt < WHISPER_GAP_S) return;
+    const ready = Object.entries(this.shiftAcc)
+      .map(([k, v]) => {
+        const [kind, id] = k.split(':') as ['trait' | 'value', string];
+        return { k, kind, id, v, score: Math.abs(v) / (kind === 'value' ? WHISPER_VALUE : WHISPER_TRAIT) };
+      })
+      .filter((x) => x.score >= 1)
+      // Valores primeiro (são o que pesa nos Pactos e itens), depois traços, pela intensidade.
+      .sort((a, b) => (a.kind === b.kind ? b.score - a.score : a.kind === 'value' ? -1 : 1))
+      .slice(0, 2);
+    if (!ready.length) return;
+    this.lastWhisperAt = this.playTime;
+    for (const x of ready) this.shiftAcc[x.k] = 0;
+    this.emit({
+      t: 'whisper',
+      items: ready.map((x) => {
+        const dir = (x.v > 0 ? 1 : -1) as 1 | -1;
+        return { kind: x.kind, id: x.id, dir, text: whisperText(x.kind, x.id, dir) };
+      }),
+    });
+  }
+
+  /** Um Valor ficou forte (ou deixou de ser): diz o que isso abre ou fecha. */
+  private checkMilestones(): void {
+    const c = this.c;
+    for (const v of VALUE_IDS) {
+      const now = strongState(c.psyche.values[v]);
+      const was = this.strong[v] ?? 'none';
+      if (now === was) continue;
+      this.strong[v] = now;
+      const name = VALUE_NAMES[v];
+      const gear = [...Object.values(c.equipment), ...c.bag].filter((it) => it?.resonance === v);
+      const pacts = c.elos.filter((s) => s.unlocked && s.restrictions.some((r) => PACTS[r].value === v));
+      const lines: string[] = [];
+      let title: string;
+      if (now === 'for') {
+        title = `${name} agora guia suas escolhas`;
+        for (const it of gear) lines.push(`${itemName(it!)} ressoa com você.`);
+        if (pacts.length) lines.push(`Pactos de ${name} nos Elos ${pacts.map((s) => s.level).join(', ')} ganham +1 nível.`);
+        if (!lines.length) lines.push(`Itens e Pactos que pedem ${name} passam a render mais com você.`);
+      } else if (now === 'against') {
+        title = `Você se opõe a ${name}`;
+        for (const it of gear) lines.push(`${itemName(it!)} pesa em você.`);
+        if (pacts.length) lines.push(`Pactos de ${name} nos Elos ${pacts.map((s) => s.level).join(', ')} vão gerar estresse a cada uso.`);
+        if (!lines.length) lines.push(`Itens e Pactos que pedem ${name} vão pesar em você.`);
+      } else {
+        title = was === 'for' ? `${name} já não guia suas escolhas` : `Você já não se opõe a ${name}`;
+      }
+      this.emit({ t: 'milestone', value: v, state: now, title, lines });
+    }
+  }
+
+  /** Voz interna: uma fala curta no tom dos traços (momentos menores respeitam um intervalo). */
+  private voice(moment: VoiceMoment): void {
+    if (!VOICE_ALWAYS.has(moment) && this.playTime - this.lastVoiceAt < VOICE_GAP_S) return;
+    this.lastVoiceAt = this.playTime;
+    this.emit({ t: 'voice', text: voiceLine(moment, this.c.psyche.traits) });
   }
 
   private notice(text: string, tone: NoticeTone = 'info'): void {
@@ -541,7 +693,11 @@ export class Simulation {
   }
 
   private feel(kind: PsycheEventKind, magnitude = 1): void {
+    const before = snapshot(this.c.psyche);
     this.pushPsycheNotices(psycheEvent(this.c.psyche, kind, this.playTime, magnitude));
+    this.psyShift(eventText(kind), before);
+    const moment = VOICE_FOR[kind];
+    if (moment) this.voice(moment);
   }
 
   private train(id: MasteryId, baseXp: number, risk: number): void {
@@ -789,6 +945,7 @@ export class Simulation {
         p.bossEngaged = true;
         boss.aggro = true;
         this.notice('O Guardião da Ponte desperta.', 'warn');
+        this.voice('arena');
       } else if (p.bossEngaged && !inCircle(arena, p.pos, 5)) {
         p.bossEngaged = false;
         this.resetEnemy(boss);
@@ -1469,6 +1626,7 @@ export class Simulation {
 
   private respawn(): void {
     const p = this.player;
+    this.voice('respawn');
     this.projectiles = [];
     p.dead = false;
     p.pos = { ...this.map.playerStart };

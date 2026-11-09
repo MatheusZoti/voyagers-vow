@@ -281,3 +281,6 @@ export function tickPsyche(p: PsycheState, dt: number, ctx: PsycheTickContext): 
 export const activeCrisis = (p: PsycheState): CrisisId | null => (p.crisis.phase === 'active' ? p.crisis.id : null);
 export const dominant = (p: PsycheState) => dominantEmotion(p.emotions);
 export { addEmotion };
+
+/** Frase que descreve um evento da Psique (memórias, história de mudanças). */
+export const eventText = (kind: PsycheEventKind): string => MEMORY_TEXT[kind];

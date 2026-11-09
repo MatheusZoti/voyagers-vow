@@ -3,6 +3,13 @@ import { POSTURES, TIDE_LEVELS, tideLabel, tideLevel, type Posture } from '../si
 import { xpToNext } from '../sim/character';
 import { EMOTION_COLORS, EMOTION_NAMES } from '../sim/psyche/emotions';
 import { CRISIS_NAMES, dominant, STRESS_BAND_NAMES, stressBand } from '../sim/psyche/psyche';
+import { EMOTION_EFFECTS } from '../sim/psyche/shifts';
+import { TRAIT_GROUPS, type TraitId } from '../sim/psyche/traits';
+
+/** Cor de cada traço pelo grupo (a mesma da aba Psique); Valores em dourado. */
+const GROUP_COLOR: Record<string, string> = { Temperamento: '#ff7a6a', Mente: '#6fd0ff', Social: '#7ee0a8', 'Ambição': '#e2b65a' };
+const TRAIT_COLOR = Object.fromEntries(Object.entries(TRAIT_GROUPS).flatMap(([g, ids]) => ids.map((id) => [id, GROUP_COLOR[g]!]))) as Record<TraitId, string>;
+const VALUE_COLOR = '#f0cf7a';
 import type { NoticeTone, SimEvent, Simulation } from '../sim/sim';
 import { TECHNIQUES, type TechniqueId } from '../sim/techniques';
 
@@ -45,6 +52,11 @@ export class Hud {
   private hint = h('div', 'hint');
   private level = h('div', 'level');
   private miniWheel = h('div', 'mini-wheel');
+  /** efeito da emoção dominante no combate, em palavras */
+  private emoEffect = h('div', 'emo-effect');
+  private lastEmo = '';
+  /** sussurros da Psique (mudanças de traço e Valor) */
+  private whispers = h('div', 'whispers');
   private vignette = h('div', 'vignette');
   private prevCd: number[] = [];
   private lastWheel = '';
@@ -63,10 +75,10 @@ export class Hud {
     const stressBar = h('div', 'stress-bar');
     stressBar.append(this.stress);
     const txt = h('div', 'psy-text');
-    txt.append(this.emotion, stressBar, this.stressLabel, this.crisis);
+    txt.append(this.emotion, this.emoEffect, stressBar, this.stressLabel, this.crisis);
     psy.append(this.miniWheel, txt);
     psy.title = 'Psique (C)';
-    root.append(psy);
+    root.append(psy, this.whispers);
 
     // Topo direito: personagem.
     const who = h('div', 'panel who');
@@ -128,6 +140,8 @@ export class Hud {
   handleEvents(events: SimEvent[]): void {
     for (const ev of events) {
       if (ev.t === 'notice') this.pushNotice(ev.text, ev.tone);
+      if (ev.t === 'whisper') this.pushWhisper(ev.items);
+      if (ev.t === 'milestone') this.showMilestone(ev.title, ev.lines, ev.state);
       // Borda vermelha ao levar dano (reinicia a animação a cada golpe).
       if (ev.t === 'damage' && ev.target === 'player') {
         this.vignette.classList.remove('hit');
@@ -141,6 +155,30 @@ export class Hud {
         this.vignette.classList.add('perfect');
       }
     }
+  }
+
+  /** Sussurro: uma linha discreta, na cor do traço ou do Valor, que some sozinha. */
+  private pushWhisper(items: Array<{ kind: 'trait' | 'value'; id: string; dir: 1 | -1; text: string }>): void {
+    for (const it of items) {
+      const el = h('div', `whisper ${it.dir > 0 ? 'up' : 'down'}`);
+      el.textContent = it.text;
+      el.style.setProperty('--c', it.kind === 'value' ? VALUE_COLOR : (TRAIT_COLOR[it.id as TraitId] ?? '#cfd8e3'));
+      this.whispers.append(el);
+      setTimeout(() => el.classList.add('fade'), 5200);
+      setTimeout(() => el.remove(), 6400);
+    }
+    while (this.whispers.children.length > 4) this.whispers.firstElementChild?.remove();
+  }
+
+  /** Marco: um Valor ficou forte (ou deixou de ser) — o que isso abre ou fecha. */
+  private showMilestone(title: string, lines: string[], state: string): void {
+    const el = h('div', `milestone ${state}`);
+    el.innerHTML = `<span>Valor</span><b></b>${lines.map(() => '<p></p>').join('')}`;
+    el.querySelector('b')!.textContent = title;
+    el.querySelectorAll('p').forEach((p, i) => (p.textContent = lines[i] ?? ''));
+    document.body.append(el);
+    setTimeout(() => el.classList.add('out'), 5600);
+    setTimeout(() => el.remove(), 6800);
   }
 
   pushNotice(text: string, tone: NoticeTone = 'info'): void {
@@ -180,6 +218,16 @@ export class Hud {
     this.xp.style.width = `${(c.xp / xpToNext(c.level)) * 100}%`;
 
     const dom = dominant(psy);
+    // O efeito da emoção no combate, em palavras (só quando ela pesa de verdade).
+    const strongEmo = dom && dom.intensity >= 0.25 ? dom.id : '';
+    if (strongEmo !== this.lastEmo) {
+      this.lastEmo = strongEmo;
+      this.emoEffect.textContent = strongEmo ? EMOTION_EFFECTS[strongEmo] : '';
+      this.emoEffect.style.color = strongEmo ? EMOTION_COLORS[strongEmo] : '';
+      this.emoEffect.classList.remove('pulse');
+      void this.emoEffect.offsetWidth;
+      if (strongEmo) this.emoEffect.classList.add('pulse');
+    }
     if (dom) {
       this.emotion.textContent = EMOTION_NAMES[dom.id];
       this.emotion.style.color = EMOTION_COLORS[dom.id];

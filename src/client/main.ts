@@ -268,7 +268,7 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
   };
   window.addEventListener('beforeunload', onUnload);
   // Exposto para depuração no console.
-  (window as unknown as { vv: unknown }).vv = { sim, view, recorder };
+  (window as unknown as { vv: unknown }).vv = { sim, view, hud, recorder };
 
   stopGame = () => {
     hintEl?.remove();
