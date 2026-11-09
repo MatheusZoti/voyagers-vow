@@ -26,10 +26,10 @@ function castOn(spell: SpellId, kind: Enemy['kind'] = 'grunt') {
 }
 
 describe('Catálogo de magias', () => {
-  it('10 magias, 2 por afinidade, cada uma com um papel', () => {
-    expect(SPELL_IDS).toHaveLength(10);
+  it('20 magias, 4 por afinidade, cada uma com um papel', () => {
+    expect(SPELL_IDS).toHaveLength(20);
     for (const aff of ['vigor', 'mutation', 'forge', 'dominion', 'projection'] as const) {
-      expect(SPELL_IDS.filter((id) => SPELLS[id].affinity === aff)).toHaveLength(2);
+      expect(SPELL_IDS.filter((id) => SPELLS[id].affinity === aff)).toHaveLength(4);
       for (const id of STARTER_SPELLS[aff]) expect(SPELLS[id].affinity).toBe(aff);
     }
     for (const id of SPELL_IDS) expect(SPELLS[id].role.length).toBeGreaterThan(0);
@@ -55,6 +55,12 @@ describe('Catálogo de magias', () => {
       arc: ['arcDeg'],
       aura: ['pushM', 'stunS'],
       mark: ['charmS', 'charmDamageMult', 'charmSeekM'],
+      self: ['healFrac', 'healLowBonus', 'lowHpFrac'],
+      fan: ['fanCount', 'fanDeg'],
+      zone: ['durationS', 'tickS'],
+      ward: ['shieldFrac', 'shieldS'],
+      single: ['stunS'],
+      vortex: [],
     };
     for (const id of SPELL_IDS) {
       const fx = SPELLS[id].fx as unknown as Record<string, unknown>;
@@ -224,5 +230,98 @@ describe('Migração de saves', () => {
     expect(m.elos[0]!.technique).toBe('flowLance');
     expect(m.elos.some((e) => (e.technique as string) === 'signature')).toBe(false);
     void TICK;
+  });
+});
+
+/** Magia da segunda leva no Elo do nível mínimo dela (Elos 1–4 abertos para o teste). */
+function castHigh(spell: SpellId, seconds = 0.5) {
+  const def = SPELLS[spell];
+  const c = createCharacter('Teste', def.affinity as Affinity, 11);
+  c.knownSpells = [...SPELL_IDS];
+  for (const slot of c.elos) Object.assign(slot, { technique: null, unlocked: slot.level <= 4 });
+  const slot = c.elos[def.minLevel - 1]!;
+  slot.technique = spell;
+  const sim = new Simulation(c, 5);
+  const target = sim.enemies.find((e) => e.kind === 'grunt')!;
+  sim.player.pos = { x: target.pos.x - 2, y: target.pos.y };
+  const input = emptyInput();
+  input.aim = { ...target.pos };
+  input.useSlot = def.minLevel;
+  const events: SimEvent[] = [...sim.step(input)];
+  for (let i = 0; i < seconds / TICK; i++) events.push(...sim.step({ ...emptyInput(), aim: { ...target.pos } }));
+  return { sim, target, events, slot };
+}
+const hurt = (events: SimEvent[], id: number) => events.filter((e) => e.t === 'damage' && e.target === 'enemy' && e.id === id && e.amount > 0).length;
+
+describe('Segunda leva de magias', () => {
+  it.each(['quake', 'needleFan', 'fallingStar', 'acidPool', 'razorWhip', 'groundSpikes', 'kneel', 'gravityWell'] as const)(
+    '%s fere o alvo à frente',
+    (spell) => {
+      const { target, events } = castHigh(spell, 1.6);
+      expect(hurt(events, target.id)).toBeGreaterThan(0);
+    },
+  );
+
+  it('Segundo Fôlego cura, e cura mais com pouca vida', () => {
+    const heal = (frac: number) => {
+      const def = SPELLS.secondWind;
+      const c = createCharacter('Teste', 'vigor', 11);
+      for (const slot of c.elos) Object.assign(slot, { technique: null, unlocked: slot.level <= 4 });
+      c.elos[def.minLevel - 1]!.technique = 'secondWind';
+      const sim = new Simulation(c, 5);
+      sim.player.hp = Math.round(sim.maxHp() * frac);
+      const before = sim.player.hp;
+      sim.step({ ...emptyInput(), useSlot: def.minLevel });
+      return sim.player.hp - before;
+    };
+    expect(heal(0.6)).toBeGreaterThan(0);
+    expect(heal(0.2)).toBeGreaterThan(heal(0.6));
+  });
+
+  it('Égide Conjurada absorve dano antes da vida', () => {
+    const def = SPELLS.conjuredWard;
+    const c = createCharacter('Teste', 'forge', 11);
+    for (const slot of c.elos) Object.assign(slot, { technique: null, unlocked: slot.level <= 4 });
+    c.elos[def.minLevel - 1]!.technique = 'conjuredWard';
+    const sim = new Simulation(c, 5);
+    sim.player.pos = { x: 30, y: 24 };
+    sim.step({ ...emptyInput(), useSlot: def.minLevel });
+    expect(sim.player.shield).toBeGreaterThan(0);
+    const hp = sim.player.hp;
+    sim.damagePlayer(5, { heavy: false });
+    expect(sim.player.hp).toBe(hp);
+  });
+
+  it('Leque de Agulhas de perto acerta o mesmo alvo várias vezes', () => {
+    const { target, events } = castHigh('needleFan', 0.1);
+    expect(hurt(events, target.id)).toBeGreaterThan(1);
+  });
+
+  it('Poça Corrosiva fere em pulsos', () => {
+    const { target, events } = castHigh('acidPool', 2);
+    expect(hurt(events, target.id)).toBeGreaterThan(2);
+  });
+
+  it('Ordem: Ajoelhe atordoa o alvo', () => {
+    const { target } = castHigh('kneel', 0.1);
+    expect(target.stun).toBeGreaterThan(1);
+  });
+
+  it('Estacas do Chão prendem o alvo', () => {
+    const { sim, target } = castHigh('groundSpikes', 0.5);
+    expect(target.rootUntil).toBeGreaterThan(sim.time);
+  });
+
+  it('Poço de Gravidade puxa para o ponto mirado', () => {
+    const def = SPELLS.gravityWell;
+    const c = createCharacter('Teste', 'dominion', 11);
+    for (const slot of c.elos) Object.assign(slot, { technique: null, unlocked: slot.level <= 4 });
+    c.elos[def.minLevel - 1]!.technique = 'gravityWell';
+    const sim = new Simulation(c, 5);
+    const g = sim.enemies.find((e) => e.kind === 'grunt')!;
+    const at = { x: g.pos.x + 2.5, y: g.pos.y };
+    sim.player.pos = { x: g.pos.x - 3, y: g.pos.y };
+    sim.step({ ...emptyInput(), aim: at, useSlot: def.minLevel });
+    expect(Math.hypot(g.pos.x - at.x, g.pos.y - at.y)).toBeLessThan(1.5);
   });
 });
