@@ -1,6 +1,7 @@
 import { createCharacter, maxHpFor, refreshEloUnlocks } from '../src/sim/character';
 import { AFFINITY_RING, type Affinity } from '../src/sim/flow/affinity';
-import { dist, normalize } from '../src/sim/math';
+import { dist, normalize, Rng } from '../src/sim/math';
+import { rollItem, type Slot } from '../src/sim/items';
 import { tideLevel } from '../src/sim/flow/flow';
 import { emptyInput, Simulation, TICK, type PlayerInput } from '../src/sim/sim';
 import { SPELLS, type SpellId } from '../src/sim/techniques';
@@ -77,11 +78,12 @@ export interface ScenarioResult {
 
 export function runScenario(
   affinity: Affinity,
-  scenario: { name: string; level: number; kinds: Array<{ kind: EnemyKind; n: number }>; skill: number; limit?: number },
+  scenario: { name: string; level: number; kinds: Array<{ kind: EnemyKind; n: number }>; skill: number; limit?: number; kit?: number },
 ): ScenarioResult {
   const c = createCharacter('Bot', affinity, 77);
   c.level = scenario.level;
   refreshEloUnlocks(c);
+  if (scenario.kit) equipKit(c, scenario.kit);
   const sim = new Simulation(c, 13);
   sim.player.hp = maxHpFor(c);
   // Mantém só os inimigos do cenário, perto de um ponto aberto do campo.
@@ -121,12 +123,29 @@ export function runScenario(
   };
 }
 
+/** Kit "esperado" do tier: arma, capuz, peito e botas de qualidade Boa, sem afixos sorteados. */
+export const KIT: Record<number, Partial<Record<Slot, string>>> = {
+  1: { weapon: 'huntKnife', head: 'leatherHood', chest: 'padded', feet: 'trailBoots' },
+  2: { weapon: 'varnBlade', head: 'bronzeHelm', chest: 'scaleMail', feet: 'runnerBoots' },
+};
+function equipKit(c: ReturnType<typeof createCharacter>, tier: number): void {
+  const rng = new Rng(5);
+  for (const [slot, id] of Object.entries(KIT[tier] ?? {}) as Array<[Slot, string]>) {
+    const it = rollItem(rng, id, c.nextItemUid++, 2);
+    it.affixes = [];
+    c.equipment[slot] = it;
+  }
+}
+
 export const SCENARIOS = [
   { name: 'Carniçais x2 (nv 1)', level: 1, kinds: [{ kind: 'grunt' as const, n: 2 }], skill: 0 },
   { name: 'Matilha x4 + Espreitador (nv 2)', level: 2, kinds: [{ kind: 'grunt' as const, n: 4 }, { kind: 'stalker' as const, n: 1 }], skill: 0 },
   { name: 'Bruto (nv 3)', level: 3, kinds: [{ kind: 'brute' as const, n: 1 }], skill: 1 },
   { name: 'Guardião (nv 4, hábil)', level: 4, kinds: [{ kind: 'boss' as const, n: 1 }], skill: 1 },
   { name: 'Guardião (nv 4, sem Maré)', level: 4, kinds: [{ kind: 'boss' as const, n: 1 }], skill: 0 },
+  { name: 'Bruto (nv 3, kit T1)', level: 3, kinds: [{ kind: 'brute' as const, n: 1 }], skill: 1, kit: 1 },
+  { name: 'Guardião (nv 4, hábil, kit T1)', level: 4, kinds: [{ kind: 'boss' as const, n: 1 }], skill: 1, kit: 1 },
+  { name: 'Guardião (nv 5, hábil, kit T1)', level: 5, kinds: [{ kind: 'boss' as const, n: 1 }], skill: 1, kit: 1 },
 ];
 
 export function balanceReport(): ScenarioResult[] {

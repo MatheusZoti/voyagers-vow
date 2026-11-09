@@ -8,6 +8,23 @@ import { STRONG_VALUE, TRAIT_GROUPS, VALUE_NAMES } from '../../sim/psyche/traits
 import type { Simulation } from '../../sim/sim';
 import { formatStat, tierLevels, type StatLine } from '../../sim/stats';
 import {
+  BAG_SIZE,
+  formatItemStat,
+  ITEM_STAT_NAMES,
+  itemDef,
+  itemMinLevel,
+  itemName,
+  itemStats,
+  QUALITY_COLORS,
+  QUALITY_NAMES,
+  SLOT_NAMES,
+  SLOTS,
+  WEAPON_FORMS,
+  type Item,
+  type ItemStat,
+  type Slot,
+} from '../../sim/items';
+import {
   isSpell,
   MASTERY_NAMES,
   NATURE_NAMES,
@@ -251,12 +268,23 @@ export class Panels {
 
   private onClick(e: MouseEvent): void {
     const t = (e.target as HTMLElement).closest<HTMLElement>(
-      '[data-tab],[data-a],[data-mem],[data-elo],[data-mod],[data-node],[data-open],[data-open-pact],[data-rm-pact],[data-codex],[data-pick],[data-cat-act],[data-f-aff],[data-f-level],[data-f-kind],[data-goto-pact],[data-goto-spell]',
+      '[data-tab],[data-a],[data-gear-eq],[data-gear-bag],[data-gear-act],[data-mem],[data-elo],[data-mod],[data-node],[data-open],[data-open-pact],[data-rm-pact],[data-codex],[data-pick],[data-cat-act],[data-f-aff],[data-f-level],[data-f-kind],[data-goto-pact],[data-goto-spell]',
     );
     if (!t) return;
     const c = this.sim.c;
     if (t.dataset.a === 'close') return this.close();
     if (t.dataset.tab) return this.open(t.dataset.tab as TabId);
+    if (t.dataset.gearEq) {
+      this.gearSel = { slot: t.dataset.gearEq as Slot };
+      this.gearMsg = '';
+      return this.render();
+    }
+    if (t.dataset.gearBag) {
+      this.gearSel = { uid: +t.dataset.gearBag };
+      this.gearMsg = '';
+      return this.render();
+    }
+    if (t.dataset.gearAct) return this.gearAction(t.dataset.gearAct);
     if (t.dataset.node) {
       this.selectedNode = t.dataset.node as MasteryId;
       return this.render();
@@ -372,8 +400,98 @@ export class Panels {
   // -------------------------------------------------------------------------
 
   // -------------------------------------------------------------------------
-  // Atributos: números derivados, cada um com a conta de onde vem
+  // Atributos: números derivados, cada um com a conta de onde vem; equipamento e mochila
   // -------------------------------------------------------------------------
+
+  /** Item selecionado na aba Atributos (vestido num espaço ou na mochila). */
+  private gearSel: { slot?: Slot; uid?: number } | null = null;
+  private gearMsg = '';
+
+  private selectedItem(): { item: Item; worn: boolean } | null {
+    const c = this.sim.c;
+    const sel = this.gearSel;
+    if (!sel) return null;
+    if (sel.slot) {
+      const it = c.equipment[sel.slot];
+      return it ? { item: it, worn: true } : null;
+    }
+    const it = c.bag.find((x) => x.uid === sel.uid);
+    return it ? { item: it, worn: false } : null;
+  }
+
+  private gearAction(act: string): void {
+    const sim = this.sim;
+    const cur = this.selectedItem();
+    if (!cur) return;
+    let err: string | null = null;
+    if (act === 'equip') {
+      err = sim.equipItem(cur.item.uid);
+      if (!err) this.gearSel = { slot: itemDef(cur.item)!.slot };
+    } else if (act === 'unequip') {
+      err = sim.unequip(itemDef(cur.item)!.slot);
+      if (!err) this.gearSel = { uid: cur.item.uid };
+    } else if (act === 'discard') {
+      sim.discardItem(cur.item.uid);
+      this.gearSel = null;
+      this.gearMsg = 'Jogado no chão, atrás de você. Dá para pegar de volta por um tempo.';
+    }
+    if (err) this.gearMsg = err;
+    else if (act !== 'discard') this.gearMsg = '';
+    this.sfx?.ui();
+    this.render();
+  }
+
+  private slotIcon(slot: Slot, it?: Item): string {
+    if (slot === 'weapon') {
+      const form = it ? itemDef(it)?.form : undefined;
+      return form === 'mace' ? 'mace' : form === 'staff' ? 'staff' : form === 'blade' ? 'blade' : 'fists';
+    }
+    return { head: 'helm', chest: 'armor', feet: 'boots', focus: 'amulet', weapon: 'fists' }[slot];
+  }
+
+  private itemDetail(): string {
+    const c = this.sim.c;
+    const cur = this.selectedItem();
+    const msg = this.gearMsg ? `<p class="gear-msg">${escapeHtml(this.gearMsg)}</p>` : '';
+    if (!cur)
+      return `<section class="card gear-detail"><h4>Item</h4><p class="empty-note">Clique num espaço ou num item da mochila para ver a ficha dele.</p>${msg}</section>`;
+    const { item, worn } = cur;
+    const d = itemDef(item)!;
+    const col = QUALITY_COLORS[item.quality - 1];
+    const need = itemMinLevel(d);
+    const mine = itemStats(item);
+    const other = worn ? undefined : c.equipment[d.slot];
+    const theirs = other ? itemStats(other) : {};
+    const keys = [...new Set([...Object.keys(mine), ...Object.keys(theirs)])] as ItemStat[];
+    const rows = keys
+      .map((k) => {
+        const v = mine[k] ?? 0;
+        const delta = v - (theirs[k] ?? 0);
+        const cmp =
+          worn || Math.abs(delta) < 1e-6
+            ? ''
+            : `<i class="${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '▲' : '▼'} ${formatItemStat(k, Math.abs(delta)).replace('+', '')}</i>`;
+        return `<div class="kv"><span>${ITEM_STAT_NAMES[k]}</span><b>${v ? formatItemStat(k, v) : '—'} ${cmp}</b></div>`;
+      })
+      .join('');
+    const form = d.form ? WEAPON_FORMS[d.form] : null;
+    const aff = item.affinity ? `<div class="kv"><span>Afinidade do Foco</span><b style="color:${AFFINITY_COLORS[item.affinity]}">${AFFINITY_NAMES[item.affinity]}</b></div>` : '';
+    const lock = this.sim.gearLock();
+    const lowLevel = c.level < need;
+    const actions = worn
+      ? `<button class="btn" data-gear-act="unequip" ${lock ? 'disabled' : ''}>Tirar</button>`
+      : `<button class="btn primary" data-gear-act="equip" ${lock || lowLevel ? 'disabled' : ''}>${other ? 'Trocar' : 'Vestir'}</button><button class="btn" data-gear-act="discard">Jogar fora</button>`;
+    return `<section class="card gear-detail" style="--q:${col}">
+      <div class="gd-head"><span class="gd-ic">${icon(this.slotIcon(d.slot, item), 30)}</span>
+        <div><h3>${escapeHtml(itemName(item))}</h3><span class="muted">${QUALITY_NAMES[item.quality - 1]} · Tier ${d.tier} · ${SLOT_NAMES[d.slot]}</span></div></div>
+      <p class="card-sub">${escapeHtml(d.desc)}${form ? ` <b>${form.name}:</b> ${escapeHtml(form.desc)}` : ''}</p>
+      ${aff}${rows}
+      <div class="kv"><span>Requer</span><b class="${lowLevel ? 'bad' : ''}">nível ${need}</b></div>
+      ${!worn && other ? `<p class="muted gd-vs">Comparado com ${escapeHtml(itemName(other))} (vestido).</p>` : ''}
+      <div class="gd-actions">${actions}</div>
+      ${lock && !msg ? `<p class="gear-msg">${escapeHtml(lock)}</p>` : msg}
+    </section>`;
+  }
 
   private statsTab(): string {
     const sim = this.sim;
@@ -388,20 +506,49 @@ export class Panels {
         <div class="stat-big">${formatStat(l.kind, l.value)}</div>
         <div class="stat-parts">${
           l.parts.length
-            ? l.parts.map((p, i) => `<div class="kv"><span>${escapeHtml(p.source)}</span><b>${formatStat(l.kind, p.value, i > 0)}</b></div>`).join('')
+            ? l.parts.map((p, i) => `<div class="kv"><span>${escapeHtml(p.source)}</span><b>${formatStat(l.kind, p.value, i > 0 || l.kind === 'pct')}</b></div>`).join('')
             : '<p class="empty-note">Nenhuma fonte ainda.</p>'
         }</div>
       </section>`;
+    const specials = st.lines.filter((l) => l.special && l.parts.length);
+    const sel = this.gearSel;
+    const slots = SLOTS.map((slot) => {
+      const it = c.equipment[slot];
+      const on = sel?.slot === slot;
+      const col = it ? QUALITY_COLORS[it.quality - 1] : 'transparent';
+      return `<button class="gear-slot ${it ? '' : 'empty'} ${on ? 'on' : ''}" data-gear-eq="${slot}" style="--q:${col}">
+          <span class="gs-ic">${icon(this.slotIcon(slot, it), 22)}</span>
+          <span class="gs-txt"><small>${SLOT_NAMES[slot]}</small><b>${it ? escapeHtml(itemName(it)) : slot === 'weapon' ? 'Punhos' : 'vazio'}</b></span>
+        </button>`;
+    }).join('');
+    const bag = Array.from({ length: BAG_SIZE }, (_, i) => {
+      const it = c.bag[i];
+      if (!it) return '<span class="bag-cell empty"></span>';
+      const d = itemDef(it);
+      const on = sel?.uid === it.uid;
+      const tooLow = d && c.level < itemMinLevel(d);
+      return `<button class="bag-cell ${on ? 'on' : ''} ${tooLow ? 'low' : ''}" data-gear-bag="${it.uid}" style="--q:${QUALITY_COLORS[it.quality - 1]}" title="${escapeHtml(itemName(it))} (${QUALITY_NAMES[it.quality - 1]})">${icon(d ? this.slotIcon(d.slot, it) : 'empty', 20)}</button>`;
+    }).join('');
     return `<div class="grid stats">
       <section class="card level-card">
         <h4>Nível <em>${c.level}</em> ${tip(
-          'O nível cresce com a experiência de combate. Cada nível dá Vida e Fluxo máximo, libera Elos (3 no nível 3, 4 no nível 5) e, em breve, permitirá usar equipamentos melhores. Morrer custa experiência (penalidade de morte).',
+          'O nível cresce com a experiência de combate. Cada nível dá Vida e Fluxo máximo, libera Elos (3 no nível 3, 4 no nível 5) e permite vestir equipamentos de tiers mais altos. Morrer custa experiência (penalidade de morte).',
         )}</h4>
         <div class="bigbar"><i style="width:${Math.min(100, (c.xp / next) * 100)}%"></i></div>
         <div class="kv"><span>Experiência</span><b>${c.xp} / ${next}</b></div>
         <div class="kv"><span>${escapeHtml(sim.map.name)} (tier ${sim.map.tier})</span><b>nível recomendado ${band.min}–${band.max} · ${where}</b></div>
       </section>
-      ${st.lines.map(statCard).join('')}
+      <section class="card gear-card">
+        <h4>Equipamento ${tip('O que você veste. A arma decide o Golpe básico e dá o Poder; elmo e peito dão Vida e Guarda; botas, Velocidade; o Foco fortalece uma afinidade. Equipamentos nunca mudam o nível das magias. Não dá para trocar em combate.')}</h4>
+        <div class="gear-slots">${slots}</div>
+      </section>
+      <section class="card bag-card">
+        <h4>Mochila <span class="muted">${c.bag.length}/${BAG_SIZE}</span> ${tip('Equipamentos que você pegou. Criaturas deixam itens do tier da região; o brilho é a qualidade (Comum, Bom, Excelente, Primoroso, Obra-prima). Itens em vermelho pedem um nível maior.')}</h4>
+        <div class="bag-grid">${bag}</div>
+      </section>
+      ${this.itemDetail()}
+      ${st.lines.filter((l) => !l.special).map(statCard).join('')}
+      ${specials.map(statCard).join('')}
     </div>`;
   }
 

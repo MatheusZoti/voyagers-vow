@@ -7,6 +7,7 @@ import type { Vec2 } from '../../sim/math';
 import type { SimEvent, Simulation } from '../../sim/sim';
 import type { Enemy } from '../../sim/world/entities';
 import { floorAt } from '../../sim/world/map';
+import { QUALITY_COLORS } from '../../sim/items';
 import { Effects } from './fx';
 import {
   animateRig,
@@ -77,6 +78,7 @@ export class GameView {
   private npcs: Array<{ id: NpcId; rig: Rig; label: HTMLDivElement }> = [];
   private books: Array<{ id: string; group: THREE.Group; glow: THREE.Object3D }> = [];
   private dropMeshes = new Map<number, THREE.Group>();
+  private itemMeshes = new Map<number, THREE.Group>();
   private projMeshes = new Map<number, THREE.Mesh>();
   private thornGeo = new THREE.ConeGeometry(0.09, 0.7, 4);
   private thornMat = mat('#f0dcae', { emissive: '#ff8a3a', emissiveIntensity: 0.6 });
@@ -406,6 +408,11 @@ export class GameView {
           }
           break;
         }
+        case 'itemPickup': {
+          const color = QUALITY_COLORS[ev.quality - 1] ?? '#ffffff';
+          this.fx.burst({ x: ev.x, y: ev.y }, color, 14, 2.2);
+          break;
+        }
         case 'learn':
           this.fx.pillar({ x: ev.x, y: ev.y }, AFFINITY_COLORS[SPELLS[ev.spell].affinity], 5, 1.2);
           this.fx.burst({ x: ev.x, y: ev.y }, AFFINITY_COLORS[SPELLS[ev.spell].affinity], 24, 3);
@@ -656,6 +663,37 @@ export class GameView {
       if (!sim.drops.some((d) => d.id === id)) {
         this.scene.remove(g);
         this.dropMeshes.delete(id);
+      }
+    }
+    // Equipamentos no chão: um embrulho de couro com o brilho da qualidade.
+    for (const d of sim.itemDrops) {
+      let g = this.itemMeshes.get(d.id);
+      if (!g) {
+        const color = QUALITY_COLORS[d.item.quality - 1] ?? '#ffffff';
+        g = new THREE.Group();
+        const bundle = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22, 0), mat('#8a6a44'));
+        bundle.scale.set(1.3, 0.75, 1);
+        bundle.castShadow = true;
+        const strap = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 5, 12), mat(color, { emissive: color, emissiveIntensity: 0.9 }));
+        strap.rotation.x = Math.PI / 2;
+        const beam = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.05, 0.16, 1.6, 8, 1, true),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: d.item.quality >= 3 ? 0.4 : 0.18, depthWrite: false, blending: THREE.AdditiveBlending }),
+        );
+        beam.position.y = 0.8;
+        g.add(bundle, strap, beam);
+        if (d.item.quality >= 3) g.add(new THREE.PointLight(color, 1.6, 3, 2));
+        g.position.set(d.pos.x, this.gh(d.pos.x, d.pos.y) + 0.18, d.pos.y);
+        this.scene.add(g);
+        this.itemMeshes.set(d.id, g);
+      }
+      g.visible = sim.isExplored(d.pos.x, d.pos.y);
+      g.children[0]!.rotation.y += dt * 0.8;
+    }
+    for (const [id, g] of this.itemMeshes) {
+      if (!sim.itemDrops.some((d) => d.id === id)) {
+        this.scene.remove(g);
+        this.itemMeshes.delete(id);
       }
     }
     // Espinhos em voo.

@@ -18,6 +18,8 @@ O jogador escolhe a afinidade inicial entre cinco, num pentágono (Singular fica
 
 As magias são fixas, feitas por nós: cada uma tem uma afinidade e um papel (golpe, reforço, projétil…). Elas caem de criaturas e de livros. Para equipar uma magia, o Elo precisa ser no mínimo **1 + a distância no pentágono**. Exemplo: um personagem de Vigor usa magias de Vigor no Elo 1, de Mutação ou Projeção no Elo 2 e de Forja ou Domínio no Elo 3. Equipada no mínimo, a magia funciona como nível 1. **Restrições** elevam o nível efetivo (+1 por nível) até a faixa Além-limite (9–12).
 
+**Atributos e equipamento.** Não há pontos para distribuir: Vida, Fluxo, Poder, Guarda e Velocidade são a soma do nível, da Maestria e do que o personagem veste (aba **Atributos**, tecla I, mostra a conta de cada número). Os equipamentos são feitos à mão, como as magias, em 5 espaços: **Arma** (muda o Golpe básico — punhos, lâmina, maça ou cajado — e dá o Poder), **Cabeça**, **Peito**, **Pés** e **Foco** (fortalece uma afinidade). O tier do item é o da região onde cai; a qualidade (Comum → Obra-prima) traz afixos ligados à Maré, ao Véu e ao Fluxo. Equipamento nunca muda o nível das magias.
+
 > Princípio central: o poder não vem só do loot. Quem o personagem é decide o que ele faz bem, e o que ele faz muda quem ele é.
 
 ## Rodando
@@ -46,7 +48,7 @@ npm run build
 
 ## Balanceamento
 
-`npm test` roda um bot que joga cenários fixos (Carniçais, matilha, Bruto, Guardião) com as cinco afinidades e imprime tempo de luta e vida perdida. Por enquanto o Guardião no nível 4 é difícil de propósito (o balanceamento virá com equipamentos, níveis e atributos); o teste falha se usar a Maré deixar de fazer diferença clara contra ele. Para ver a tabela:
+`npm test` roda um bot que joga cenários fixos (Carniçais, matilha, Bruto, Guardião) com as cinco afinidades e imprime tempo de luta e vida perdida. Sem equipamento o Guardião no nível 4 é difícil de propósito; com o kit esperado do tier 1 (qualidade Boa) o bot hábil o vence no nível 5 com sufoco. Os testes falham se usar a Maré deixar de fazer diferença clara contra ele ou se o kit do tier deixar de bastar. Para ver a tabela:
 
 ```bash
 npx vitest run tests/balance.test.ts --silent=false

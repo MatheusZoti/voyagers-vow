@@ -9,7 +9,7 @@ import {
   type Character,
 } from './character';
 import { equipError, evaluateSlot, PACTS, trimMods, type EffectiveInfo, type EloSlot } from './elos';
-import { AFFINITY_COLORS, AFFINITY_NAMES } from './flow/affinity';
+import { AFFINITY_COLORS, AFFINITY_NAMES, type Affinity } from './flow/affinity';
 import {
   computeFlowMods,
   createTide,
@@ -59,6 +59,7 @@ import { armorReduction, ENEMIES, SPELL_DROP_CHANCE, tierScale, type Projectile,
 import { exitAt, inCircle, isBlocked, moveWithCollision, type GameMap, type RegionId } from './world/map';
 import { buildRegion, regionName } from './world/regions';
 import { computeStats, type CharacterStats } from './stats';
+import { BAG_SIZE, ITEM_DROP_CHANCE, itemDef, itemMinLevel, itemName, lootPool, QUALITY_NAMES, rollItem, rollQuality, WEAPON_FORMS, type ItemDrop, type Slot } from './items';
 import { TUNING } from './tuning';
 
 export const TICK = 1 / 30;
@@ -130,6 +131,7 @@ export type SimEvent =
   | { t: 'slash'; x: number; y: number; dir: Vec2; range: number; arc: number; color: string }
   | { t: 'mark'; id: number; color: string }
   | { t: 'learn'; spell: SpellId; x: number; y: number }
+  | { t: 'itemPickup'; x: number; y: number; quality: number }
   | { t: 'dialogue'; id: DialogueId }
   | { t: 'telegraphLine'; x: number; y: number; dir: Vec2; length: number; width: number; duration: number }
   | { t: 'shot'; x: number; y: number }
@@ -175,6 +177,9 @@ export class Simulation {
   traps: Trap[];
   echo: Echo | null = null;
   drops: SpellDrop[] = [];
+  /** equipamentos no chão, esperando alguém passar por cima */
+  itemDrops: ItemDrop[] = [];
+  private bagFullWarnAt = -99;
   /** projéteis inimigos em voo */
   projectiles: Projectile[] = [];
   private traveling = false;
@@ -233,7 +238,7 @@ export class Simulation {
     for (const s of this.map.spawns) this.spawn(s.kind, { x: s.x + 0.5, y: s.y + 0.5 });
     if (this.map.bossSpawn) this.spawn('boss', { ...this.map.bossSpawn });
     this.traps = this.map.traps.map((p) => ({ pos: { ...p }, armed: true, revealed: false, rearmIn: 0 }));
-    this.mods = computeFlowMods(character.psyche, 'open');
+    this.mods = this.withGear(computeFlowMods(character.psyche, 'open'));
     this.explored = new Uint8Array(this.map.w * this.map.h);
     const saved = character.explored?.[this.map.id] ?? '';
     for (let i = 0; i < saved.length && i < this.explored.length; i++) this.explored[i] = saved.charCodeAt(i) === 49 ? 1 : 0;
@@ -356,12 +361,21 @@ export class Simulation {
   /** Atributos derivados do personagem (recalculados quando nível, Maestria ou Pactos mudam). */
   stats(): CharacterStats {
     const c = this.c;
-    const key = `${c.level}|${c.lifeCostLost}|${displayLevel(c.mastery.capacity)}`;
+    const gear = Object.values(c.equipment)
+      .map((it) => it?.uid ?? 0)
+      .join(',');
+    const key = `${c.level}|${c.lifeCostLost}|${displayLevel(c.mastery.capacity)}|${gear}`;
     if (key !== this.statsKey || !this.statsCache) {
       this.statsKey = key;
       this.statsCache = computeStats(c);
     }
     return this.statsCache;
+  }
+
+  /** Efeitos do equipamento que entram nos modificadores do Fluxo (Maré mais rápida). */
+  private withGear(m: FlowMods): FlowMods {
+    m.tideSpeed *= this.stats().tideSpeed;
+    return m;
   }
 
   flowMax(): number {
@@ -408,8 +422,10 @@ export class Simulation {
   slotCost(slot: EloSlot, info: EffectiveInfo): number {
     const tech = TECHNIQUES[slot.technique as TechniqueId];
     const res = resonance(tech.tags, this.c.psyche.traits);
+    const st = this.stats();
+    const focus = st.focus && st.focus.affinity === tech.affinity ? st.focus.cost : 1;
     return (
-      ((info.costPct / 100) * this.flowMax() * masteryCostMult(this.c.mastery[tech.id]) * this.mods.techniqueCost * TUNING.spellCost) /
+      ((info.costPct / 100) * this.flowMax() * masteryCostMult(this.c.mastery[tech.id]) * this.mods.techniqueCost * TUNING.spellCost * st.flowCost * focus) /
       Math.max(0.5, res)
     );
   }
@@ -449,7 +465,7 @@ export class Simulation {
     const p = this.player;
     const psy = this.c.psyche;
 
-    this.mods = computeFlowMods(psy, p.posture, p.tide.value);
+    this.mods = this.withGear(computeFlowMods(psy, p.posture, p.tide.value));
 
     if (p.dead) {
       p.respawnIn -= dt;
@@ -553,7 +569,7 @@ export class Simulation {
         /* Pânico força o Silêncio */
       } else {
         p.posture = wanted;
-        this.mods = computeFlowMods(c.psyche, p.posture, p.tide.value);
+        this.mods = this.withGear(computeFlowMods(c.psyche, p.posture, p.tide.value));
       }
     }
     if (p.posture === 'silence' && !m.silenceAllowed && !m.forcedPosture) p.posture = 'open';
@@ -669,6 +685,22 @@ export class Simulation {
         this.acquireSpell(d.spell, d.pos, 'Grimório');
       }
     }
+    for (const d of [...this.itemDrops]) {
+      if (this.time > d.expiresAt) this.itemDrops = this.itemDrops.filter((x) => x !== d);
+      else if (dist(d.pos, p.pos) < 1.1 && !p.dead) {
+        if (c.bag.length >= BAG_SIZE) {
+          if (this.time - this.bagFullWarnAt > 4) {
+            this.bagFullWarnAt = this.time;
+            this.notice('Mochila cheia. Jogue algo fora na aba Atributos (I).', 'warn');
+          }
+          continue;
+        }
+        this.itemDrops = this.itemDrops.filter((x) => x !== d);
+        c.bag.push(d.item);
+        this.events.push({ t: 'itemPickup', x: d.pos.x, y: d.pos.y, quality: d.item.quality });
+        this.notice(`Você pegou: ${itemName(d.item)} (${QUALITY_NAMES[d.item.quality - 1]}).`, 'good');
+      }
+    }
     for (const b of this.map.books) {
       if (c.booksRead.includes(b.id) || Math.hypot(b.x - p.pos.x, b.y - p.pos.y) > 1.4) continue;
       c.booksRead.push(b.id);
@@ -772,9 +804,10 @@ export class Simulation {
     const p = this.player;
     p.combo = p.comboTimer > 0 ? (p.combo + 1) % 3 : 0;
     const finisher = p.combo === 2;
-    const range = finisher ? 2.15 : 1.85;
-    const arc = ((finisher ? 75 : 55) * Math.PI) / 180;
-    p.basicCd = finisher ? 0.55 : 0.36;
+    const form = WEAPON_FORMS[this.stats().weapon];
+    const range = (finisher ? 2.15 : 1.85) + form.reach;
+    const arc = (((finisher ? 75 : 55) + form.arc) * Math.PI) / 180;
+    p.basicCd = (finisher ? 0.55 : 0.36) * form.cadence;
     p.comboTimer = 0.95;
     p.attackAnim = finisher ? 0.32 : 0.24;
     // Pequeno avanço a cada golpe: dá peso ao ataque.
@@ -790,9 +823,9 @@ export class Simulation {
       const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
       if (d > 0.6 && angleBetween(to, p.facing) > arc) continue;
       hitAny = true;
-      const dmg = 10 * (finisher ? 1.5 : 1) * this.outgoingMult() * sharp * mastery;
-      this.hitEnemy(e, dmg, { ignoreArmor: false, source: 'basic', knock: finisher ? 7 : 2.5, big: finisher });
-      if (finisher && !e.def.elite) this.stunEnemy(e, 0.3);
+      const dmg = 10 * form.damage * (finisher ? 1.5 : 1) * this.outgoingMult() * sharp * mastery;
+      this.hitEnemy(e, dmg, { ignoreArmor: false, source: 'basic', knock: (finisher ? 7 : 2.5) * form.knock, big: finisher });
+      if (finisher && !e.def.elite) this.stunEnemy(e, 0.3 + form.stun);
       this.train('basic', 3, this.currentRisk(e));
     }
     if (hitAny) p.lastCombatAt = this.time;
@@ -844,8 +877,15 @@ export class Simulation {
       this.outgoingMult() *
       this.mods.signature *
       sharpnessMult(r.sharpness) *
-      (1 + SPELL_RULES.masteryPerLevel * (displayLevel(r) - 1))
+      (1 + SPELL_RULES.masteryPerLevel * (displayLevel(r) - 1)) *
+      this.focusMult(spell.affinity)
     );
+  }
+
+  /** Foco equipado: magias da afinidade dele causam mais dano. */
+  private focusMult(affinity: Affinity): number {
+    const f = this.stats().focus;
+    return f && f.affinity === affinity ? f.power : 1;
   }
 
   /** Acerto de magia num inimigo, respeitando "só contra elites" e a forja. Retorna se valeu. */
@@ -1133,6 +1173,83 @@ export class Simulation {
     if (e.hp <= 0) this.killEnemy(e);
   }
 
+  // -------------------------------------------------------------------------
+  // Equipamento
+  // -------------------------------------------------------------------------
+
+  /** Criatura derrotada pode deixar um equipamento do tier da região (o chefe sempre, e melhor). */
+  private dropGear(e: Enemy): void {
+    const c = this.c;
+    if (!this.rng.chance(ITEM_DROP_CHANCE[e.kind] ?? 0)) return;
+    const pool = lootPool(this.map.tier);
+    if (!pool.length) return;
+    const quality = rollQuality(this.rng, e.def.boss ? 1.5 : e.def.elite ? 0.5 : 0);
+    const item = rollItem(this.rng, this.rng.pick(pool), c.nextItemUid++, quality);
+    const pos = { x: e.pos.x + this.rng.range(-0.4, 0.4), y: e.pos.y + this.rng.range(-0.4, 0.4) };
+    this.itemDrops.push({ id: this.nextId++, item, pos, expiresAt: this.time + (e.def.boss ? 600 : 180) });
+  }
+
+  /** Motivo para não poder trocar de equipamento agora (ou null). */
+  gearLock(): string | null {
+    if (this.player.dead) return 'Você está caído.';
+    if (this.time - this.player.lastCombatAt < 4 && !this.inSanctuary()) return 'Não dá para trocar de equipamento em combate.';
+    return null;
+  }
+
+  /** Veste um item da mochila (o que estava no espaço volta para a mochila). */
+  equipItem(uid: number): string | null {
+    const c = this.c;
+    const it = c.bag.find((x) => x.uid === uid);
+    const d = it && itemDef(it);
+    if (!it || !d) return 'Item não encontrado.';
+    const lock = this.gearLock();
+    if (lock) return lock;
+    const need = itemMinLevel(d);
+    if (c.level < need) return `Precisa do nível ${need}.`;
+    const before = this.maxHp();
+    c.bag = c.bag.filter((x) => x !== it);
+    const old = c.equipment[d.slot];
+    if (old) c.bag.push(old);
+    c.equipment[d.slot] = it;
+    this.afterGearChange(before);
+    return null;
+  }
+
+  /** Tira um item e guarda na mochila. */
+  unequip(slot: Slot): string | null {
+    const c = this.c;
+    const it = c.equipment[slot];
+    if (!it) return null;
+    const lock = this.gearLock();
+    if (lock) return lock;
+    if (c.bag.length >= BAG_SIZE) return 'Mochila cheia.';
+    const before = this.maxHp();
+    delete c.equipment[slot];
+    c.bag.push(it);
+    this.afterGearChange(before);
+    return null;
+  }
+
+  /** Joga fora um item da mochila (fica no chão por um tempo). */
+  discardItem(uid: number): void {
+    const c = this.c;
+    const it = c.bag.find((x) => x.uid === uid);
+    if (!it) return;
+    c.bag = c.bag.filter((x) => x !== it);
+    const p = this.player;
+    // Cai um pouco atrás de você, para não ser pego de volta na hora.
+    this.itemDrops.push({ id: this.nextId++, item: it, pos: { x: p.pos.x - p.facing.x * 1.6, y: p.pos.y - p.facing.y * 1.6 }, expiresAt: this.time + 120 });
+  }
+
+  private afterGearChange(hpBefore: number): void {
+    const p = this.player;
+    const hp = this.maxHp();
+    // A vida acompanha a troca na mesma proporção (vestir não cura, tirar não mata).
+    p.hp = clamp(Math.round((p.hp / hpBefore) * hp), 1, hp);
+    p.flow = Math.min(p.flow, this.flowMax());
+    this.mods = this.withGear(computeFlowMods(this.c.psyche, p.posture, p.tide.value));
+  }
+
   private killEnemy(e: Enemy): void {
     const p = this.player;
     e.hp = 0;
@@ -1148,6 +1265,7 @@ export class Simulation {
       this.drops.push({ id: this.nextId++, spell, pos: { ...e.pos }, expiresAt: this.time + (e.def.boss ? 600 : 120) });
       this.notice(`${e.def.name} deixou cair um grimório.`, 'good');
     }
+    if (!e.summoned) this.dropGear(e);
     p.needs.fight = clamp(p.needs.fight + 0.12, 0, 1);
     this.gainXp(Math.round(e.def.xp * TUNING.xp * tierScale(this.map.tier).xp), true);
     p.killTimes = p.killTimes.filter((t) => this.time - t < 6);
@@ -1196,6 +1314,7 @@ export class Simulation {
     } else {
       const veilBonus = tideLevel(p.tide.value) < 0 ? 0.005 * (displayLevel(this.c.mastery.veil) - 1) : 0;
       mult *= 1 - veilBonus;
+      if (tideLevel(p.tide.value) < 0) mult *= 1 - this.stats().veil;
       mult *= tideIncoming(p.tide.value);
       if (opts.heavy && p.tide.value <= 0.3 && this.time - p.tide.lastDefenseShiftAt <= 1.0) {
         perfect = true;

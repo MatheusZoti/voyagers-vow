@@ -2,6 +2,7 @@ import { isAffinity, type Affinity } from './flow/affinity';
 import { newSlot, type EloSlot } from './elos';
 import { newMastery, type MasteryRecord } from './mastery';
 import { clamp, Rng } from './math';
+import type { Item, Slot } from './items';
 import { computeStats } from './stats';
 import type { DialogueId } from './psyche/dialogues';
 import type { RegionId } from './world/map';
@@ -42,6 +43,19 @@ export interface Character {
   bossDefeated: boolean;
   /** perda de vida máxima pelo Pacto "Pago com a minha vida" */
   lifeCostLost: number;
+  /** equipamento vestido, um por espaço */
+  equipment: Partial<Record<Slot, Item>>;
+  /** mochila (até BAG_SIZE itens) */
+  bag: Item[];
+  /** próximo id de item (únicos por personagem) */
+  nextItemUid: number;
+}
+
+/** Saves de antes dos equipamentos ganham equipamento e mochila vazios. */
+export function ensureGear(c: Character): void {
+  if (!c.equipment) c.equipment = {};
+  if (!Array.isArray(c.bag)) c.bag = [];
+  if (!c.nextItemUid) c.nextItemUid = 1;
 }
 
 export const xpToNext = (level: number) => Math.round(100 * Math.pow(level, 1.6));
@@ -93,6 +107,9 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
     playTime: 0,
     bossDefeated: false,
     lifeCostLost: 0,
+    equipment: {},
+    bag: [],
+    nextItemUid: 1,
   };
   refreshEloUnlocks(c);
   elos[0]!.technique = first;
@@ -111,6 +128,7 @@ export function migrateCharacter(raw: unknown): Character | null {
     if (!c.explored) c.explored = {};
     if (!c.region) c.region = 'vale';
     ensureMastery(c as Character);
+    ensureGear(c as Character);
     return c as Character;
   }
   if (c.version !== 1) return null;
@@ -147,6 +165,7 @@ export function migrateCharacter(raw: unknown): Character | null {
   };
   delete (migrated as unknown as { answers?: unknown }).answers;
   ensureMastery(migrated);
+  ensureGear(migrated);
   return migrated;
 }
 

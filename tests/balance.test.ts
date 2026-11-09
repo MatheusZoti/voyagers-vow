@@ -19,7 +19,15 @@ describe('Balanceamento (bot)', () => {
     for (const r of byScenario.get('Carniçais x2 (nv 1)')!) expect(r.won, r.affinity).toBe(true);
   });
 
-  // Sem equipamentos nem atributos, o Guardião no nível 4 é difícil de propósito:
+  // Com o equipamento esperado do tier 1, quem usa a Maré vence o Guardião — com sufoco.
+  it('com o kit do tier 1, o Guardião cai no nível 5 (sem sobrar folga)', () => {
+    for (const r of byScenario.get('Guardião (nv 5, hábil, kit T1)')!) {
+      expect(r.won, r.affinity).toBe(true);
+      expect(r.hpLostPct, r.affinity).toBeGreaterThan(40);
+    }
+  });
+
+  // Sem equipamentos, o Guardião no nível 4 é difícil de propósito:
   // o que se exige aqui é que a Maré faça diferença clara, não que ele caia.
   it('usar a Maré e desviar faz diferença contra o Guardião', () => {
     const good = byScenario.get('Guardião (nv 4, hábil)')!;

@@ -34,10 +34,10 @@ Fonte de verdade do design: o GDD "Sistema de Aura, Psique e Maestria" (document
 - [x] Monstros: provocação, alerta à matilha, recuo imune quando inalcançáveis
 - [x] Atributos derivados (sem pontos para distribuir): Vida, Fluxo máximo, Regeneração, Poder, Guarda e Velocidade calculados num lugar só (`src/sim/stats.ts`), com aba Atributos (I) mostrando a origem de cada número
 - [x] Nível: +12 Vida e +3 Fluxo por nível; faixa de nível recomendada por tier de região (1–5, 5–9, …)
+- [x] Equipamentos (estilo Albion, catálogo à mão em `src/sim/items.ts`): 14 modelos em 2 tiers, 5 espaços (Arma muda o Golpe básico e dá o Poder; Cabeça e Peito dão Guarda; Pés, Velocidade; Foco fortalece uma afinidade), qualidade Comum → Obra-prima e afixos da Maré, Véu, Fluxo; drops de criaturas (chefe sempre, e melhor), mochila de 20, sem troca em combate
 
 ## Próximo
 
-- Equipamentos (estilo Albion, catálogo feito à mão): Arma (muda o Golpe básico e passa a dar o Poder no lugar do nível), Cabeça, Peito (Guarda), Pés (Velocidade) e Foco (afinidade); tier = tier da região, qualidade e até 2 afixos ligados aos sistemas existentes
 - Itens na morte: chance (pela penalidade 0–3) de cair no Eco, recuperáveis
 - Ressonância de itens raros com os Valores da Psique
 

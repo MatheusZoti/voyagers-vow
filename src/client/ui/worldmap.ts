@@ -2,6 +2,7 @@ import { AFFINITY_COLORS } from '../../sim/flow/affinity';
 import { NPCS } from '../../sim/psyche/dialogues';
 import type { Simulation } from '../../sim/sim';
 import { SPELLS } from '../../sim/techniques';
+import { QUALITY_COLORS } from '../../sim/items';
 import { FLOOR_H, heightAt, Tile, type GameMap } from '../../sim/world/map';
 
 /**
@@ -226,6 +227,7 @@ export function drawMarkers(g: CanvasRenderingContext2D, sim: Simulation, scale:
     g.fillRect(S(b.x) - 4, S(b.y) - 4, 8, 8);
     g.strokeRect(S(b.x) - 4, S(b.y) - 4, 8, 8);
   }
+  for (const d of sim.itemDrops) if (sim.isExplored(d.pos.x, d.pos.y)) dot(d.pos.x, d.pos.y, 4, QUALITY_COLORS[d.item.quality - 1] ?? '#fff', '#3a2a18');
   for (const d of sim.drops) if (sim.isExplored(d.pos.x, d.pos.y)) dot(d.pos.x, d.pos.y, 5, AFFINITY_COLORS[SPELLS[d.spell].affinity], '#fff');
   if (sim.echo) dot(sim.echo.pos.x, sim.echo.pos.y, 5.5, '#a8e6ff', '#fff');
 

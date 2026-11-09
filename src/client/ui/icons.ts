@@ -3,6 +3,15 @@
  * Mesma linguagem das ilustrações de catálogo: contorno, sem preenchimento.
  */
 const P: Record<string, string> = {
+  // Equipamento
+  helm: '<path d="M4.5 15.5c0-5 3.3-9.5 7.5-9.5s7.5 4.5 7.5 9.5"/><path d="M3.5 15.5h17v2.5h-17z"/><path d="M12 6v9.5M9 10.5h6" opacity=".6"/>',
+  armor: '<path d="M8 3.5l4 2 4-2 4 3-2 4v10H6v-10l-2-4z"/><path d="M12 5.5v15M8.5 12h7" opacity=".55"/>',
+  boots: '<path d="M7 3h5v9l6.5 3.2c1 .5 1.5 1.3 1.5 2.3V20H5V3z"/><path d="M5 16.5h15M7 7.5h5" opacity=".55"/>',
+  amulet: '<path d="M6 3c0 4.5 2.7 7 6 7s6-2.5 6-7"/><path d="M12 10l4.5 5-4.5 6-4.5-6z"/><circle cx="12" cy="15.3" r="1.4" fill="currentColor" opacity=".7"/>',
+  mace: '<path d="M4 20l8.5-8.5"/><circle cx="15.5" cy="8.5" r="4"/><path d="M15.5 2.5v2M21.5 8.5h-2M19.7 4.3l-1.4 1.4M19.7 12.7l-1.4-1.4M11.3 4.3l1.4 1.4" opacity=".6"/>',
+  staff: '<path d="M6 21L16.5 6.5"/><circle cx="18" cy="4.8" r="2.4"/><path d="M14.5 9l2 1.5M11.5 13l2 1.5" opacity=".55"/>',
+  fists: '<path d="M6 12.5V9a1.6 1.6 0 013.2 0v2.5m0-3a1.6 1.6 0 013.2 0v3m0-2a1.6 1.6 0 013.2 0v3m0-1.5a1.6 1.6 0 013.2 0V16c0 3-2.4 5-5.4 5h-2c-2.8 0-4.6-1.6-5.4-3.6L5 15"/>',
+  bag: '<path d="M5 9h14l-1.2 11.5H6.2z"/><path d="M9 9V7a3 3 0 016 0v2"/><path d="M9 13.5h6" opacity=".55"/>',
   // Posturas
   veil: '<path d="M12 3c4 2 6 2 7 2 0 7-2.5 12-7 15-4.5-3-7-8-7-15 1 0 3 0 7-2z"/><path d="M12 7.5c2 1 3 1 3.5 1-.2 3.6-1.4 6.2-3.5 7.8-2.1-1.6-3.3-4.2-3.5-7.8.5 0 1.5 0 3.5-1z" opacity=".55"/>',
   silence: '<path d="M3 12c2.5-3.5 5.5-5 9-5s6.5 1.5 9 5"/><path d="M5.5 14.5l-1.5 2M9.5 16l-.6 2.3M14.5 16l.6 2.3M18.5 14.5l1.5 2"/>',

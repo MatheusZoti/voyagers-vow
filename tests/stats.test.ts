@@ -9,13 +9,13 @@ describe('Atributos derivados', () => {
     expect(s).toMatchObject({ hp: 100, flowMax: 100, flowRegen: 4, power: 1, guard: 0, speed: 5.2 });
   });
 
-  it('o nível dá vida, fluxo e (por enquanto) poder', () => {
+  it('o nível dá vida e fluxo, mas não dano (o Poder vem da arma)', () => {
     const c = createCharacter('Teste', 'vigor', 3);
     c.level = 5;
     const s = computeStats(c);
     expect(s.hp).toBe(148);
     expect(s.flowMax).toBe(112);
-    expect(s.power).toBeCloseTo(1.16);
+    expect(s.power).toBe(1);
   });
 
   it('cada número é a soma das suas origens (a ficha mostra a conta certa)', () => {

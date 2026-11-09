@@ -2391,3 +2391,152 @@ button.mchip:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ---------- Equipamento e mochila ---------- */
+.gear-slots {
+  display: grid;
+  gap: 6px;
+}
+.gear-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--q);
+  border-radius: 12px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--txt);
+  cursor: pointer;
+  font: inherit;
+  min-width: 0;
+}
+.gear-slot.empty {
+  border-left-color: var(--line-2);
+  color: var(--mut);
+}
+.gear-slot:hover {
+  border-color: var(--line-2);
+}
+.gear-slot.on {
+  border-color: var(--cy);
+  box-shadow: 0 0 0 1px rgba(111, 208, 255, 0.25) inset;
+}
+.gs-ic {
+  color: var(--q);
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--q) 22%, transparent), transparent 70%);
+  flex: none;
+}
+.gear-slot.empty .gs-ic {
+  color: var(--mut);
+  background: none;
+}
+.gs-txt {
+  display: grid;
+  min-width: 0;
+}
+.gs-txt small {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mut);
+}
+.gs-txt b {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bag-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.bag-cell {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--q, transparent) 55%, transparent);
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--q, transparent) 20%, transparent), rgba(0, 0, 0, 0.22) 75%);
+  color: var(--q, var(--mut));
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+}
+.bag-cell.empty {
+  border: 1px dashed var(--line);
+  background: rgba(0, 0, 0, 0.12);
+  cursor: default;
+}
+.bag-cell.on {
+  outline: 2px solid var(--cy);
+  outline-offset: 1px;
+}
+.bag-cell.low {
+  box-shadow: inset 0 0 0 2px rgba(255, 106, 90, 0.55);
+}
+.gear-detail .gd-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.gear-detail .gd-head h3 {
+  margin: 0;
+  font: 700 16px Cinzel, serif;
+  color: var(--q, var(--txt));
+}
+.gd-ic {
+  color: var(--q);
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--q) 50%, transparent);
+  background: radial-gradient(circle, color-mix(in srgb, var(--q) 25%, transparent), transparent 70%);
+  flex: none;
+}
+.gear-detail .kv i {
+  font-style: normal;
+  font-size: 11.5px;
+  margin-left: 6px;
+}
+.gear-detail .kv i.up {
+  color: var(--good, #7ed37a);
+}
+.gear-detail .kv i.down {
+  color: var(--bad, #ff6a5a);
+}
+.gear-detail .kv b.bad {
+  color: var(--bad, #ff6a5a);
+}
+.gd-vs {
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+.gd-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.gd-actions .btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 12px;
+}
+.gd-actions .btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.gear-msg {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--warn, #ffbf5a);
+}
