@@ -1,5 +1,6 @@
 import { AFFINITY_RING, type Affinity } from './flow/affinity';
 import { clamp, type Rng } from './math';
+import { STRONG_VALUE, VALUE_NAMES, type ValueId, type Values } from './psyche/traits';
 
 /**
  * Equipamentos (estilo Albion): catálogo feito à mão, como as magias. O tier do item é o
@@ -105,6 +106,8 @@ export interface Item {
   quality: number;
   /** afinidade do Foco (sorteada ao cair) */
   affinity?: Affinity;
+  /** Ressonância: o Valor que este item (raro) pede de quem o veste */
+  resonance?: ValueId;
   affixes: Array<{ id: AffixId; value: number }>;
 }
 
@@ -152,7 +155,56 @@ export function rollItem(rng: Rng, defId: string, uid: number, quality?: number)
     const a = AFFIXES[id];
     affixes.push({ id, value: tidy(a.stat, a.base * (1 + 0.6 * (d.tier - 1)) * rng.range(0.8, 1.2)) });
   }
-  return { uid, def: defId, quality: q, affinity: d.slot === 'focus' ? rng.pick([...AFFINITY_RING]) : undefined, affixes };
+  // Raros nascem com um Valor: Obra-prima sempre, Primoroso às vezes.
+  const resonance = q >= 5 || (q === 4 && rng.chance(0.5)) ? rng.pick(RESONANCE_VALUES[d.slot]) : undefined;
+  return { uid, def: defId, quality: q, affinity: d.slot === 'focus' ? rng.pick([...AFFINITY_RING]) : undefined, affixes, resonance };
+}
+
+// ---------------------------------------------------------------------------
+// Ressonância (Psique): o item rende mais com quem defende o Valor dele e
+// menos — e pesa na mente em combate — com quem é contra.
+// ---------------------------------------------------------------------------
+
+/** Que Valores combinam com cada espaço. */
+export const RESONANCE_VALUES: Record<Slot, readonly ValueId[]> = {
+  weapon: ['power', 'vengeance', 'freedom'],
+  head: ['law', 'loyalty', 'knowledge'],
+  chest: ['law', 'loyalty', 'mercy'],
+  feet: ['freedom', 'nature'],
+  focus: ['knowledge', 'nature', 'mercy'],
+};
+/** Rendimento do item: alinhado, neutro, contrário. */
+export const RESONANCE_MULT = { aligned: 1.25, neutral: 1, contrary: 0.75 } as const;
+/** Estresse por segundo de combate para cada item dissonante vestido. */
+export const DISSONANCE_STRESS_PER_S = 0.15;
+
+export type ResonanceState = keyof typeof RESONANCE_MULT;
+
+export function resonanceState(it: Item, values: Values): ResonanceState | null {
+  if (!it.resonance) return null;
+  const v = values[it.resonance] ?? 0;
+  return v >= STRONG_VALUE ? 'aligned' : v <= -STRONG_VALUE ? 'contrary' : 'neutral';
+}
+
+/** Frase curta para a ficha do item. */
+export function resonanceText(it: Item, values: Values): string | null {
+  const st = resonanceState(it, values);
+  if (!st || !it.resonance) return null;
+  const name = VALUE_NAMES[it.resonance];
+  if (st === 'aligned') return `Ressoa com você: você defende ${name}. Rende +${Math.round((RESONANCE_MULT.aligned - 1) * 100)}%.`;
+  if (st === 'contrary') return `Dissonante: você é contra ${name}. Rende −${Math.round((1 - RESONANCE_MULT.contrary) * 100)}% e soma estresse em combate.`;
+  return `Pede ${name}. Se ${name} se tornar forte em você, rende +${Math.round((RESONANCE_MULT.aligned - 1) * 100)}%; se você se opuser, rende menos e pesa na mente.`;
+}
+
+/** O que este item soma à ficha para quem tem estes Valores (só os bônus mudam; penalidades, como peso, não). */
+export function itemStatsFor(it: Item, values: Values): Partial<Record<ItemStat, number>> {
+  const base = itemStats(it);
+  const st = resonanceState(it, values);
+  if (!st || st === 'neutral') return base;
+  const k = RESONANCE_MULT[st];
+  const out: Partial<Record<ItemStat, number>> = {};
+  for (const [stat, v] of Object.entries(base) as Array<[ItemStat, number]>) out[stat] = v > 0 ? v * k : v;
+  return out;
 }
 
 /** Qualidade sorteada; `luck` > 0 empurra para cima (chefes). */

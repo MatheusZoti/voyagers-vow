@@ -1,7 +1,8 @@
 import type { Character } from './character';
 import { AFFINITY_NAMES, type Affinity } from './flow/affinity';
 import { BASE_FLOW_MAX, BASE_FLOW_REGEN } from './flow/flow';
-import { itemDef, itemName, itemStats, SLOT_NAMES, SLOTS, WEAPON_FORMS, type ItemStat, type WeaponForm } from './items';
+import { itemDef, itemName, itemStats, RESONANCE_MULT, resonanceState, SLOT_NAMES, SLOTS, WEAPON_FORMS, type ItemStat, type WeaponForm } from './items';
+import { VALUE_NAMES } from './psyche/traits';
 import { displayLevel } from './mastery';
 
 /**
@@ -94,9 +95,14 @@ export function computeStats(c: Character): CharacterStats {
     if (!it || !d) continue;
     if (slot === 'weapon' && d.form) weapon = d.form;
     if (slot === 'focus' && it.affinity) focusAff = it.affinity;
-    for (const [k, v] of Object.entries(itemStats(it)) as Array<[ItemStat, number]>) {
+    const res = resonanceState(it, c.psyche.values);
+    const k = res ? RESONANCE_MULT[res] : 1;
+    for (const [stat, v] of Object.entries(itemStats(it)) as Array<[ItemStat, number]>) {
       if (!v) continue;
-      (gear[k] ??= []).push({ source: `${SLOT_NAMES[slot]}: ${itemName(it)}`, value: v });
+      (gear[stat] ??= []).push({ source: `${SLOT_NAMES[slot]}: ${itemName(it)}`, value: v });
+      // Ressonância com a Psique: só mexe no que o item dá de bom.
+      if (k !== 1 && v > 0 && it.resonance)
+        gear[stat]!.push({ source: `${k > 1 ? 'Ressonância' : 'Dissonância'} (${VALUE_NAMES[it.resonance]})`, value: v * (k - 1) });
     }
   }
   const from = (k: ItemStat) => gear[k] ?? [];

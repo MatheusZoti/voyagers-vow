@@ -59,7 +59,7 @@ import { armorReduction, ENEMIES, SPELL_DROP_CHANCE, tierScale, type Projectile,
 import { exitAt, inCircle, isBlocked, moveWithCollision, type GameMap, type RegionId } from './world/map';
 import { buildRegion, regionName } from './world/regions';
 import { computeStats, type CharacterStats } from './stats';
-import { BAG_SIZE, ITEM_DROP_CHANCE, itemDef, itemMinLevel, itemName, lootPool, QUALITY_NAMES, rollItem, rollQuality, SLOTS, WEAPON_FORMS, type ItemDrop, type Slot } from './items';
+import { BAG_SIZE, ITEM_DROP_CHANCE, itemDef, itemMinLevel, itemName, lootPool, QUALITY_NAMES, resonanceState, resonanceText, rollItem, rollQuality, SLOTS, WEAPON_FORMS, DISSONANCE_STRESS_PER_S, type ItemDrop, type Slot } from './items';
 
 /** Quanto tempo de jogo o Eco espera por você (s). */
 export const ECHO_LIFE_S = 30 * 60;
@@ -193,6 +193,8 @@ export class Simulation {
   private traveling = false;
   private exitWarnAt = -99;
   events: SimEvent[] = [];
+  /** eventos gerados fora de um passo (ações do painel): saem no próximo passo */
+  private outbox: SimEvent[] = [];
   mods: FlowMods;
   /** tempo desta sessão (s) */
   time = 0;
@@ -370,7 +372,7 @@ export class Simulation {
   stats(): CharacterStats {
     const c = this.c;
     const gear = Object.values(c.equipment)
-      .map((it) => it?.uid ?? 0)
+      .map((it) => (it ? `${it.uid}${resonanceState(it, c.psyche.values)?.[0] ?? ''}` : '0'))
       .join(',');
     const key = `${c.level}|${c.lifeCostLost}|${displayLevel(c.mastery.capacity)}|${gear}`;
     if (key !== this.statsKey || !this.statsCache) {
@@ -467,7 +469,8 @@ export class Simulation {
   // -------------------------------------------------------------------------
 
   step(input: PlayerInput, dt = TICK): SimEvent[] {
-    this.events = [];
+    this.events = this.outbox;
+    this.outbox = [];
     this.time += dt;
     this.c.playTime += dt;
     const p = this.player;
@@ -735,6 +738,12 @@ export class Simulation {
     ) {
       this.bridgePrompted = true;
       this.events.push({ t: 'dialogue', id: 'bridge' });
+    }
+
+    // Dissonância: lutar vestindo algo contra os seus Valores pesa na mente.
+    if (!p.dead && this.time - p.lastCombatAt < 3) {
+      const n = this.dissonantGear();
+      if (n) c.psyche.stress = clamp(c.psyche.stress + DISSONANCE_STRESS_PER_S * n * dt, 0, 100);
     }
 
     // Eco do jogador: se dissipa com o tempo jogado (esteja onde estiver); recupera-se passando nele.
@@ -1217,7 +1226,15 @@ export class Simulation {
     if (old) c.bag.push(old);
     c.equipment[d.slot] = it;
     this.afterGearChange(before);
+    const res = resonanceState(it, c.psyche.values);
+    if (res === 'aligned' || res === 'contrary')
+      this.outbox.push({ t: 'notice', text: resonanceText(it, c.psyche.values)!, tone: res === 'aligned' ? 'good' : 'warn' });
     return null;
+  }
+
+  /** Itens dissonantes vestidos (contra os seus Valores). */
+  dissonantGear(): number {
+    return Object.values(this.c.equipment).filter((it) => it && resonanceState(it, this.c.psyche.values) === 'contrary').length;
   }
 
   /** Tira um item e guarda na mochila. */

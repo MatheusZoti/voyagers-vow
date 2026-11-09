@@ -15,8 +15,10 @@ import {
   itemDef,
   itemMinLevel,
   itemName,
-  itemStats,
+  itemStatsFor,
   QUALITY_COLORS,
+  resonanceState,
+  resonanceText,
   QUALITY_NAMES,
   SLOT_NAMES,
   SLOTS,
@@ -442,6 +444,13 @@ export class Panels {
     this.render();
   }
 
+  /** Pontinho dos itens com Ressonância: dourado se ressoa, vermelho se é dissonante, cinza se neutro. */
+  private resDot(it?: Item): string {
+    if (!it?.resonance) return '';
+    const st = resonanceState(it, this.sim.c.psyche.values);
+    return `<i class="res-dot ${st}"></i>`;
+  }
+
   private slotIcon(slot: Slot, it?: Item): string {
     if (slot === 'weapon') {
       const form = it ? itemDef(it)?.form : undefined;
@@ -460,9 +469,10 @@ export class Panels {
     const d = itemDef(item)!;
     const col = QUALITY_COLORS[item.quality - 1];
     const need = itemMinLevel(d);
-    const mine = itemStats(item);
+    const vals = c.psyche.values;
+    const mine = itemStatsFor(item, vals);
     const other = worn ? undefined : c.equipment[d.slot];
-    const theirs = other ? itemStats(other) : {};
+    const theirs = other ? itemStatsFor(other, vals) : {};
     const keys = [...new Set([...Object.keys(mine), ...Object.keys(theirs)])] as ItemStat[];
     const rows = keys
       .map((k) => {
@@ -477,6 +487,10 @@ export class Panels {
       .join('');
     const form = d.form ? WEAPON_FORMS[d.form] : null;
     const aff = item.affinity ? `<div class="kv"><span>Afinidade do Foco</span><b style="color:${AFFINITY_COLORS[item.affinity]}">${AFFINITY_NAMES[item.affinity]}</b></div>` : '';
+    const resState = resonanceState(item, vals);
+    const res = item.resonance
+      ? `<div class="note res-note ${resState}"><b>Ressonância: ${VALUE_NAMES[item.resonance]}</b><p>${escapeHtml(resonanceText(item, vals) ?? '')}</p></div>`
+      : '';
     const lock = this.sim.gearLock();
     const lowLevel = c.level < need;
     const actions = worn
@@ -487,6 +501,7 @@ export class Panels {
         <div><h3>${escapeHtml(itemName(item))}</h3><span class="muted">${QUALITY_NAMES[item.quality - 1]} · Tier ${d.tier} · ${SLOT_NAMES[d.slot]}</span></div></div>
       <p class="card-sub">${escapeHtml(d.desc)}${form ? ` <b>${form.name}:</b> ${escapeHtml(form.desc)}` : ''}</p>
       ${aff}${rows}
+      ${res}
       <div class="kv"><span>Requer</span><b class="${lowLevel ? 'bad' : ''}">nível ${need}</b></div>
       ${!worn && other ? `<p class="muted gd-vs">Comparado com ${escapeHtml(itemName(other))} (vestido).</p>` : ''}
       <div class="gd-actions">${actions}</div>
@@ -529,7 +544,7 @@ export class Panels {
       const on = sel?.slot === slot;
       const col = it ? QUALITY_COLORS[it.quality - 1] : 'transparent';
       return `<button class="gear-slot ${it ? '' : 'empty'} ${on ? 'on' : ''}" data-gear-eq="${slot}" style="--q:${col}">
-          <span class="gs-ic">${icon(this.slotIcon(slot, it), 22)}</span>
+          <span class="gs-ic">${icon(this.slotIcon(slot, it), 22)}${this.resDot(it)}</span>
           <span class="gs-txt"><small>${SLOT_NAMES[slot]}</small><b>${it ? escapeHtml(itemName(it)) : slot === 'weapon' ? 'Punhos' : 'vazio'}</b></span>
         </button>`;
     }).join('');
@@ -539,7 +554,7 @@ export class Panels {
       const d = itemDef(it);
       const on = sel?.uid === it.uid;
       const tooLow = d && c.level < itemMinLevel(d);
-      return `<button class="bag-cell ${on ? 'on' : ''} ${tooLow ? 'low' : ''}" data-gear-bag="${it.uid}" style="--q:${QUALITY_COLORS[it.quality - 1]}" title="${escapeHtml(itemName(it))} (${QUALITY_NAMES[it.quality - 1]})">${icon(d ? this.slotIcon(d.slot, it) : 'empty', 20)}</button>`;
+      return `<button class="bag-cell ${on ? 'on' : ''} ${tooLow ? 'low' : ''}" data-gear-bag="${it.uid}" style="--q:${QUALITY_COLORS[it.quality - 1]}" title="${escapeHtml(itemName(it))} (${QUALITY_NAMES[it.quality - 1]})${it.resonance ? ` · pede ${VALUE_NAMES[it.resonance]}` : ''}">${icon(d ? this.slotIcon(d.slot, it) : 'empty', 20)}${this.resDot(it)}</button>`;
     }).join('');
     return `<div class="grid stats">
       <section class="card level-card">
