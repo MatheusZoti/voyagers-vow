@@ -1,3 +1,4 @@
+import type { Item, Slot } from '../items';
 import type { Vec2 } from '../math';
 import type { SpellId } from '../techniques';
 
@@ -236,8 +237,14 @@ export interface Trap {
   rearmIn: number;
 }
 
+/** Eco: o que ficou onde você caiu. Mora no personagem (sobrevive a sair do jogo e a viajar). */
 export interface Echo {
+  /** região onde você caiu */
+  region: string;
   pos: Vec2;
   xpBack: number;
+  /** tempo jogado (s) em que se dissipa */
   expiresAt: number;
+  /** equipamentos que caíram (com o espaço onde estavam vestidos, se estavam) */
+  items: Array<{ item: Item; slot?: Slot }>;
 }

@@ -2540,3 +2540,8 @@ button.mchip:hover {
   font-size: 12.5px;
   color: var(--warn, #ffbf5a);
 }
+
+.echo-row b {
+  color: #a8e6ff;
+  text-align: right;
+}

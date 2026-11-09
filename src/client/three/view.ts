@@ -408,6 +408,10 @@ export class GameView {
           }
           break;
         }
+        case 'echoRecovered':
+          this.fx.pillar({ x: ev.x, y: ev.y }, '#a8e6ff', 4, 1);
+          this.fx.burst({ x: ev.x, y: ev.y }, '#a8e6ff', 20, 2.6);
+          break;
         case 'itemPickup': {
           const color = QUALITY_COLORS[ev.quality - 1] ?? '#ffffff';
           this.fx.burst({ x: ev.x, y: ev.y }, color, 14, 2.2);

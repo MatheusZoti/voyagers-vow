@@ -59,7 +59,10 @@ import { armorReduction, ENEMIES, SPELL_DROP_CHANCE, tierScale, type Projectile,
 import { exitAt, inCircle, isBlocked, moveWithCollision, type GameMap, type RegionId } from './world/map';
 import { buildRegion, regionName } from './world/regions';
 import { computeStats, type CharacterStats } from './stats';
-import { BAG_SIZE, ITEM_DROP_CHANCE, itemDef, itemMinLevel, itemName, lootPool, QUALITY_NAMES, rollItem, rollQuality, WEAPON_FORMS, type ItemDrop, type Slot } from './items';
+import { BAG_SIZE, ITEM_DROP_CHANCE, itemDef, itemMinLevel, itemName, lootPool, QUALITY_NAMES, rollItem, rollQuality, SLOTS, WEAPON_FORMS, type ItemDrop, type Slot } from './items';
+
+/** Quanto tempo de jogo o Eco espera por você (s). */
+export const ECHO_LIFE_S = 30 * 60;
 import { TUNING } from './tuning';
 
 export const TICK = 1 / 30;
@@ -132,6 +135,7 @@ export type SimEvent =
   | { t: 'mark'; id: number; color: string }
   | { t: 'learn'; spell: SpellId; x: number; y: number }
   | { t: 'itemPickup'; x: number; y: number; quality: number }
+  | { t: 'echoRecovered'; x: number; y: number }
   | { t: 'dialogue'; id: DialogueId }
   | { t: 'telegraphLine'; x: number; y: number; dir: Vec2; length: number; width: number; duration: number }
   | { t: 'shot'; x: number; y: number }
@@ -175,7 +179,11 @@ export class Simulation {
   readonly player: PlayerState;
   enemies: Enemy[] = [];
   traps: Trap[];
-  echo: Echo | null = null;
+  /** Eco nesta região (o Eco mora no personagem; pode estar em outra região). */
+  get echo(): Echo | null {
+    const e = this.c.echo;
+    return e && e.region === this.map.id ? e : null;
+  }
   drops: SpellDrop[] = [];
   /** equipamentos no chão, esperando alguém passar por cima */
   itemDrops: ItemDrop[] = [];
@@ -729,16 +737,13 @@ export class Simulation {
       this.events.push({ t: 'dialogue', id: 'bridge' });
     }
 
-    // Eco do jogador.
-    if (this.echo) {
-      if (this.playTime > this.echo.expiresAt) {
-        this.echo = null;
-        this.notice('Seu Eco se dissipou.', 'bad');
-      } else if (dist(this.echo.pos, p.pos) < 1.3) {
-        this.gainXp(this.echo.xpBack, false);
-        this.notice(`Eco recuperado: +${this.echo.xpBack} XP`, 'good');
-        this.echo = null;
-      }
+    // Eco do jogador: se dissipa com o tempo jogado (esteja onde estiver); recupera-se passando nele.
+    const echo = c.echo;
+    if (echo && this.playTime > echo.expiresAt) {
+      c.echo = null;
+      this.notice(echo.items.length ? `Seu Eco se dissipou, e com ele: ${echo.items.map((x) => itemName(x.item)).join(', ')}.` : 'Seu Eco se dissipou.', 'bad');
+    } else if (echo && echo.region === this.map.id && !p.dead && dist(echo.pos, p.pos) < 1.3) {
+      this.recoverEcho(echo);
     }
 
     // Arena do chefe e o juramento de nunca fugir.
@@ -1337,6 +1342,33 @@ export class Simulation {
     if (p.hp <= 0) this.killPlayer();
   }
 
+  /** Passou pelo Eco: o XP volta, e os itens voltam ao corpo (se o espaço está livre) ou à mochila. */
+  private recoverEcho(echo: Echo): void {
+    const c = this.c;
+    const hpBefore = this.maxHp();
+    if (echo.xpBack > 0) this.gainXp(echo.xpBack, false);
+    const back: string[] = [];
+    const left: Echo['items'] = [];
+    for (const x of echo.items) {
+      if (x.slot && !c.equipment[x.slot]) c.equipment[x.slot] = x.item;
+      else if (c.bag.length < BAG_SIZE) c.bag.push(x.item);
+      else {
+        left.push(x);
+        continue;
+      }
+      back.push(itemName(x.item));
+    }
+    if (back.length) this.afterGearChange(hpBefore);
+    const xp = echo.xpBack > 0 ? `+${echo.xpBack} XP` : '';
+    this.notice(`Eco recuperado: ${[xp, ...back].filter(Boolean).join(', ') || 'nada a recuperar'}.`, 'good');
+    this.events.push({ t: 'echoRecovered', x: echo.pos.x, y: echo.pos.y });
+    if (left.length) {
+      // Mochila cheia: o resto espera no Eco.
+      c.echo = { ...echo, xpBack: 0, items: left };
+      this.notice(`Mochila cheia: ${left.length} item(ns) ainda no Eco.`, 'warn');
+    } else c.echo = null;
+  }
+
   private killPlayer(): void {
     const p = this.player;
     const c = this.c;
@@ -1363,8 +1395,27 @@ export class Simulation {
     c.xp = Math.max(0, c.xp);
     for (const slot of c.elos) if (slot.technique) deathPenalty(c.mastery[slot.technique as MasteryId], row.masteryLoss);
     deathPenalty(c.mastery.basic, row.masteryLoss);
-    this.echo = { pos: { ...p.pos }, xpBack: Math.round(xpLoss / 2), expiresAt: this.playTime + 30 * 60 };
+    // Morrer de novo antes de recuperar o Eco anterior: ele se desfaz, com o que tinha.
+    const old = c.echo;
+    if (old?.items.length) this.notice(`Seu Eco anterior se desfez, e com ele: ${old.items.map((x) => itemName(x.item)).join(', ')}.`, 'bad');
+    // Cada equipamento (vestido ou na mochila) pode cair no Eco, pela penalidade.
+    const fallen: Echo['items'] = [];
+    for (const slot of SLOTS) {
+      const it = c.equipment[slot];
+      if (it && this.rng.chance(row.itemDrop)) {
+        delete c.equipment[slot];
+        fallen.push({ item: it, slot });
+      }
+    }
+    c.bag = c.bag.filter((it) => {
+      if (!this.rng.chance(row.itemDrop)) return true;
+      fallen.push({ item: it });
+      return false;
+    });
+    c.echo = { region: this.map.id, pos: { ...p.pos }, xpBack: Math.round(xpLoss / 2), expiresAt: this.playTime + ECHO_LIFE_S, items: fallen };
     this.notice(`Você caiu. Penalidade ${c.penaltyLevel} (${row.mult}x): -${xpLoss} XP. Seu Eco ficou onde você caiu.`, 'bad');
+    if (fallen.length)
+      this.notice(`Caíram no seu Eco: ${fallen.map((x) => itemName(x.item)).join(', ')}. Volte lá em até 30 min de jogo para recuperar.`, 'warn');
     this.feel('death');
     if (oathBroken) {
       this.feel('pactBroken');

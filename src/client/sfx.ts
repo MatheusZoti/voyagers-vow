@@ -248,6 +248,9 @@ export class Sfx {
         case 'itemPickup':
           this.ui();
           break;
+        case 'echoRecovered':
+          this.learn();
+          break;
         case 'levelUp':
           this.levelUp();
           break;

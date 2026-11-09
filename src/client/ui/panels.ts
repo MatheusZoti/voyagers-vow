@@ -7,6 +7,7 @@ import { CRISIS_DESC, CRISIS_NAMES } from '../../sim/psyche/psyche';
 import { STRONG_VALUE, TRAIT_GROUPS, VALUE_NAMES } from '../../sim/psyche/traits';
 import type { Simulation } from '../../sim/sim';
 import { formatStat, tierLevels, type StatLine } from '../../sim/stats';
+import { regionName } from '../../sim/world/regions';
 import {
   BAG_SIZE,
   formatItemStat,
@@ -493,6 +494,17 @@ export class Panels {
     </section>`;
   }
 
+  /** Onde está o Eco, o que ele guarda e quanto tempo falta. */
+  private echoRow(): string {
+    const c = this.sim.c;
+    const e = c.echo;
+    if (!e) return '';
+    const mins = Math.max(0, Math.ceil((e.expiresAt - c.playTime) / 60));
+    const what = [e.xpBack > 0 ? `${e.xpBack} XP` : '', ...e.items.map((x) => itemName(x.item))].filter(Boolean).join(', ') || 'nada';
+    const where = e.region === this.sim.map.id ? 'aqui (veja no mapa, N)' : `em ${escapeHtml(regionName(e.region))}`;
+    return `<div class="kv echo-row"><span>Seu Eco ${tip('Quando você cai, metade do XP perdido fica no Eco, onde você caiu. Cada equipamento (vestido ou na mochila) tem uma chance de cair nele também — maior quanto maior a penalidade de morte. Passe pelo Eco para recuperar tudo. Ele se dissipa com 30 minutos de jogo, ou se você cair de novo antes, e leva junto o que guardava.')}</span><b>${where} · ${escapeHtml(what)} · some em ${mins} min</b></div>`;
+  }
+
   private statsTab(): string {
     const sim = this.sim;
     const c = sim.c;
@@ -537,6 +549,7 @@ export class Panels {
         <div class="bigbar"><i style="width:${Math.min(100, (c.xp / next) * 100)}%"></i></div>
         <div class="kv"><span>Experiência</span><b>${c.xp} / ${next}</b></div>
         <div class="kv"><span>${escapeHtml(sim.map.name)} (tier ${sim.map.tier})</span><b>nível recomendado ${band.min}–${band.max} · ${where}</b></div>
+        ${this.echoRow()}
       </section>
       <section class="card gear-card">
         <h4>Equipamento ${tip('O que você veste. A arma decide o Golpe básico e dá o Poder; elmo e peito dão Vida e Guarda; botas, Velocidade; o Foco fortalece uma afinidade. Equipamentos nunca mudam o nível das magias. Não dá para trocar em combate.')}</h4>

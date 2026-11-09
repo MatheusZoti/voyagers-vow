@@ -3,6 +3,7 @@ import { newSlot, type EloSlot } from './elos';
 import { newMastery, type MasteryRecord } from './mastery';
 import { clamp, Rng } from './math';
 import type { Item, Slot } from './items';
+import type { Echo } from './world/entities';
 import { computeStats } from './stats';
 import type { DialogueId } from './psyche/dialogues';
 import type { RegionId } from './world/map';
@@ -49,6 +50,8 @@ export interface Character {
   bag: Item[];
   /** próximo id de item (únicos por personagem) */
   nextItemUid: number;
+  /** Eco da última morte (XP e itens para recuperar), ou null */
+  echo: Echo | null;
 }
 
 /** Saves de antes dos equipamentos ganham equipamento e mochila vazios. */
@@ -56,6 +59,7 @@ export function ensureGear(c: Character): void {
   if (!c.equipment) c.equipment = {};
   if (!Array.isArray(c.bag)) c.bag = [];
   if (!c.nextItemUid) c.nextItemUid = 1;
+  if (c.echo === undefined) c.echo = null;
 }
 
 export const xpToNext = (level: number) => Math.round(100 * Math.pow(level, 1.6));
@@ -110,6 +114,7 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
     equipment: {},
     bag: [],
     nextItemUid: 1,
+    echo: null,
   };
   refreshEloUnlocks(c);
   elos[0]!.technique = first;
