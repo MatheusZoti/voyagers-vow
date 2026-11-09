@@ -1,12 +1,12 @@
-/** Teclas dos 8 Elos: 1–4 e depois Q E R F. Rótulos (HUD, menus) e códigos (teclado). */
-export const SLOT_KEYS = ['1', '2', '3', '4', 'Q', 'E', 'R', 'F'] as const;
+/** Teclas dos 8 Elos: Q E R F (Elos 1–4) e depois 1–4 (Elos 5–8). Rótulos (HUD, menus) e códigos (teclado). */
+export const SLOT_KEYS = ['Q', 'E', 'R', 'F', '1', '2', '3', '4'] as const;
 export const SLOT_CODES: Record<string, number> = {
-  Digit1: 1,
-  Digit2: 2,
-  Digit3: 3,
-  Digit4: 4,
-  KeyQ: 5,
-  KeyE: 6,
-  KeyR: 7,
-  KeyF: 8,
+  KeyQ: 1,
+  KeyE: 2,
+  KeyR: 3,
+  KeyF: 4,
+  Digit1: 5,
+  Digit2: 6,
+  Digit3: 7,
+  Digit4: 8,
 };

@@ -1033,7 +1033,7 @@ export class Panels {
       ['Mouse', 'Mirar'],
       ['Botão esquerdo · Espaço', 'Golpe básico'],
       ['Botão direito', 'Magia do Elo 1'],
-      ['1 2 3 4 · Q E R F', 'Magias nos Elos 1 a 8'],
+      ['Q E R F · 1 2 3 4', 'Magias nos Elos 1 a 8'],
       ['Clique num NPC', 'Conversar'],
       ['Shift · Tab', 'Posturas: Silêncio, Olhar (toque de novo para sair)'],
       ['Roda do mouse · Z / X', 'Maré: «« « • » »» entre defesa (Véu) e ataque (Ímpeto)'],
