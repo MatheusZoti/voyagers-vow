@@ -25,6 +25,8 @@ export interface AttackDef {
 }
 
 export interface EnemyDef {
+  /** humano: pode se render quando está perdendo (poupar ou executar) */
+  humanoid?: boolean;
   kind: EnemyKind;
   name: string;
   hp: number;
@@ -90,6 +92,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   slinger: {
     kind: 'slinger',
     name: 'Lançador de Espinhos',
+    humanoid: true,
     hp: 34,
     armor: 1,
     speed: 3.3,
@@ -157,7 +160,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
  */
 export const armorReduction = (armor: number) => armor / (armor + 15);
 
-export type EnemyState = 'idle' | 'chase' | 'windup' | 'charging' | 'recover' | 'return' | 'stunned' | 'dead';
+export type EnemyState = 'idle' | 'chase' | 'windup' | 'charging' | 'recover' | 'return' | 'stunned' | 'surrendered' | 'dead';
 
 export interface Enemy {
   id: number;
@@ -203,6 +206,12 @@ export interface Enemy {
   rootUntil: number;
   /** sob a Marca da Discórdia até este tempo (luta contra os aliados) */
   charmedUntil: number;
+  /** já decidiu se se rende nesta vida (só uma chance por vida) */
+  surrenderChecked?: boolean;
+  /** quando se rendeu (tempo da sessão) */
+  surrenderAt?: number;
+  /** o seu algoz: quem te derrubou da última vez */
+  nemesis?: boolean;
 }
 
 /** Grimório caído no chão: ensina uma magia a quem passar por cima. */

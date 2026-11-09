@@ -34,6 +34,9 @@
     {"id":"tomeNorth","spell":"chains","x":17.5,"y":8.5},
     {"id":"tomeSouth","spell":"flowLance","x":36.5,"y":38.5}
   ],
+  "shrines": [
+    {"id":"vale-altar-colina","x":29.5,"y":8.5}
+  ],
   "spawns": [
     {"kind":"grunt","x":20,"y":19},
     {"kind":"grunt","x":21,"y":21},

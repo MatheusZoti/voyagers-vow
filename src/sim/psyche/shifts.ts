@@ -78,7 +78,7 @@ export const EMOTION_EFFECTS: Record<EmotionId, string> = {
 // Voz interna: falas curtas, no tom dos traços mais marcantes
 // ---------------------------------------------------------------------------
 
-export type VoiceMoment = 'arena' | 'killBoss' | 'nearDeath' | 'respawn' | 'newRegion' | 'perfectTide' | 'killStreak';
+export type VoiceMoment = 'arena' | 'killBoss' | 'nearDeath' | 'respawn' | 'newRegion' | 'perfectTide' | 'killStreak' | 'nemesis';
 
 const VOICE: Record<VoiceMoment, { lines: Partial<Record<TraitId, string>>; plain: string }> = {
   arena: {
@@ -109,9 +109,13 @@ const VOICE: Record<VoiceMoment, { lines: Partial<Record<TraitId, string>>; plai
     lines: { wrath: 'Mais!', empathy: '…Chega disso.', impulsivity: 'Ninguém me para.' },
     plain: 'Um a menos.',
   },
+  nemesis: {
+    lines: { wrath: 'Agora estamos quites.', pride: 'Eu sempre volto.', empathy: '…Acabou. Não precisava ser assim.' },
+    plain: 'Quites.',
+  },
 };
 /** Momentos que sempre falam; os outros respeitam o intervalo. */
-export const VOICE_ALWAYS: ReadonlySet<VoiceMoment> = new Set(['arena', 'killBoss', 'newRegion']);
+export const VOICE_ALWAYS: ReadonlySet<VoiceMoment> = new Set(['arena', 'killBoss', 'newRegion', 'nemesis']);
 export const VOICE_GAP_S = 45;
 /** Um traço só "fala" se estiver bem marcado (longe do meio). */
 const VOICE_MIN_LEAN = 12;

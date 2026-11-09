@@ -124,6 +124,21 @@ function startGame(c: Character, arrive?: { x: number; y: number }): void {
   // Clique num NPC: conversar (se estiver perto).
   input.onLeftClick = (x, y) => {
     const pt = view.screenToGround(x, y);
+    // Altar: escolha por gesto (pegar ou deixar as moedas).
+    const shrine = pt ? sim.shrineAt(pt, 1.2) : null;
+    if (shrine && !c.shrines[shrine.id]) {
+      if (Math.hypot(shrine.x - sim.player.pos.x, shrine.y - sim.player.pos.y) > 3.5) {
+        hud.pushNotice('Chegue mais perto do altar.', 'info');
+        return true;
+      }
+      openDialogue(() =>
+        dialogue.gesture('Altar antigo', 'oferendas', 'Moedas de ouro esquecidas sobre a pedra. Ninguém viria cobrar.', [
+          { label: 'Pegar as moedas', act: () => sim.actShrine(shrine.id, 'take') },
+          { label: 'Deixar como está', act: () => sim.actShrine(shrine.id, 'leave') },
+        ]),
+      );
+      return true;
+    }
     const npc = pt ? sim.npcAt(pt, 1.1) : null;
     if (!npc) return false;
     if (sim.npcDistance(npc) > 3.5) {

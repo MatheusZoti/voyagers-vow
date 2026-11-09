@@ -411,3 +411,13 @@
   border-bottom: 0;
   border-top-color: rgba(245, 240, 226, 0.94);
 }
+
+/* Escolha por gesto: a opção é uma ação, não uma fala */
+.dl-opt.gesture span {
+  font-style: italic;
+  color: #f0e6c8;
+}
+/* Com uma conversa ou escolha aberta, a dica do HUD sai do caminho */
+body:has(#dialog:not([hidden])) #hud .hint {
+  visibility: hidden;
+}

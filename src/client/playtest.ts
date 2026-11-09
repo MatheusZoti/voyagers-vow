@@ -69,6 +69,8 @@ export interface PlaytestLog {
     /** Valores no fim (dev; o jogador não vê números) */
     valuesEnd: Record<string, number>;
     strongEnd: string[];
+    /** "Como você mudou": causas e direções (as 40 mais recentes) */
+    shifts?: Array<{ t: number; cause: string; changes: string[] }>;
   };
 }
 
@@ -410,6 +412,11 @@ export class PlaytestRecorder {
       this.log.psyche.strongEnd = Object.entries(v)
         .filter(([, x]) => Math.abs(x) >= STRONG_VALUE)
         .map(([k, x]) => `${k}${x > 0 ? '+' : '−'}`);
+      this.log.psyche.shifts = this.sim.c.shifts.map((sh) => ({
+        t: Math.round(sh.t),
+        cause: sh.cause,
+        changes: sh.changes.map((ch) => `${ch.id}${ch.dir > 0 ? '↑' : '↓'}`),
+      }));
     }
     try {
       localStorage.setItem(KEY, JSON.stringify(this.log));

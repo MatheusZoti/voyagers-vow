@@ -39,7 +39,8 @@ import {
 import { angleBetween, clamp, dist, normalize, Rng, type Vec2 } from './math';
 import type { PsycheEventKind } from './psyche/emotions';
 import { applyDialogueChoice, DIALOGUES, NPCS, type DialogueDef, type DialogueId, type NpcId } from './psyche/dialogues';
-import { eventText, psycheEvent, tickPsyche, type PsycheNotice } from './psyche/psyche';
+import { addEmotion, eventText, psycheEvent, tickPsyche, type PsycheNotice } from './psyche/psyche';
+import type { EmotionId } from './psyche/emotions';
 import {
   diff,
   SHIFT_HISTORY_MAX,
@@ -74,10 +75,15 @@ import {
   type TechniqueId,
 } from './techniques';
 import { armorReduction, ENEMIES, SPELL_DROP_CHANCE, tierScale, type Projectile, type AttackDef, type Echo, type Enemy, type EnemyKind, type SpellDrop, type Trap } from './world/entities';
-import { exitAt, inCircle, isBlocked, moveWithCollision, type GameMap, type RegionId } from './world/map';
+import { exitAt, inCircle, isBlocked, moveWithCollision, Tile, type GameMap, type RegionId } from './world/map';
 import { buildRegion, regionName } from './world/regions';
 import { computeStats, type CharacterStats } from './stats';
 import { BAG_SIZE, ITEM_DROP_CHANCE, itemDef, itemMinLevel, itemName, lootPool, QUALITY_NAMES, resonanceState, resonanceText, rollItem, rollQuality, SLOTS, WEAPON_FORMS, DISSONANCE_STRESS_PER_S, type ItemDrop, type Slot } from './items';
+
+/** Rendição (Fase 2 da Psique): humanos perdendo podem se render. */
+export const SURRENDER = { below: 0.22, chance: 0.45, spareDist: 9, spareAfterS: 7 };
+/** Viajante em apuros: aparece às vezes na trilha depois de um tempo na região. */
+export const DISTRESS = { afterS: 75, chance: 0.7, noticeDist: 13, leaveDist: 28, leaveS: 8 };
 
 /** Eventos da Psique que fazem o personagem falar. */
 const VOICE_FOR: Partial<Record<PsycheEventKind, VoiceMoment>> = {
@@ -166,6 +172,8 @@ export type SimEvent =
   | { t: 'whisper'; items: Array<{ kind: 'trait' | 'value'; id: string; dir: 1 | -1; text: string }> }
   | { t: 'milestone'; value: ValueId; state: StrongState; title: string; lines: string[] }
   | { t: 'voice'; text: string }
+  | { t: 'surrender'; id: number; x: number; y: number }
+  | { t: 'spared'; id: number; x: number; y: number }
   | { t: 'dialogue'; id: DialogueId }
   | { t: 'telegraphLine'; x: number; y: number; dir: Vec2; length: number; width: number; duration: number }
   | { t: 'shot'; x: number; y: number }
@@ -229,6 +237,14 @@ export class Simulation {
   /** eventos gerados fora de um passo (ações do painel): saem no próximo passo */
   private outbox: SimEvent[] = [];
   private stepping = false;
+  /** eventos de mundo (viajante em apuros); o bot de balanceamento desliga */
+  worldEvents = true;
+  /** viajante cercado por Carniçais (no máximo um por visita à região) */
+  distress: { pos: Vec2; guards: number[]; state: 'waiting' | 'noticed' | 'saved' | 'lost'; farFor: number; until: number } | null = null;
+  private distressTimer = 0;
+  private distressRolled = false;
+  /** sorteios dos eventos de mundo (separado: não muda o resto da simulação) */
+  private worldRng: Rng;
   /** mudanças da Psique ainda não sussurradas ("trait:courage" → soma) */
   private shiftAcc: Record<string, number> = {};
   private lastWhisperAt = -999;
@@ -257,6 +273,7 @@ export class Simulation {
   constructor(character: Character, seed = 99, arrive?: Vec2) {
     this.c = character;
     this.rng = new Rng(seed);
+    this.worldRng = new Rng(seed * 7919 + 13);
     this.map = buildRegion(character.region ?? 'vale');
     const start = arrive ?? this.map.playerStart;
     this.player = {
@@ -295,6 +312,11 @@ export class Simulation {
     for (let i = 0; i < saved.length && i < this.explored.length; i++) this.explored[i] = saved.charCodeAt(i) === 49 ? 1 : 0;
     this.explore();
     for (const v of VALUE_IDS) this.strong[v] = strongState(character.psyche.values[v]);
+    const nem = character.nemesis;
+    if (nem && nem.region === this.map.id) {
+      const foe = this.enemies.find((e) => e.kind === nem.kind && dist(e.home, nem.home) < 0.6);
+      if (foe) foe.nemesis = true;
+    }
     this.lastPlayerPos = { ...this.player.pos };
     // Chegou de outra região: o personagem comenta.
     if (arrive) this.outbox.push({ t: 'voice', text: voiceLine('newRegion', character.psyche.traits) });
@@ -543,6 +565,7 @@ export class Simulation {
     this.updateProjectiles(dt);
     this.updateTraps(dt);
     this.updateProgress(dt);
+    if (this.worldEvents) this.updateDistress(dt);
 
     const notices = tickPsyche(psy, dt, {
       playTime: this.playTime,
@@ -571,7 +594,7 @@ export class Simulation {
   // -------------------------------------------------------------------------
 
   /** Registra o que mudou desde `before` (com a causa), sussurra e avisa marcos. */
-  private psyShift(cause: string, before: Snapshot, immediate = false): void {
+  private psyShift(cause: string, before: Snapshot, immediate = false, valueStep = WHISPER_VALUE): void {
     const c = this.c;
     const d = diff(before, snapshot(c.psyche));
     if (!d.length) return;
@@ -596,17 +619,17 @@ export class Simulation {
       const k = `${x.kind}:${x.id}`;
       this.shiftAcc[k] = (this.shiftAcc[k] ?? 0) + x.d;
     }
-    this.maybeWhisper(immediate);
+    this.maybeWhisper(immediate, valueStep);
     this.checkMilestones();
   }
 
   /** Sussurra as maiores mudanças acumuladas (no máximo duas), respeitando o intervalo. */
-  private maybeWhisper(immediate: boolean): void {
+  private maybeWhisper(immediate: boolean, valueStep = WHISPER_VALUE): void {
     if (!immediate && this.playTime - this.lastWhisperAt < WHISPER_GAP_S) return;
     const ready = Object.entries(this.shiftAcc)
       .map(([k, v]) => {
         const [kind, id] = k.split(':') as ['trait' | 'value', string];
-        return { k, kind, id, v, score: Math.abs(v) / (kind === 'value' ? WHISPER_VALUE : WHISPER_TRAIT) };
+        return { k, kind, id, v, score: Math.abs(v) / (kind === 'value' ? valueStep : WHISPER_TRAIT) };
       })
       .filter((x) => x.score >= 1)
       // Valores primeiro (são o que pesa nos Pactos e itens), depois traços, pela intensidade.
@@ -881,12 +904,14 @@ export class Simulation {
       if (c.booksRead.includes(b.id) || Math.hypot(b.x - p.pos.x, b.y - p.pos.y) > 1.4) continue;
       c.booksRead.push(b.id);
       this.acquireSpell(b.spell, { x: b.x, y: b.y }, 'Livro antigo');
+      this.shape('Leu um livro antigo', { knowledge: 2 });
     }
 
     // Fugir de uma luta perdida para o santuário molda a personalidade.
     const inSanct = this.inSanctuary();
     if (inSanct && !this.wasInSanctuary && p.hp / this.maxHp() < 0.5 && this.live().some((e) => e.aggro && dist(e.pos, p.pos) < 12)) {
       this.feel('retreat');
+      this.shape(eventText('retreat'), { freedom: 1 });
     }
     this.wasInSanctuary = inSanct;
 
@@ -1099,7 +1124,8 @@ export class Simulation {
   }
 
   private live(): Enemy[] {
-    return this.enemies.filter((e) => e.state !== 'dead');
+    // Quem se rendeu saiu da luta: magias e ameaças passam por ele.
+    return this.enemies.filter((e) => e.state !== 'dead' && e.state !== 'surrendered');
   }
 
   /** Ponto do mundo na direção da mira, limitado ao alcance. */
@@ -1293,6 +1319,11 @@ export class Simulation {
 
   private hitEnemy(e: Enemy, raw: number, opts: { ignoreArmor: boolean; source: 'basic' | 'spell'; knock?: number; big?: boolean }): void {
     const p = this.player;
+    if (e.state === 'surrendered') {
+      // Só um golpe deliberado executa; magias de área não decidem por você.
+      if (opts.source === 'basic') this.executeSurrendered(e);
+      return;
+    }
     if (e.evading) {
       this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: 0, target: 'enemy', id: e.id, immune: true, evade: true });
       return;
@@ -1351,6 +1382,159 @@ export class Simulation {
       big: opts.big,
     });
     if (e.hp <= 0) this.killEnemy(e);
+    else if (e.def.humanoid && !e.summoned && !e.surrenderChecked && e.hp < e.maxHp * SURRENDER.below) {
+      // Uma chance por vida: perdendo, um humano pode largar a arma.
+      e.surrenderChecked = true;
+      if (this.worldRng.chance(SURRENDER.chance)) this.surrender(e);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Ações que moldam os Valores (Fase 2 da Psique)
+  // -------------------------------------------------------------------------
+
+  /** Uma ação muda os Valores um pouco (e às vezes desperta uma emoção); o padrão é que pesa. */
+  private shape(cause: string, deltas: Partial<Record<ValueId, number>>, emotion?: { id: EmotionId; intensity: number; duration: number }): void {
+    const vals = this.c.psyche.values;
+    const before = snapshot(this.c.psyche);
+    for (const [k, d] of Object.entries(deltas) as Array<[ValueId, number]>) vals[k] = clamp(vals[k] + d, -50, 50);
+    if (emotion) addEmotion(this.c.psyche.emotions, emotion.id, emotion.intensity, emotion.duration);
+    // Um ato deliberado sussurra na hora: você sente que aquilo te mudou.
+    this.psyShift(cause, before, true, 1);
+  }
+
+  private surrender(e: Enemy): void {
+    Object.assign(e, { state: 'surrendered', surrenderAt: this.time, attack: null, aggro: false, knock: { x: 0, y: 0 }, provokedUntil: -1 });
+    this.emit({ t: 'surrender', id: e.id, x: e.pos.x, y: e.pos.y });
+    const h = this.c.hints;
+    if ((h.surrender ?? 0) < 2) {
+      h.surrender = (h.surrender ?? 0) + 1;
+      this.notice(`O ${e.def.name} larga a arma e se rende. Afaste-se para deixá-lo ir, ou golpeie para executar.`, 'info');
+    } else this.notice(`O ${e.def.name} se rende.`, 'info');
+  }
+
+  /** Quem se rendeu espera: se você se afasta (ou não golpeia por alguns segundos), ele foge, poupado. */
+  private updateSurrendered(e: Enemy): void {
+    const p = this.player;
+    if (p.dead || dist(e.pos, p.pos) > SURRENDER.spareDist || this.time - (e.surrenderAt ?? this.time) > SURRENDER.spareAfterS) this.spare(e);
+  }
+
+  private spare(e: Enemy): void {
+    Object.assign(e, { state: 'dead', hp: 0, respawnIn: e.def.respawn, nemesis: e.nemesis });
+    this.emit({ t: 'spared', id: e.id, x: e.pos.x, y: e.pos.y });
+    this.notice(`O ${e.def.name} foge, poupado.`, 'good');
+    this.gainXp(Math.round(e.def.xp * TUNING.xp * tierScale(this.map.tier).xp), false);
+    this.shape(`Poupou um ${e.def.name} rendido`, { mercy: 3, vengeance: -1 }, { id: 'calm', intensity: 0.25, duration: 12 });
+  }
+
+  private executeSurrendered(e: Enemy): void {
+    const v = this.c.psyche.values;
+    // Executar alimenta o lado cruel que você já tem (Poder ou Vingança).
+    const cruel: ValueId = v.power > v.vengeance ? 'power' : 'vengeance';
+    const emotion = this.c.psyche.traits.empathy > 60 ? { id: 'shame' as const, intensity: 0.3, duration: 30 } : { id: 'pride' as const, intensity: 0.2, duration: 10 };
+    this.shape(`Executou um ${e.def.name} rendido`, { [cruel]: 3, mercy: -2 }, emotion);
+    this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: Math.max(1, Math.ceil(e.hp)), target: 'enemy', id: e.id, big: true });
+    this.killEnemy(e);
+  }
+
+  /** Viajante em apuros: aparece na trilha; salvar ou deixar para trás. */
+  private updateDistress(dt: number): void {
+    const p = this.player;
+    const d = this.distress;
+    if (!d) {
+      if (this.distressRolled) return;
+      this.distressTimer += dt;
+      if (this.distressTimer < DISTRESS.afterS || p.dead || this.inCombat() || this.inSanctuary()) return;
+      this.distressRolled = true;
+      if (!this.worldRng.chance(DISTRESS.chance)) return;
+      const spot = this.findDistressSpot();
+      if (!spot) return;
+      const guards = [0, 1].map((i) => {
+        const a = this.worldRng.range(0, Math.PI * 2) + i * Math.PI;
+        return this.spawn('grunt', { x: spot.x + Math.cos(a) * 1.6, y: spot.y + Math.sin(a) * 1.6 }, true).id;
+      });
+      this.distress = { pos: spot, guards, state: 'waiting', farFor: 0, until: 0 };
+      return;
+    }
+    if (d.state === 'saved' || d.state === 'lost') return;
+    const alive = d.guards.filter((id) => this.enemies.some((e) => e.id === id && e.state !== 'dead'));
+    const near = dist(d.pos, p.pos);
+    if (d.state === 'waiting' && (near < DISTRESS.noticeDist || alive.length < d.guards.length)) {
+      d.state = 'noticed';
+      this.notice('Um viajante cercado por Carniçais grita por socorro!', 'warn');
+    }
+    if (d.state !== 'noticed') return;
+    if (!alive.length) return this.resolveDistress(true);
+    if (near > DISTRESS.leaveDist && !p.dead) {
+      d.farFor += dt;
+      if (d.farFor > DISTRESS.leaveS) this.resolveDistress(false);
+    } else d.farFor = 0;
+  }
+
+  private resolveDistress(saved: boolean): void {
+    const d = this.distress!;
+    d.state = saved ? 'saved' : 'lost';
+    d.until = this.time + 6;
+    if (saved) {
+      this.notice('O viajante agradece: "Que a trilha te devolva isso."', 'good');
+      this.gainXp(Math.round(40 * tierScale(this.map.tier).xp * TUNING.xp), false);
+      const pool = lootPool(this.map.tier);
+      if (pool.length && this.worldRng.chance(0.6)) {
+        const item = rollItem(this.worldRng, this.worldRng.pick(pool), this.c.nextItemUid++, rollQuality(this.worldRng, 0.5));
+        this.itemDrops.push({ id: this.nextId++, item, pos: { x: d.pos.x + 0.8, y: d.pos.y }, expiresAt: this.time + 180 });
+      }
+      this.shape('Salvou um viajante cercado', { mercy: 3, loyalty: 2 }, { id: 'joy', intensity: 0.3, duration: 20 });
+    } else {
+      this.notice('Os gritos ficam para trás.', 'bad');
+      this.shape('Deixou um viajante para trás', { freedom: 2, mercy: -1 });
+    }
+  }
+
+  /** Um trecho de trilha a 16–30 m de você, longe do santuário, da arena e de outros inimigos. */
+  private findDistressSpot(): Vec2 | null {
+    const m = this.map;
+    const p = this.player.pos;
+    const out: Vec2[] = [];
+    for (let y = 2; y < m.h - 2; y++)
+      for (let x = 2; x < m.w - 2; x++) {
+        if (m.tiles[y * m.w + x] !== Tile.Path) continue;
+        const c = { x: x + 0.5, y: y + 0.5 };
+        const dd = dist(c, p);
+        if (dd < 16 || dd > 30) continue;
+        if (inCircle(m.sanctuary, c, 6) || (m.arena && inCircle(m.arena, c, 3))) continue;
+        if (this.enemies.some((e) => e.state !== 'dead' && dist(e.pos, c) < 7)) continue;
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isBlocked(m, c.x + dx! * 1.6, c.y + dy! * 1.6))) continue;
+        out.push(c);
+      }
+    return out.length ? this.worldRng.pick(out) : null;
+  }
+
+  // Altares (oferendas): pegar ou deixar.
+  shrineAt(pt: Vec2, radius: number): { id: string; x: number; y: number } | null {
+    return this.map.shrines.find((s) => Math.hypot(s.x - pt.x, s.y - pt.y) <= radius) ?? null;
+  }
+
+  /** Pegar as moedas (Poder ↑, Lei ↓; entre elas há um item) ou deixá-las (Lei ↑). Devolve a resposta do mundo. */
+  actShrine(id: string, gesture: 'take' | 'leave'): string | null {
+    const s = this.map.shrines.find((x) => x.id === id);
+    const p = this.player;
+    if (!s || this.c.shrines[id] || Math.hypot(s.x - p.pos.x, s.y - p.pos.y) > 3.5) return null;
+    this.c.shrines[id] = gesture === 'take' ? 'taken' : 'left';
+    if (gesture === 'take') {
+      const pool = lootPool(this.map.tier);
+      if (pool.length) {
+        const item = rollItem(this.worldRng, this.worldRng.pick(pool), this.c.nextItemUid++, rollQuality(this.worldRng, 0.8));
+        if (this.c.bag.length < BAG_SIZE) {
+          this.c.bag.push(item);
+          this.emit({ t: 'itemPickup', x: s.x, y: s.y, quality: item.quality });
+          this.emit({ t: 'notice', text: `Entre as moedas, um item: ${itemName(item)} (${QUALITY_NAMES[item.quality - 1]}).`, tone: 'good' });
+        } else this.itemDrops.push({ id: this.nextId++, item, pos: { x: s.x + 0.8, y: s.y }, expiresAt: this.time + 180 });
+      }
+      this.shape('Pegou as moedas de um altar', { power: 2, law: -3 });
+      return 'O ouro não pesa na mão. Pesa depois.';
+    }
+    this.shape('Deixou as moedas do altar', { law: 3 }, { id: 'calm', intensity: 0.2, duration: 12 });
+    return 'Há quem respeite o que não é seu mesmo sem plateia.';
   }
 
   // -------------------------------------------------------------------------
@@ -1466,6 +1650,13 @@ export class Simulation {
       this.notice(`${e.def.name} deixou cair um grimório.`, 'good');
     }
     if (!e.summoned) this.dropGear(e);
+    if (e.nemesis) {
+      e.nemesis = false;
+      this.c.nemesis = null;
+      this.notice('Você derrotou o seu algoz.', 'good');
+      this.shape(`Derrotou o seu algoz (${e.def.name})`, { vengeance: 5 }, { id: 'pride', intensity: 0.35, duration: 20 });
+      this.voice('nemesis');
+    }
     p.needs.fight = clamp(p.needs.fight + 0.12, 0, 1);
     this.gainXp(Math.round(e.def.xp * TUNING.xp * tierScale(this.map.tier).xp), true);
     p.killTimes = p.killTimes.filter((t) => this.time - t < 6);
@@ -1613,6 +1804,16 @@ export class Simulation {
     });
     c.echo = { region: this.map.id, pos: { ...p.pos }, xpBack: Math.round(xpLoss / 2), expiresAt: this.playTime + ECHO_LIFE_S, items: fallen };
     this.notice(`Você caiu. Penalidade ${c.penaltyLevel} (${row.mult}x): -${xpLoss} XP. Seu Eco ficou onde você caiu.`, 'bad');
+    // Quem te derrubou fica marcado: o seu algoz (sobrevive a sair do jogo).
+    const killer = this.enemies
+      .filter((x) => x.state !== 'dead' && x.state !== 'surrendered' && x.aggro && !x.summoned && !x.def.boss && dist(x.pos, p.pos) < 10)
+      .sort((a, b) => dist(a.pos, p.pos) - dist(b.pos, p.pos))[0];
+    if (killer) {
+      for (const x of this.enemies) x.nemesis = false;
+      killer.nemesis = true;
+      c.nemesis = { region: this.map.id, kind: killer.kind, home: { ...killer.home }, name: killer.def.name };
+      this.notice(`${killer.def.name} te derrubou e ficou marcado: é o seu algoz.`, 'warn');
+    }
     if (fallen.length)
       this.notice(`Caíram no seu Eco: ${fallen.map((x) => itemName(x.item)).join(', ')}. Volte lá em até 30 min de jogo para recuperar.`, 'warn');
     this.feel('death');
@@ -1727,7 +1928,7 @@ export class Simulation {
         e.respawnIn -= dt;
         if (e.respawnIn <= 0 && dist(e.home, p.pos) > 14) {
           const maxHp = e.def.hp * TUNING.enemyHp * tierScale(this.map.tier).hp;
-          Object.assign(e, { hp: maxHp, maxHp, state: 'idle', pos: { ...e.home }, aggro: false, signatureHits: 0, phase: 1 });
+          Object.assign(e, { hp: maxHp, maxHp, state: 'idle', pos: { ...e.home }, aggro: false, signatureHits: 0, phase: 1, surrenderChecked: false });
         }
         continue;
       }
@@ -1739,6 +1940,11 @@ export class Simulation {
         e.knock.x *= decay;
         e.knock.y *= decay;
         if (inCircle(this.map.sanctuary, e.pos, 1)) e.knock = { x: 0, y: 0 };
+      }
+
+      if (e.state === 'surrendered') {
+        this.updateSurrendered(e);
+        continue;
       }
 
       // Sombra: revelado pelo Olhar ou muito perto.

@@ -227,6 +227,9 @@ export function drawMarkers(g: CanvasRenderingContext2D, sim: Simulation, scale:
     g.fillRect(S(b.x) - 4, S(b.y) - 4, 8, 8);
     g.strokeRect(S(b.x) - 4, S(b.y) - 4, 8, 8);
   }
+  for (const s of sim.map.shrines) if (sim.isExplored(s.x, s.y)) dot(s.x, s.y, 4.5, sim.c.shrines[s.id] === 'taken' ? '#8a8172' : '#e8c35a', '#3a2a18');
+  for (const e of sim.enemies) if (e.nemesis && e.state !== 'dead' && sim.isExplored(e.pos.x, e.pos.y)) dot(e.pos.x, e.pos.y, 5, '#ff3b3b', '#fff');
+  if (sim.distress?.state === 'noticed') dot(sim.distress.pos.x, sim.distress.pos.y, 5, '#ff6a5a', '#fff');
   for (const d of sim.itemDrops) if (sim.isExplored(d.pos.x, d.pos.y)) dot(d.pos.x, d.pos.y, 4, QUALITY_COLORS[d.item.quality - 1] ?? '#fff', '#3a2a18');
   for (const d of sim.drops) if (sim.isExplored(d.pos.x, d.pos.y)) dot(d.pos.x, d.pos.y, 5, AFFINITY_COLORS[SPELLS[d.spell].affinity], '#fff');
   if (sim.echo) dot(sim.echo.pos.x, sim.echo.pos.y, 5.5, '#a8e6ff', '#fff');

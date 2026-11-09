@@ -39,10 +39,11 @@ Fonte de verdade do design: o GDD "Sistema de Aura, Psique e Maestria" (document
 - [x] Ressonância dos itens raros com a Psique: Obra-prima (sempre) e Primoroso (metade) pedem um Valor ligado ao espaço; se o Valor é forte em você o item rende +25%, se você é contra rende −25% e soma estresse em combate. Acompanha os Valores conforme eles mudam
 
 - [x] Psique, Fase 1 (Sinal e voz — doc "Psique no jogo — redesenho"): sussurros quando traços e Valores mudam, marco quando um Valor fica forte (com o que abre), efeito de cada emoção em palavras no HUD e aura no chão, voz interna do personagem nos momentos marcantes, aba "Como você mudou"
+- [x] Psique, Fase 2 (ações que moldam os Valores): Lançadores perdendo se rendem (afastar-se poupa → Misericórdia; golpear executa → Vingança ou Poder, com loot); algoz marcado entre sessões (vencê-lo → Vingança); viajante em apuros na trilha (salvar → Misericórdia e Lealdade + recompensa; deixar → Liberdade); altares com escolha por gesto (pegar → Poder, Lei ↓ e um item; deixar → Lei); livros → Conhecimento; fugir → Liberdade. Atos deliberados sussurram na hora
+- Natureza (caçar além do necessário) fica para quando houver criaturas que não atacam
 
 ## Próximo
 
-- Psique, Fase 2: ações que moldam os Valores (render, poupar, executar, algoz, saquear, defender)
 - Psique, Fase 3: as 9 conversas viram situações com consequência e eco
 - Psique, Fase 4: falas que notam você, reputação por região, inimigos que reagem
 

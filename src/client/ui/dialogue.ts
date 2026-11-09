@@ -59,6 +59,35 @@ export class DialogueBox {
     });
   }
 
+  /**
+   * Escolha por gesto (uma situação no mundo): as opções são ações, e o mundo responde.
+   * Cada opção devolve a resposta (ou null se não deu para fazer).
+   */
+  gesture(name: string, title: string, text: string, options: Array<{ label: string; act: () => string | null }>, color?: string): void {
+    this.render(
+      name,
+      title,
+      `<p class="dl-text">${escapeHtml(text)}</p>
+       <div class="dl-options">${options
+         .map((o, i) => `<button class="dl-opt gesture" data-i="${i}"><kbd>${i + 1}</kbd><span>[${escapeHtml(o.label)}]</span></button>`)
+         .join('')}</div>`,
+      color,
+    );
+    const pick = (i: number) => {
+      const o = options[i];
+      if (!o) return;
+      const reply = o.act();
+      if (reply === null) return this.close();
+      this.showLine(name, title, reply, color);
+    };
+    this.root.querySelectorAll<HTMLButtonElement>('.dl-opt').forEach((b) => b.addEventListener('click', () => pick(+b.dataset.i!)));
+    this.bindKeys((e) => {
+      const i = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
+      if (i >= 0) pick(i);
+      if (e.code === 'Escape') this.close();
+    });
+  }
+
   private showLine(name: string, title: string, text: string, color?: string): void {
     this.render(
       name,

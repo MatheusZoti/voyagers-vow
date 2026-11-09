@@ -26,6 +26,9 @@
   "books": [
     {"id":"tomeVarn","spell":"repel","x":44,"y":27.5}
   ],
+  "shrines": [
+    {"id":"varn-altar-rubro","x":22.5,"y":6.5}
+  ],
   "spawns": [
     {"kind":"grunt","x":19,"y":25},
     {"kind":"grunt","x":20,"y":28},

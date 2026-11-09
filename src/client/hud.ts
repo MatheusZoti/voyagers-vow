@@ -306,6 +306,9 @@ export class Hud {
       if (p.dead) hint = 'Você caiu… renascendo no santuário.';
       else if (sim.meditating()) hint = c.elos.some((e) => e.sealed) ? 'Cumprindo a penitência…' : 'Meditando. O estresse cai e a Calma chega.';
       else if (sim.inSanctuary()) hint = `${sim.map.safeName}: <b>Shift</b> Silêncio para meditar · <b>K</b> Grade de Elos · <b>C</b> Ficha`;
+      else if (sim.map.shrines.some((s) => !c.shrines[s.id] && Math.hypot(s.x - p.pos.x, s.y - p.pos.y) < 3.5)) hint = 'Um altar com oferendas. <b>Clique</b> nele para decidir.';
+      else if (sim.enemies.some((e) => e.state === 'surrendered' && Math.hypot(e.pos.x - p.pos.x, e.pos.y - p.pos.y) < 9))
+        hint = 'Ele se rendeu: <b>afaste-se</b> para deixá-lo ir, ou <b>golpeie</b> para executar.';
       this.hint.innerHTML = hint;
       this.hint.classList.toggle('show', !!hint);
     }

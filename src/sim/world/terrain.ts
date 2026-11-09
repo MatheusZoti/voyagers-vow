@@ -57,6 +57,8 @@ export interface MapData {
   spawns: SpawnDef[];
   npcs: Array<{ id: NpcId; x: number; y: number }>;
   books: Array<{ id: string; spell: SpellId; x: number; y: number }>;
+  /** altares com oferendas (id único no jogo todo) */
+  shrines?: Array<{ id: string; x: number; y: number }>;
   traps: Vec2[];
   exits: Exit[];
   places: Array<{ name: string; x: number; y: number }>;
@@ -450,6 +452,7 @@ export function mapPois(d: MapData): Array<{ x: number; y: number; what: string 
     ...d.npcs.map((n) => ({ x: n.x, y: n.y, what: `NPC ${n.id}` })),
     ...d.books.map((b) => ({ x: b.x, y: b.y, what: `Livro ${b.id}` })),
     ...d.traps.map((t) => ({ x: t.x, y: t.y, what: 'Armadilha' })),
+    ...(d.shrines ?? []).map((s) => ({ x: s.x, y: s.y, what: `Altar ${s.id}` })),
   ];
 }
 
@@ -616,6 +619,7 @@ export function compileMap(d: MapData): GameMap {
     traps: d.traps.map((p) => ({ ...p })),
     npcs: d.npcs.map((n) => ({ ...n })),
     books: d.books.map((b) => ({ ...b })),
+    shrines: (d.shrines ?? []).map((s) => ({ ...s })),
     exits: d.exits.map((e) => ({ ...e, arrive: { ...e.arrive } })),
     places: d.places.map((p) => ({ ...p })),
   };
@@ -756,6 +760,7 @@ const KEY_ORDER: Array<keyof MapData> = [
   'places',
   'npcs',
   'books',
+  'shrines',
   'spawns',
   'traps',
   'ramps',

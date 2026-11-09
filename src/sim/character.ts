@@ -57,6 +57,10 @@ export interface Character {
   hints: Record<string, number>;
   /** como a personalidade mudou, com a causa (mais recente primeiro) */
   shifts: PsycheShift[];
+  /** o seu algoz: a criatura que te derrubou da última vez (onde ela vive) */
+  nemesis: { region: string; kind: string; home: { x: number; y: number }; name: string } | null;
+  /** altares já resolvidos: pegou as moedas ou deixou */
+  shrines: Record<string, 'taken' | 'left'>;
 }
 
 /** Saves de antes dos equipamentos ganham equipamento e mochila vazios. */
@@ -67,6 +71,8 @@ export function ensureGear(c: Character): void {
   if (c.echo === undefined) c.echo = null;
   if (!c.hints) c.hints = {};
   if (!Array.isArray(c.shifts)) c.shifts = [];
+  if (c.nemesis === undefined) c.nemesis = null;
+  if (!c.shrines) c.shrines = {};
 }
 
 /** XP para o próximo nível. (Playtest 09/11: nível 5 em 8 min era rápido demais; agora ~1,8× mais.) */
@@ -125,6 +131,8 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
     echo: null,
     hints: {},
     shifts: [],
+    nemesis: null,
+    shrines: {},
   };
   refreshEloUnlocks(c);
   elos[0]!.technique = first;

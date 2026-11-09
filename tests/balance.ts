@@ -110,6 +110,7 @@ export function runScenario(
   refreshEloUnlocks(c);
   if (scenario.kit) equipKit(c, scenario.kit);
   const sim = new Simulation(c, 13);
+  sim.worldEvents = false;
   sim.player.hp = maxHpFor(c);
   // Mantém só os inimigos do cenário, perto de um ponto aberto do campo.
   const chosen: Enemy[] = [];

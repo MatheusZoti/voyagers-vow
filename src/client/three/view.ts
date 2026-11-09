@@ -32,6 +32,12 @@ const CAM_OFFSET = new THREE.Vector3(0, 17, 12.5);
 
 interface EnemyView {
   rig: Rig;
+  /** fugiu poupado: some sem cair */
+  fled?: boolean;
+  /** marcador do algoz (sobre a cabeça) */
+  nemesis?: THREE.Mesh;
+  /** anel branco de quem se rendeu */
+  white?: THREE.Mesh;
   markRing: THREE.Mesh;
   detectRing: THREE.Mesh;
   rootRing: THREE.Mesh;
@@ -75,6 +81,11 @@ export class GameView {
   private glowLights: THREE.PointLight[] = [];
   /** anel no chão com a cor da emoção dominante */
   private emoRing!: THREE.Mesh;
+  /** altares: o grupo das moedas (some quando alguém pega ou decide) */
+  private shrineCoins = new Map<string, THREE.Group>();
+  /** viajante em apuros */
+  private distressRig: Rig | null = null;
+  private distressRing!: THREE.Mesh;
   /** balão da voz interna (um de cada vez) */
   private bubble: { el: HTMLDivElement; age: number; life: number } | null = null;
   private trapMeshes: THREE.Group[] = [];
@@ -224,6 +235,37 @@ export class GameView {
     this.echoMesh.add(ghost, wisp);
     this.echoMesh.visible = false;
     this.scene.add(this.echoMesh);
+
+    // Altares com oferendas: pedra, laje e um punhado de moedas.
+    for (const s of sim.map.shrines) {
+      const g = new THREE.Group();
+      const stone = mat('#9c9484');
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.55, 0.7), stone);
+      base.position.y = 0.27;
+      const top = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.12, 0.9), mat('#b3aa96'));
+      top.position.y = 0.6;
+      base.castShadow = top.castShadow = true;
+      base.receiveShadow = top.receiveShadow = true;
+      const coins = new THREE.Group();
+      const gold = mat('#e8c35a', { emissive: '#a07818', emissiveIntensity: 0.6, metalness: 0.6, roughness: 0.35 });
+      for (let i = 0; i < 7; i++) {
+        const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.025, 10), gold);
+        coin.position.set(((i * 37) % 7) / 7 - 0.45, 0.68 + (i % 3) * 0.02, ((i * 53) % 5) / 6 - 0.3);
+        coin.rotation.set((i % 2) * 0.3, i, 0);
+        coins.add(coin);
+      }
+      g.add(base, top, coins);
+      g.position.set(s.x, this.gh(s.x, s.y), s.y);
+      this.scene.add(g);
+      this.shrineCoins.set(s.id, coins);
+    }
+    // Viajante em apuros (aparece só quando o evento acontece).
+    this.distressRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.7, 0.9, 32),
+      new THREE.MeshBasicMaterial({ color: '#ff6a5a', transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    this.distressRing.rotation.x = -Math.PI / 2;
+    this.scene.add(this.distressRing);
 
     // NPCs do vale.
     for (const n of sim.map.npcs) {
@@ -439,6 +481,11 @@ export class GameView {
         case 'voice':
           this.say(ev.text);
           break;
+        case 'spared': {
+          const v = this.enemies.get(ev.id);
+          if (v) v.fled = true;
+          break;
+        }
         case 'itemPickup': {
           const color = QUALITY_COLORS[ev.quality - 1] ?? '#ffffff';
           this.fx.burst({ x: ev.x, y: ev.y }, color, 14, 2.2);
@@ -606,6 +653,40 @@ export class GameView {
       const sq = v.punch * 0.22;
       v.rig.body.scale.set(1 + sq, 1 - sq, 1 + sq);
       let opacity = dead ? Math.max(0, 1 - Math.max(0, v.dead - 1.2) / 0.8) : 1;
+      // Poupado: some depressa, sem cair.
+      if (dead && v.fled) opacity = Math.max(0, 1 - v.dead / 0.7);
+      if (!dead && v.fled) v.fled = false;
+      // Rendido: ajoelhado, com um anel branco no chão.
+      const knelt = e.state === 'surrendered';
+      if (knelt || v.white) {
+        if (!v.white) {
+          v.white = new THREE.Mesh(
+            new THREE.RingGeometry(0.55, 0.72, 28),
+            new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }),
+          );
+          v.white.rotation.x = -Math.PI / 2;
+          v.white.position.y = 0.06;
+          v.rig.root.add(v.white);
+        }
+        v.white.visible = knelt;
+      }
+      if (knelt) {
+        v.rig.body.position.y = -0.32;
+        v.rig.body.rotation.x = 0.35;
+      }
+      // Algoz: um losango vermelho sobre a cabeça.
+      if (e.nemesis && !v.nemesis) {
+        v.nemesis = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.2, 0),
+          new THREE.MeshBasicMaterial({ color: '#ff3b3b', transparent: true, opacity: 0.9 }),
+        );
+        v.nemesis.position.y = v.rig.height / (e.def.boss ? 1.75 : 1) + 0.95;
+        v.rig.root.add(v.nemesis);
+      }
+      if (v.nemesis) {
+        v.nemesis.visible = !!e.nemesis && !dead;
+        v.nemesis.rotation.y += dt * 2;
+      }
       if (e.def.shadowed && !dead) opacity = e.revealed ? 0.8 : 0;
       // Recuando (imune): meio transparente.
       if (e.evading && !dead) opacity = Math.min(opacity, 0.45);
@@ -614,7 +695,7 @@ export class GameView {
       setOpacity(v.rig, opacity);
       v.hurt = Math.max(0, v.hurt - dt);
       flash(v.rig, v.hurt > 0 ? 1 : 0);
-      v.bar.visible = !dead && opacity > 0.1 && (e.hp < e.maxHp || e.aggro);
+      v.bar.visible = !dead && !knelt && opacity > 0.1 && (e.hp < e.maxHp || e.aggro);
       if (v.bar.visible) {
         const k = Math.max(0, e.hp / e.maxHp);
         v.barFill.scale.x = Math.max(0.001, k);
@@ -640,6 +721,34 @@ export class GameView {
       this.echoMesh.visible = true;
       this.echoMesh.position.set(sim.echo.pos.x, this.gh(sim.echo.pos.x, sim.echo.pos.y) + Math.sin(this.time * 2) * 0.15, sim.echo.pos.y);
     } else this.echoMesh.visible = false;
+
+    // Altares: as moedas somem quando você decide (pegar ou deixar, o altar fica quieto).
+    for (const [id, coins] of this.shrineCoins) coins.visible = !sim.c.shrines[id] || sim.c.shrines[id] === 'left';
+    // Viajante em apuros: ajoelhado; anel vermelho pulsando enquanto pede socorro.
+    const ds = sim.distress;
+    const showDs = !!ds && ds.state !== 'lost' && !(ds.state === 'saved' && sim.time > ds.until);
+    if (showDs && !this.distressRig) {
+      this.distressRig = buildPlayer('#8a7a5a');
+      rememberEmissive(this.distressRig);
+      this.scene.add(this.distressRig.root);
+    }
+    if (this.distressRig) {
+      this.distressRig.root.visible = showDs && sim.isExplored(ds!.pos.x, ds!.pos.y);
+      if (ds) {
+        this.distressRig.root.position.set(ds.pos.x, this.gh(ds.pos.x, ds.pos.y), ds.pos.y);
+        animateRig(this.distressRig, dt, 0, { attack: 0, windup: 0, dead: 0 });
+        if (ds.state !== 'saved') {
+          this.distressRig.body.position.y = -0.35;
+          this.distressRig.body.rotation.x = 0.4;
+        }
+        if (ds.state === 'saved') setOpacity(this.distressRig, Math.max(0, Math.min(1, (ds.until - sim.time) / 2)));
+      }
+    }
+    const rm = this.distressRing.material as THREE.MeshBasicMaterial;
+    if (ds && ds.state === 'noticed' && showDs) {
+      this.distressRing.position.set(ds.pos.x, this.gh(ds.pos.x, ds.pos.y) + 0.06, ds.pos.y);
+      rm.opacity = 0.35 + 0.25 * Math.sin(this.time * 5);
+    } else rm.opacity = 0;
 
     // NPCs: respiração leve, nome e "!" quando há conversa nova.
     for (const n of this.npcs) {

@@ -103,6 +103,8 @@ export interface GameMap {
   npcs: Array<{ id: NpcId; x: number; y: number }>;
   /** livros antigos: cada um ensina uma magia fixa */
   books: Array<{ id: string; spell: SpellId; x: number; y: number }>;
+  /** altares com oferendas: pegar ou deixar (Lei e Poder) */
+  shrines: Array<{ id: string; x: number; y: number }>;
   exits: Exit[];
   /** variação visual por tile (0–1), para o cliente */
   variation: Float32Array;
