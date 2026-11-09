@@ -5,7 +5,7 @@ import { STRONG_VALUE, VALUE_IDS, VALUE_NAMES, type ValueId } from '../../sim/ps
 import type { Simulation } from '../../sim/sim';
 import { NATURE_NAMES, resonance, SPELL_RULES, SPELLS, type SpellDef, type SpellId } from '../../sim/techniques';
 import { escapeHtml, hintTip } from '../util';
-import { pactPips } from './charts';
+import { affinityRadar, pactPips } from './charts';
 import { icon } from './icons';
 
 /**
@@ -228,10 +228,39 @@ export function catalogHtml(sim: Simulation, st: CatalogState, kind: CatalogKind
     ${bar}
     <div class="cat-filters">${filters}</div>
     <div class="cat-main">
-      <div class="cat-col">${count}<div class="cat-list" data-keep-scroll="cat-list" role="listbox">${rows}</div></div>
+      <div class="cat-col">${!ctx && spells ? buildCard(sim) : ''}${count}<div class="cat-list" data-keep-scroll="cat-list" role="listbox">${rows}</div></div>
       <aside class="cat-detail" data-keep-scroll="cat-detail">${detail}</aside>
     </div>
     <div class="cat-keys">${keys}</div>
+  </div>`;
+}
+
+/**
+ * Tendência dos Elos: para onde as magias equipadas puxam o seu conjunto.
+ * A afinidade do personagem é fixa; o que muda é o que você escolhe equipar.
+ */
+function buildCard(sim: Simulation): string {
+  const c = sim.c;
+  const count = Object.fromEntries(AFFINITY_RING.map((a) => [a, 0])) as Record<Affinity, number>;
+  let total = 0;
+  for (const slot of c.elos) {
+    if (!slot.unlocked || !slot.technique) continue;
+    count[SPELLS[slot.technique as SpellId].affinity] += 1;
+    total++;
+  }
+  const max = Math.max(1, ...Object.values(count));
+  const weights = Object.fromEntries(AFFINITY_RING.map((a) => [a, count[a] / max])) as Record<Affinity, number>;
+  const top = AFFINITY_RING.filter((a) => total && count[a] === max);
+  const lean = !total
+    ? 'nenhuma magia equipada'
+    : top.length === 1
+      ? `puxa para <b style="color:${AFFINITY_COLORS[top[0]!]}">${AFFINITY_NAMES[top[0]!]}</b>`
+      : `equilibrado: ${top.map((a) => `<b style="color:${AFFINITY_COLORS[a]}">${AFFINITY_NAMES[a]}</b>`).join(' · ')}`;
+  return `<div class="cat-build">
+    <div class="cb-head"><b>Tendência dos Elos</b>${hintTip(
+      `A forma mostra de quais afinidades são as magias equipadas nos seus Elos (${total} no total). Sua afinidade (${AFFINITY_NAMES[c.affinity]}) é fixa: magias dela entram em qualquer Elo sem perder nível. As outras perdem 1 nível efetivo por passo de distância no pentágono e pedem Elos mais altos; o rótulo de cada ponta mostra a partir de qual.`,
+    )}<span>${lean}</span></div>
+    ${affinityRadar(c, weights)}
   </div>`;
 }
 

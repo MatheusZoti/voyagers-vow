@@ -86,18 +86,49 @@ export function ensureGear(c: Character): void {
 export const xpToNext = (level: number) => Math.round(150 * Math.pow(level, 1.7));
 export const maxHpFor = (c: Character) => computeStats(c).hp;
 
-/** Elos liberados pela progressão: 1 e 2 no início, 3 no nível 3, 4 no nível 5, 5 ao vencer o chefe. */
+/**
+ * Marcos que liberam Elos. Cada marco cumprido libera o PRÓXIMO Elo, sempre em ordem:
+ * vencer o Guardião no nível 4 abre o Elo 4, e o nível 5 depois abre o Elo 5.
+ */
+export const ELO_MILESTONES: Array<{ label: string; done: (c: Character) => boolean }> = [
+  { label: 'nível 3', done: (c) => c.level >= 3 },
+  { label: 'nível 5', done: (c) => c.level >= 5 },
+  { label: 'vencer o Guardião', done: (c) => c.bossDefeated },
+];
+const BASE_ELOS = 2;
+
+/** Quantos Elos o personagem tem direito agora. */
+export const elosEarned = (c: Character) => BASE_ELOS + ELO_MILESTONES.filter((m) => m.done(c)).length;
+
+/**
+ * Abre os Elos a que o personagem tem direito, em ordem. Corrige saves antigos em que
+ * um Elo alto abriu antes de um mais baixo (o Elo vazio volta a fechar; um com magia fica).
+ */
 export function refreshEloUnlocks(c: Character): number[] {
   const unlocked: number[] = [];
-  const should = (lvl: number) =>
-    lvl <= 2 || (lvl === 3 && c.level >= 3) || (lvl === 4 && c.level >= 5) || (lvl === 5 && c.bossDefeated);
+  const earned = elosEarned(c);
   for (const slot of c.elos) {
-    if (!slot.unlocked && should(slot.level)) {
-      slot.unlocked = true;
-      unlocked.push(slot.level);
+    if (slot.level <= earned) {
+      if (!slot.unlocked) {
+        slot.unlocked = true;
+        unlocked.push(slot.level);
+      }
+    } else if (slot.unlocked && !slot.technique) {
+      slot.unlocked = false;
     }
   }
   return unlocked;
+}
+
+/** O que falta para abrir cada Elo fechado (para a Grade de Elos). */
+export function eloUnlockHint(c: Character, level: number): string {
+  const missing = ELO_MILESTONES.filter((m) => !m.done(c)).map((m) => m.label);
+  const k = level - elosEarned(c); // 1 = o próximo a abrir
+  if (k < 1 || k > missing.length) return 'mais adiante';
+  if (missing.length === 1) return missing[0]!;
+  if (k === 1) return missing.join(' ou ');
+  if (k === missing.length) return missing.join(' e ');
+  return `${k} destes: ${missing.join(', ')}`;
 }
 
 /**
@@ -161,6 +192,8 @@ export function migrateCharacter(raw: unknown): Character | null {
     if (!c.region) c.region = 'vale';
     ensureMastery(c as Character);
     ensureGear(c as Character);
+    // A regra de liberar Elos mudou (sempre em ordem): corrige saves com buracos na Grade.
+    refreshEloUnlocks(c as Character);
     return c as Character;
   }
   if (c.version !== 1) return null;

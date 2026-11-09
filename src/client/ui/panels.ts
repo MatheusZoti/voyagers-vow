@@ -1,6 +1,6 @@
-import { AFFINITY_COLORS, AFFINITY_DESC, AFFINITY_NAMES, minSlotFor } from '../../sim/flow/affinity';
+import { AFFINITY_COLORS, AFFINITY_NAMES, minSlotFor } from '../../sim/flow/affinity';
 import { canAddRestriction, PACTS, trimMods, type EffectiveInfo, type ModId, type PactId } from '../../sim/elos';
-import { xpToNext } from '../../sim/character';
+import { eloUnlockHint, xpToNext } from '../../sim/character';
 import { displayLevel, GRACE_PLAYED_S, masteryCostMult, modifierDiscount, sharpnessMult } from '../../sim/mastery';
 import { EMOTION_COLORS, EMOTION_NAMES, type Emotion } from '../../sim/psyche/emotions';
 import { CRISIS_DESC, CRISIS_NAMES } from '../../sim/psyche/psyche';
@@ -47,7 +47,6 @@ import type { Sfx } from '../sfx';
 import type { PlaytestRecorder } from '../playtest';
 import { escapeHtml, hintTip } from '../util';
 import {
-  affinityRadar,
   buildConstellation,
   constellation,
   emotionWheel,
@@ -661,12 +660,6 @@ export class Panels {
             : '<span class="muted">Sereno — nenhuma emoção forte.</span>'
         }</div>
       </section>
-      <section class="card radar-card">
-        <h4>Afinidade <em>${AFFINITY_NAMES[c.affinity]}</em> ${tip(
-          `${AFFINITY_DESC[c.affinity]} Magias da sua afinidade entram em qualquer Elo sem perder nível. As das outras perdem 1 nível efetivo por passo de distância no pentágono e pedem Elos mais altos (o rótulo de cada ponta mostra a partir de qual). A forma colorida mostra quanto a sua personalidade puxa para cada afinidade.`,
-        )}</h4>
-        ${affinityRadar(c)}
-      </section>
       </div>
       <div class="psy-col">
       <section class="card traits-card">
@@ -713,7 +706,7 @@ export class Panels {
         const info = slot.unlocked && tech ? sim.slotInfo(slot) : null;
         const sel = slot.level === this.selectedElo;
         const art = !slot.unlocked ? 'lock' : slot.sealed ? 'seal' : tech ? tech.icon : 'empty';
-        const unlockHint = { 3: 'nível 3', 4: 'nível 5', 5: 'vencer o Guardião' }[slot.level] ?? 'mais adiante';
+        const unlockHint = eloUnlockHint(c, slot.level);
         const sub = !slot.unlocked
           ? `Libera: ${unlockHint}`
           : slot.sealed

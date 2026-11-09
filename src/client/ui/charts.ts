@@ -1,6 +1,6 @@
 import type { Character } from '../../sim/character';
 import { MODS, modCost, PACTS, type EffectiveInfo, type EloSlot, type ModId } from '../../sim/elos';
-import { AFFINITY_COLORS, AFFINITY_NAMES, AFFINITY_RING, affinityScores, hexDistance } from '../../sim/flow/affinity';
+import { AFFINITY_COLORS, AFFINITY_NAMES, AFFINITY_RING, hexDistance, type Affinity } from '../../sim/flow/affinity';
 import { displayLevel, type MasteryRecord } from '../../sim/mastery';
 import { clamp } from '../../sim/math';
 import { EMOTION_COLORS, EMOTION_NAMES, type EmotionId, type EmotionMap } from '../../sim/psyche/emotions';
@@ -49,13 +49,13 @@ const nextId = (p: string) => `${p}${++uid}`;
 // Radar do hexágono de afinidades (referência: radar com blob orgânico)
 // ---------------------------------------------------------------------------
 
-export function affinityRadar(c: Character): string {
+/** Pentágono de afinidades; `weights` (0–1) desenha a forma colorida. */
+export function affinityRadar(c: Character, weights: Record<Affinity, number>): string {
   const S = 380;
   const H = 300;
   const cx = S / 2;
   const cy = H / 2 + 4;
   const R = 92;
-  const scores = affinityScores(c.psyche.traits);
   const ang = (i: number) => -Math.PI / 2 + (i * 2 * Math.PI) / AFFINITY_RING.length;
   const grad = nextId('rg');
   const glow = nextId('gl');
@@ -64,7 +64,7 @@ export function affinityRadar(c: Character): string {
       .map((p, i) => `${i ? 'L' : 'M'}${f(p[0])},${f(p[1])}`)
       .join(' ') + 'Z';
   const pts = AFFINITY_RING.map((a, i) => {
-    const v = clamp(0.2 + ((scores[a] + 35) / 70) * 0.8, 0.14, 1);
+    const v = clamp(0.14 + weights[a] * 0.86, 0.14, 1);
     return polar(cx, cy, R * v, ang(i));
   });
   const labels = AFFINITY_RING.map((a, i) => {

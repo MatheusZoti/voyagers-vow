@@ -13,7 +13,7 @@ import {
 import { reactTo } from '../src/sim/psyche/emotions';
 import { chooseCrisis, createPsyche, psycheEvent, tickPsyche } from '../src/sim/psyche/psyche';
 import { neutralTraits, neutralValues } from '../src/sim/psyche/traits';
-import { createCharacter } from '../src/sim/character';
+import { createCharacter, eloUnlockHint, refreshEloUnlocks } from '../src/sim/character';
 
 const ctx = { playTime: 0, inCombat: true, meditating: false, unmetNeeds: 0 };
 
@@ -229,5 +229,32 @@ describe('Personagem', () => {
     expect(c.elos.filter((e) => e.unlocked).map((e) => e.level)).toEqual([1, 2]);
     expect(c.elos[0]!.technique).toBe('votePunch');
     expect(c.elos[1]!.technique).toBe('point');
+  });
+
+  it('cada marco libera o próximo Elo, sempre em ordem', () => {
+    const c = createCharacter('Teste', 'vigor', 7);
+    const open = () => c.elos.filter((e) => e.unlocked).map((e) => e.level);
+    c.level = 4;
+    refreshEloUnlocks(c);
+    expect(open()).toEqual([1, 2, 3]);
+    expect(eloUnlockHint(c, 4)).toBe('nível 5 ou vencer o Guardião');
+    expect(eloUnlockHint(c, 5)).toBe('nível 5 e vencer o Guardião');
+    // Vencer o Guardião antes do nível 5 abre o Elo 4, não o 5.
+    c.bossDefeated = true;
+    expect(refreshEloUnlocks(c)).toEqual([4]);
+    expect(open()).toEqual([1, 2, 3, 4]);
+    expect(eloUnlockHint(c, 5)).toBe('nível 5');
+    c.level = 5;
+    expect(refreshEloUnlocks(c)).toEqual([5]);
+  });
+
+  it('save antigo com o Elo 5 aberto e o 4 fechado é corrigido', () => {
+    const c = createCharacter('Teste', 'vigor', 7);
+    c.level = 4;
+    c.bossDefeated = true;
+    c.elos[2]!.unlocked = true;
+    c.elos[4]!.unlocked = true;
+    refreshEloUnlocks(c);
+    expect(c.elos.filter((e) => e.unlocked).map((e) => e.level)).toEqual([1, 2, 3, 4]);
   });
 });
