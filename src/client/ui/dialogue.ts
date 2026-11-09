@@ -31,7 +31,8 @@ export class DialogueBox {
   talkTo(npc: NpcId): void {
     const d = this.sim.dialogueFor(npc);
     if (d) this.show(d.id);
-    else this.showLine(NPCS[npc].name, NPCS[npc].title, IDLE_LINES[npc]);
+    // Sem conversa nova: o NPC lembra o que você fez (ou diz a fala de sempre).
+    else this.showLine(NPCS[npc].name, NPCS[npc].title, this.sim.idleLine(npc) ?? IDLE_LINES[npc]);
   }
 
   show(id: DialogueId): void {
@@ -41,9 +42,12 @@ export class DialogueBox {
     this.render(
       who?.name ?? 'O Vale',
       who?.title ?? '',
-      `<p class="dl-text">${escapeHtml(d.text)}</p>
+      `<p class="dl-text">${escapeHtml(this.sim.dialogueText(id))}</p>
        <div class="dl-options">${d.options
-         .map((o, i) => `<button class="dl-opt" data-i="${i}"><kbd>${i + 1}</kbd><span>${escapeHtml(o.text)}</span></button>`)
+         .map(
+           (o, i) =>
+             `<button class="dl-opt ${o.gesture ? 'gesture' : ''}" data-i="${i}"><kbd>${i + 1}</kbd><span>${o.gesture ? `[${escapeHtml(o.text)}]` : escapeHtml(o.text)}</span></button>`,
+         )
          .join('')}</div>`,
       who?.color,
     );

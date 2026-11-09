@@ -2,7 +2,7 @@ import type { Item, Slot } from '../items';
 import type { Vec2 } from '../math';
 import type { SpellId } from '../techniques';
 
-export type EnemyKind = 'grunt' | 'stalker' | 'brute' | 'slinger' | 'boss';
+export type EnemyKind = 'grunt' | 'stalker' | 'brute' | 'slinger' | 'boss' | 'kael';
 
 /** shot = projétil que voa em linha reta (dá para desviar; árvores e rochas bloqueiam) */
 export type AttackType = 'melee' | 'slam' | 'charge' | 'shot';
@@ -130,6 +130,26 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     ],
     respawn: 90,
   },
+  // Kael no duelo (situação do torneio): ninguém morre; o duelo acaba antes.
+  kael: {
+    kind: 'kael',
+    name: 'Kael',
+    hp: 110,
+    armor: 2,
+    speed: 3.6,
+    radius: 0.42,
+    level: 3,
+    xp: 0,
+    aggroRadius: 12,
+    elite: true,
+    boss: false,
+    shadowed: false,
+    attacks: [
+      { id: 'melee', type: 'melee', range: 1.7, windup: 0.5, recover: 0.45, damage: 10, radius: 1.7, heavy: false, cooldown: 1.0 },
+      { id: 'lunge', type: 'charge', range: 7, windup: 0.6, recover: 0.8, damage: 14, radius: 1.4, heavy: false, cooldown: 5 },
+    ],
+    respawn: 1e9,
+  },
   boss: {
     kind: 'boss',
     name: 'Guardião da Ponte',
@@ -223,7 +243,7 @@ export interface SpellDrop {
 }
 
 /** Chance de uma criatura deixar um grimório ao morrer. */
-export const SPELL_DROP_CHANCE: Record<EnemyKind, number> = { grunt: 0.04, stalker: 0.08, slinger: 0.07, brute: 0.35, boss: 1 };
+export const SPELL_DROP_CHANCE: Record<EnemyKind, number> = { grunt: 0.04, stalker: 0.08, slinger: 0.07, brute: 0.35, boss: 1, kael: 0 };
 
 /** Projétil inimigo em voo. */
 export interface Projectile {

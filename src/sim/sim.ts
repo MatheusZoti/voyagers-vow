@@ -242,6 +242,11 @@ export class Simulation {
   /** viajante cercado por Carniçais (no máximo um por visita à região) */
   distress: { pos: Vec2; guards: number[]; state: 'waiting' | 'noticed' | 'saved' | 'lost'; farFor: number; until: number } | null = null;
   private distressTimer = 0;
+  /** duelo com Kael (situação do torneio): ninguém morre */
+  duel: { enemyId: number; cheat: boolean; center: Vec2 } | null = null;
+  /** tempo nesta região (s), para os ecos que esperam um pouco */
+  private regionTime = 0;
+  private lastDefenseShift = -999;
   private distressRolled = false;
   /** sorteios dos eventos de mundo (separado: não muda o resto da simulação) */
   private worldRng: Rng;
@@ -312,6 +317,8 @@ export class Simulation {
     for (let i = 0; i < saved.length && i < this.explored.length; i++) this.explored[i] = saved.charCodeAt(i) === 49 ? 1 : 0;
     this.explore();
     for (const v of VALUE_IDS) this.strong[v] = strongState(character.psyche.values[v]);
+    this.applyNpcFlags();
+    this.lastDefenseShift = this.player.tide.lastDefenseShiftAt;
     const nem = character.nemesis;
     if (nem && nem.region === this.map.id) {
       const foe = this.enemies.find((e) => e.kind === nem.kind && dist(e.home, nem.home) < 0.6);
@@ -411,8 +418,8 @@ export class Simulation {
   }
 
   npcDistance(npc: NpcId): number {
-    const n = this.map.npcs.find((x) => x.id === npc)!;
-    return Math.hypot(n.x - this.player.pos.x, n.y - this.player.pos.y);
+    const n = this.map.npcs.find((x) => x.id === npc);
+    return n ? Math.hypot(n.x - this.player.pos.x, n.y - this.player.pos.y) : Infinity;
   }
 
   /** Aplica a escolha do jogador. A personalidade muda; o jogador só vê a resposta. */
@@ -425,6 +432,7 @@ export class Simulation {
     this.c.dialogues.push(id);
     const who = d.npc ? NPCS[d.npc].name : null;
     this.psyShift(who ? `Conversa com ${who}: “${opt.text}”` : `“${opt.text}”`, before, true);
+    this.situationOutcome(id, option);
     return opt.reply;
   }
 
@@ -566,6 +574,7 @@ export class Simulation {
     this.updateTraps(dt);
     this.updateProgress(dt);
     if (this.worldEvents) this.updateDistress(dt);
+    this.updateSituations(dt);
 
     const notices = tickPsyche(psy, dt, {
       playTime: this.playTime,
@@ -685,7 +694,7 @@ export class Simulation {
   }
 
   private notice(text: string, tone: NoticeTone = 'info'): void {
-    this.events.push({ t: 'notice', text, tone });
+    this.emit({ t: 'notice', text, tone });
   }
 
   private pushPsycheNotices(ns: PsycheNotice[]): void {
@@ -971,6 +980,7 @@ export class Simulation {
         boss.aggro = true;
         this.notice('O Guardião da Ponte desperta.', 'warn');
         this.voice('arena');
+        this.bossEchoes(boss);
       } else if (p.bossEngaged && !inCircle(arena, p.pos, 5)) {
         p.bossEngaged = false;
         this.resetEnemy(boss);
@@ -1365,6 +1375,8 @@ export class Simulation {
       this.train('point', 8, this.currentRisk(e));
     }
     if (!ignoreArmor) dmg = Math.max(1, dmg * (1 - armorReduction(e.def.armor)));
+    // As pegadas: o Guardião protege mal a perna esquerda.
+    if (e.def.boss && this.c.flags.fox === 'tracks') dmg *= 1.15;
     dmg = Math.round(dmg);
     e.hp -= dmg;
     e.hurtAgo = 0;
@@ -1381,11 +1393,18 @@ export class Simulation {
       pierce: ignoreArmor && e.def.armor > 0,
       big: opts.big,
     });
+    if (this.duel && e.id === this.duel.enemyId && e.hp < e.maxHp * 0.2) {
+      e.hp = Math.max(1, e.hp);
+      this.endDuel(true);
+      return;
+    }
     if (e.hp <= 0) this.killEnemy(e);
     else if (e.def.humanoid && !e.summoned && !e.surrenderChecked && e.hp < e.maxHp * SURRENDER.below) {
       // Uma chance por vida: perdendo, um humano pode largar a arma.
       e.surrenderChecked = true;
-      if (this.worldRng.chance(SURRENDER.chance)) this.surrender(e);
+      const pr = this.c.flags.prisoner;
+      const chance = pr === 'executed' ? 0 : pr === 'freed' ? 0.8 : SURRENDER.chance;
+      if (this.worldRng.chance(chance)) this.surrender(e);
     }
   }
 
@@ -1509,6 +1528,306 @@ export class Simulation {
     return out.length ? this.worldRng.pick(out) : null;
   }
 
+  // -------------------------------------------------------------------------
+  // Situações (Fase 3 da Psique): cada escolha tem consequência na hora e um eco depois
+  // -------------------------------------------------------------------------
+
+  /** Texto da situação, com o que o mundo já sabe de você. */
+  dialogueText(id: DialogueId): string {
+    const d = DIALOGUES[id];
+    const f = this.c.flags;
+    let text = d.text;
+    if (id === 'prisoner' && (f.oath === 'sworn' || f.oath === 'false')) text += ' O arauto deixou ordens do Senhor: "prisioneiros dos Lançadores morrem".';
+    if (id === 'tournament') {
+      const pre = f.kael === 'provoked' ? 'Ainda com aquele fogo? Ótimo. ' : f.kael === 'silent' ? 'Calado como sempre. ' : f.kael === 'friendly' ? 'Ei, estranho. ' : '';
+      text = pre + text;
+    }
+    return text;
+  }
+
+  /** O que um NPC diz quando não tem conversa nova: lembra o que você fez (ou null = fala padrão). */
+  idleLine(npc: NpcId): string | null {
+    const f = this.c.flags;
+    switch (npc) {
+      case 'oren':
+        if (f.exercise === 'done') return 'O corpo lembra. Continue girando a Maré.';
+        if (f.exercise === 'task') return `Gire a Maré para a defesa. Faltam ${5 - Number(f.exerciseCount ?? 0)}.`;
+        if (f.exercise === 'own') return 'Seu jeito está funcionando? A Maré não perdoa.';
+        return null;
+      case 'kael':
+        if (this.duel) return 'Na trilha, a leste. Estou esperando.';
+        if (f.duelResult === 'won') return f.duelCheat ? 'Mesmo trapaceando eu perdi. Não conta pra ninguém.' : 'Da próxima vez eu ganho. Sem truque.';
+        if (f.duelResult === 'lost') return f.duelCheat ? 'Viu? Eu disse que apanhava. (Ele sorri como quem esconde algo.)' : 'Luta limpa e eu ganhei. Treina mais.';
+        if (f.kael === 'hostile') return 'Dedo-duro. Vai embora.';
+        return null;
+      case 'traveler':
+        if (f.stranger === 'trusted' || f.stranger === 'cautious') return f.strangerHonest ? 'Que a trilha te devolva o que você me deu.' : 'Já estou melhor. Logo sigo viagem.';
+        return null;
+      case 'pilgrim': {
+        const taken = Object.values(this.c.shrines).includes('taken');
+        const left = Object.values(this.c.shrines).includes('left');
+        if (taken) return f.promise === 'leave' ? 'Você me disse que deixaria. Eu ouvi o ouro na sua bolsa.' : 'O ouro não pesa na mão. Pesa depois.';
+        if (left) return 'Obrigada por deixar o altar em paz.';
+        return null;
+      }
+      case 'herald':
+        if (f.oath === 'sworn' || f.oath === 'false') return 'O Senhor conta com você em Varn.';
+        if (f.oath === 'refused') return 'Ainda aqui? Corajoso. Ou tolo.';
+        return null;
+      case 'huntress':
+        if (f.fox === 'healed') return f.foxHelped ? 'A raposa voltou ferida da ponte, mas viva. Ela pagou a dívida.' : 'A raposa ainda ronda a ponte. Esperando por você, acho.';
+        if (f.fox === 'taken') return 'Cuide bem desse cristal. Ele vale mais do que parece.';
+        if (f.fox === 'tracks') return 'As pegadas não mentem: ele poupa a perna esquerda.';
+        return null;
+      case 'lys':
+        if (f.oath === 'broken') return 'O arauto vai saber que você soltou o batedor. O Senhor não perdoa.';
+        if (f.prisoner === 'executed') return 'Os Lançadores não se rendem mais a nós. Era o preço.';
+        if (f.prisoner === 'freed') return 'O batedor contou aos outros. Agora alguns largam a arma quando perdem.';
+        if (f.prisoner === 'questioned') return 'Os ninhos estão marcados no seu mapa. Use isso.';
+        return null;
+    }
+    return null;
+  }
+
+  /** Consequência na hora de cada escolha. */
+  private situationOutcome(id: DialogueId, option: number): void {
+    const c = this.c;
+    const f = c.flags;
+    switch (id) {
+      case 'exercise':
+        if (option === 0) {
+          f.exercise = 'task';
+          f.exerciseCount = 0;
+        } else if (option === 1) c.hints.tideExplained = 1;
+        else f.exercise = 'own';
+        break;
+      case 'rival':
+        f.kael = ['provoked', 'silent', 'friendly'][option]!;
+        break;
+      case 'stranger': {
+        f.stranger = ['trusted', 'cautious', 'ignored'][option]!;
+        f.strangerAt = this.playTime;
+        // Ele é honesto ou não: decidido pelo destino do personagem, não pela escolha.
+        f.strangerHonest = c.seed % 2 === 0 ? 1 : 0;
+        if (option < 2) {
+          f['npc:traveler'] = `${this.map.sanctuary.x + 2.5},${this.map.sanctuary.y + 2.5}`;
+          this.applyNpcFlags();
+        }
+        break;
+      }
+      case 'temple':
+        f.promise = ['leave', 'take', 'asked'][option]!;
+        if (option === 2) for (const s of this.map.shrines) this.reveal(s.x, s.y, 7);
+        break;
+      case 'tournament':
+        if (option === 1) {
+          f.kael = 'hostile';
+          f.duel = 'refused';
+        } else this.startDuel(option === 0);
+        break;
+      case 'herald': {
+        f.oath = ['sworn', 'refused', 'false'][option]!;
+        if (option !== 1) this.giveItem('huntKnife', 3, 'O arauto entrega');
+        break;
+      }
+      case 'animal':
+        f.fox = ['healed', 'taken', 'tracks'][option]!;
+        if (option === 1) this.giveItem('stoneAmulet', 3, 'Do cristal da raposa, um amuleto');
+        break;
+      case 'prisoner': {
+        f.prisoner = ['executed', 'freed', 'questioned'][option]!;
+        if (option === 2) for (const s of this.map.spawns.filter((x) => x.kind === 'slinger')) this.reveal(s.x + 0.5, s.y + 0.5, 5);
+        if (f.oath === 'sworn') {
+          if (option === 0) this.shape('Obedeceu ao Senhor de Varn', { loyalty: 2 });
+          else {
+            f.oath = 'broken';
+            c.psyche.stress = clamp(c.psyche.stress + 12, 0, 100);
+            this.notice('Você jurou ao Senhor de Varn, e desobedeceu.', 'bad');
+            this.shape('Quebrou o juramento ao Senhor de Varn', { loyalty: -4 }, { id: 'shame', intensity: 0.35, duration: 40 });
+          }
+        }
+        break;
+      }
+      case 'bridge':
+        f.bridge = ['charge', 'observed', 'prepared'][option]!;
+        break;
+      case 'freeNight':
+        if (option === 0) addEmotion(c.psyche.emotions, 'joy', 0.35, 60);
+        if (option === 1) for (const b of this.map.books) if (!c.booksRead.includes(b.id)) this.reveal(b.x, b.y, 4);
+        break;
+    }
+  }
+
+  /** Ecos: o mundo cumpre o que prometeu. */
+  private updateSituations(dt: number): void {
+    const c = this.c;
+    const f = c.flags;
+    const p = this.player;
+    this.regionTime += dt;
+
+    // Treino de Oren: cinco Marés para a defesa.
+    if (f.exercise === 'task' && p.tide.lastDefenseShiftAt !== this.lastDefenseShift) {
+      this.lastDefenseShift = p.tide.lastDefenseShiftAt;
+      f.exerciseCount = Number(f.exerciseCount ?? 0) + 1;
+      if (Number(f.exerciseCount) >= 5) {
+        f.exercise = 'done';
+        this.train('veil', 40, 1);
+        this.notice('Oren: "Bom. O corpo aprende antes da cabeça."', 'good');
+        this.shape('Treinou a Maré com Oren', { loyalty: 1 });
+      } else this.notice(`Maré para a defesa: ${f.exerciseCount}/5`, 'info');
+    }
+    this.lastDefenseShift = p.tide.lastDefenseShiftAt;
+
+    // O viajante ferido.
+    if (f.stranger && !f.strangerDone && this.map.id === 'vale' && !p.dead) {
+      const since = this.playTime - Number(f.strangerAt ?? 0);
+      const honest = !!f.strangerHonest;
+      const farFromSafe = dist(p.pos, this.map.sanctuary) > this.map.sanctuary.r + 13;
+      if (f.stranger === 'trusted' && since > 60) {
+        if (honest && this.inSanctuary()) {
+          f.strangerDone = 1;
+          this.giveItem(this.worldRng.pick(lootPool(this.map.tier)), 2, 'O viajante deixou um presente para você no santuário');
+        } else if (!honest && farFromSafe && !this.inCombat()) {
+          f.strangerDone = 1;
+          f['gone:traveler'] = 1;
+          this.applyNpcFlags();
+          for (let i = 0; i < 2; i++) {
+            const a = this.worldRng.range(0, Math.PI * 2);
+            this.spawn('grunt', { x: p.pos.x + Math.cos(a) * 4, y: p.pos.y + Math.sin(a) * 4 }, true);
+          }
+          this.notice('Era uma armadilha! O "viajante" trouxe companhia.', 'bad');
+          this.shape('Foi traído por quem ajudou', {}, { id: c.psyche.traits.wrath > 55 ? 'fury' : 'fear', intensity: 0.4, duration: 20 });
+        }
+      } else if (f.stranger === 'cautious') {
+        if (!honest && since > 30) {
+          f.strangerDone = 1;
+          f['gone:traveler'] = 1;
+          this.applyNpcFlags();
+          this.notice('O viajante tenta pegar sua bolsa, mas você estava de olho. Ele some na trilha.', 'info');
+        } else if (honest && since > 60 && this.inSanctuary()) {
+          f.strangerDone = 1;
+          this.gainXp(Math.round(30 * TUNING.xp), false);
+          this.notice('O viajante agradece, ainda meio ofendido com a desconfiança.', 'info');
+        }
+      } else if (f.stranger === 'ignored' && since > 90) {
+        f.strangerDone = 1;
+        f['gone:traveler'] = 1;
+        this.applyNpcFlags();
+        if (honest) {
+          this.notice('Dizem que o viajante ferido não chegou ao santuário.', 'bad');
+          if (c.psyche.traits.empathy > 55) addEmotion(c.psyche.emotions, 'shame', 0.25, 30);
+        }
+      }
+    }
+
+    // Recusou o arauto: os homens do Senhor te encontram em Varn.
+    if (f.oath === 'refused' && !f.oathAmbush && this.map.id === 'varn' && this.regionTime > 20 && !p.dead && !this.inCombat() && dist(p.pos, this.map.sanctuary) > this.map.sanctuary.r + 10) {
+      f.oathAmbush = 1;
+      for (let i = 0; i < 2; i++) {
+        const a = this.worldRng.range(0, Math.PI * 2);
+        this.spawn('slinger', { x: p.pos.x + Math.cos(a) * 6, y: p.pos.y + Math.sin(a) * 6 }, true);
+      }
+      this.notice('Homens do Senhor de Varn: "Ele lembra do seu rosto."', 'bad');
+    }
+
+    // Duelo: sair de perto é desistir.
+    if (this.duel && dist(p.pos, this.duel.center) > 22) this.endDuel(false, true);
+    if (this.duel && p.dead) this.endDuel(false);
+  }
+
+  /** O Guardião despertou: a raposa e a ponte cobram o que você fez. */
+  private bossEchoes(boss: Enemy): void {
+    const f = this.c.flags;
+    if (f.fox === 'healed' && !f.foxHelped) {
+      f.foxHelped = 1;
+      boss.stun = 3;
+      boss.state = 'stunned';
+      this.notice('A raposa-de-cristal salta sobre o Guardião e o distrai!', 'good');
+    }
+    if (f.fox === 'tracks') this.notice('Você lembra das pegadas: ele poupa a perna esquerda.', 'info');
+    if (f.bridge === 'observed' && !this.c.bossDefeated) this.notice('Você viu como ele gira antes do golpe pesado: os golpes dele chegam mais devagar.', 'info');
+    if (f.bridge === 'prepared' && !f.bridgeCalm) {
+      f.bridgeCalm = 1;
+      addEmotion(this.c.psyche.emotions, 'calm', 0.45, 40);
+      this.notice('Você escolheu a hora da luta.', 'good');
+    }
+  }
+
+  /** Um item que alguém te dá: vai para a mochila (ou para o chão, se não couber). */
+  private giveItem(defId: string, quality: number, from: string): void {
+    const item = rollItem(this.worldRng, defId, this.c.nextItemUid++, quality);
+    const p = this.player.pos;
+    if (this.c.bag.length < BAG_SIZE) {
+      this.c.bag.push(item);
+      this.emit({ t: 'itemPickup', x: p.x, y: p.y, quality: item.quality });
+    } else this.itemDrops.push({ id: this.nextId++, item, pos: { x: p.x + 0.8, y: p.y }, expiresAt: this.time + 180 });
+    this.notice(`${from}: ${itemName(item)} (${QUALITY_NAMES[item.quality - 1]}).`, 'good');
+  }
+
+  /** Marca uma área no mapa (névoa removida). */
+  private reveal(x: number, y: number, r: number): void {
+    const m = this.map;
+    for (let ty = Math.max(0, Math.floor(y - r)); ty <= Math.min(m.h - 1, y + r); ty++)
+      for (let tx = Math.max(0, Math.floor(x - r)); tx <= Math.min(m.w - 1, x + r); tx++)
+        if (Math.hypot(tx + 0.5 - x, ty + 0.5 - y) <= r) this.explored[ty * m.w + tx] = 1;
+    let s = '';
+    for (let i = 0; i < this.explored.length; i++) s += this.explored[i] ? '1' : '0';
+    this.c.explored[m.id] = s;
+  }
+
+  /** NPCs que mudaram de lugar ("npc:<id>" = "x,y") ou foram embora ("gone:<id>"). */
+  private applyNpcFlags(): void {
+    const f = this.c.flags;
+    this.map.npcs = this.map.npcs.filter((n) => !f[`gone:${n.id}`] && !(this.duel && n.id === 'kael'));
+    for (const n of this.map.npcs) {
+      const at = f[`npc:${n.id}`];
+      if (typeof at === 'string') {
+        const [x, y] = at.split(',').map(Number);
+        if (Number.isFinite(x) && Number.isFinite(y)) Object.assign(n, { x, y });
+      }
+    }
+  }
+
+  /** Duelo com Kael na trilha a leste do santuário. */
+  private startDuel(cheat: boolean): void {
+    const safe = this.map.sanctuary;
+    let center = { x: safe.x + safe.r + 5, y: safe.y };
+    for (let k = 0; k < 12 && isBlocked(this.map, center.x, center.y); k++) center = { x: center.x + 1, y: center.y };
+    const e = this.spawn('kael', center, true);
+    if (cheat) e.power *= 1.35;
+    this.duel = { enemyId: e.id, cheat, center };
+    this.c.flags.duelCheat = cheat ? 1 : 0;
+    this.kaelNpc = this.map.npcs.find((n) => n.id === 'kael') ?? this.kaelNpc;
+    this.applyNpcFlags();
+    this.notice('Kael te espera na trilha, a leste do santuário. Ninguém morre num duelo.', 'info');
+  }
+  private kaelNpc: { id: NpcId; x: number; y: number } | null = null;
+
+  private endDuel(won: boolean, fled = false): void {
+    const d = this.duel;
+    if (!d) return;
+    this.duel = null;
+    const e = this.enemies.find((x) => x.id === d.enemyId);
+    if (e) Object.assign(e, { state: 'dead', respawnIn: Infinity, hp: 0 });
+    if (this.kaelNpc && !this.map.npcs.some((n) => n.id === 'kael')) this.map.npcs.push(this.kaelNpc);
+    const f = this.c.flags;
+    f.duel = 'done';
+    f.duelResult = won ? 'won' : 'lost';
+    if (won) {
+      this.gainXp(Math.round(60 * TUNING.xp), false);
+      this.notice(d.cheat ? 'Kael cai de joelhos: "Tá… você venceu. Mesmo eu roubando."' : 'Kael cai de joelhos: "Tá… você venceu. Desta vez."', 'good');
+      this.shape('Venceu o duelo com Kael', { power: 1 }, { id: 'pride', intensity: 0.4, duration: 30 });
+    } else {
+      this.notice(fled ? 'Você deixou o duelo. Kael ri de longe.' : d.cheat ? 'Kael ri: "Eu disse que você apanhava." Você sabe que ele trapaceou.' : 'Kael ri: "Eu disse que você apanhava."', 'bad');
+      const t = this.c.psyche.traits;
+      this.shape(
+        fled ? 'Fugiu do duelo com Kael' : 'Perdeu o duelo para Kael',
+        d.cheat && !fled ? { vengeance: 2 } : {},
+        { id: t.wrath > t.pride ? 'fury' : 'shame', intensity: 0.35, duration: 30 },
+      );
+    }
+  }
+
   // Altares (oferendas): pegar ou deixar.
   shrineAt(pt: Vec2, radius: number): { id: string; x: number; y: number } | null {
     return this.map.shrines.find((s) => Math.hypot(s.x - pt.x, s.y - pt.y) <= radius) ?? null;
@@ -1531,6 +1850,10 @@ export class Simulation {
         } else this.itemDrops.push({ id: this.nextId++, item, pos: { x: s.x + 0.8, y: s.y }, expiresAt: this.time + 180 });
       }
       this.shape('Pegou as moedas de um altar', { power: 2, law: -3 });
+      if (this.c.flags.promise === 'leave') {
+        this.notice('Você disse a Ilsa que deixaria o altar em paz.', 'bad');
+        this.shape('Quebrou a palavra dada a Ilsa', { law: -3 }, { id: 'shame', intensity: 0.3, duration: 30 });
+      }
       return 'O ouro não pesa na mão. Pesa depois.';
     }
     this.shape('Deixou as moedas do altar', { law: 3 }, { id: 'calm', intensity: 0.2, duration: 12 });
@@ -1713,6 +2036,13 @@ export class Simulation {
       }
     }
     const dmg = Math.max(1, Math.round(raw * mult * TUNING.enemyDamage));
+    // Duelo: Kael não mata; o duelo acaba antes.
+    if (this.duel && opts.source?.id === this.duel.enemyId && p.hp - dmg < this.maxHp() * 0.15) {
+      p.hp = Math.max(1, Math.round(this.maxHp() * 0.15));
+      this.events.push({ t: 'damage', x: p.pos.x, y: p.pos.y, amount: dmg, target: 'player' });
+      this.endDuel(false);
+      return;
+    }
     p.hp -= dmg;
     p.lastHitTakenAt = this.time;
     p.lastCombatAt = this.time;
@@ -2035,7 +2365,8 @@ export class Simulation {
           if (atk) {
             e.attack = atk;
             e.state = 'windup';
-            const windup = atk.windup * (e.phase === 2 ? 0.85 : 1) * TUNING.enemyWindup;
+            const observed = e.def.boss && this.c.flags.bridge === 'observed' && !this.c.bossDefeated ? 1.2 : 1;
+            const windup = atk.windup * (e.phase === 2 ? 0.85 : 1) * TUNING.enemyWindup * observed;
             e.timer = windup;
             e.windupTotal = windup;
             e.facing = normalize(toPlayer);

@@ -344,7 +344,9 @@ export class GameView {
     let v = this.enemies.get(e.id);
     if (v) return v;
     const rig =
-      e.kind === 'grunt'
+      e.kind === 'kael'
+        ? buildPlayer(NPCS.kael.color)
+        : e.kind === 'grunt'
         ? buildGrunt()
         : e.kind === 'slinger'
           ? buildSlinger()
@@ -752,7 +754,17 @@ export class GameView {
 
     // NPCs: respiração leve, nome e "!" quando há conversa nova.
     for (const n of this.npcs) {
-      animateRig(n.rig, dt, 0, { attack: 0, windup: 0, dead: 0 });
+      // O NPC mudou de lugar (o viajante foi para o santuário) ou foi embora (duelo, traição).
+      const at = sim.map.npcs.find((x) => x.id === n.id);
+      if (!at) {
+        n.rig.root.visible = false;
+        n.label.style.display = 'none';
+        continue;
+      }
+      const goal = new THREE.Vector3(at.x, this.gh(at.x, at.y), at.y);
+      const walking = n.rig.root.position.distanceTo(goal) > 0.05;
+      n.rig.root.position.lerp(goal, Math.min(1, dt * 1.5));
+      animateRig(n.rig, dt, walking ? 2 : 0, { attack: 0, windup: 0, dead: 0 });
       const fresh = !!sim.dialogueFor(n.id);
       const pr = this.project({ x: n.rig.root.position.x, y: n.rig.root.position.z }, 2.35);
       const near = sim.npcDistance(n.id) < 14;

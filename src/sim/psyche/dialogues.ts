@@ -28,6 +28,8 @@ export const NPCS: Record<NpcId, NpcDef> = {
 
 export interface DialogueOption {
   text: string;
+  /** uma ação (mostrada como [gesto]) em vez de uma fala */
+  gesture?: boolean;
   /** reação de quem fala, depois da escolha */
   reply: string;
   traits: Partial<Record<TraitId, 1 | -1>>;
@@ -63,16 +65,23 @@ const o = (
   traits: Partial<Record<TraitId, 1 | -1>> = {},
   values: Partial<Record<ValueId, 1 | -1>> = {},
 ): DialogueOption => ({ text, reply, traits, values });
+/** Opção que é um gesto (uma ação no mundo), não uma fala. */
+const g = (
+  text: string,
+  reply: string,
+  traits: Partial<Record<TraitId, 1 | -1>> = {},
+  values: Partial<Record<ValueId, 1 | -1>> = {},
+): DialogueOption => ({ text, reply, traits, values, gesture: true });
 
 export const DIALOGUES: Record<DialogueId, DialogueDef> = {
   exercise: {
     id: 'exercise',
     npc: 'oren',
-    text: 'Antes de sair, quero que repita a postura do Véu mil vezes. Sei que parece inútil.',
+    text: 'Antes de sair, quero ver você girar a Maré para a defesa. Cinco vezes, aqui, na minha frente. Sei que parece inútil.',
     options: [
-      o('Faço sem questionar, mestre.', 'Bom. A obediência também é uma forma de força.', { discipline: 1 }, { loyalty: 1 }),
-      o('Para que serve isso?', 'Serve para que, no dia em que precisar, você nem pense. Pergunte sempre.', { curiosity: 1, sincerity: 1 }),
-      o('Vou treinar do meu jeito.', 'Hm. Então que o seu jeito seja bom.', { stubbornness: 1 }, { freedom: 1 }),
+      g('Treinar agora, como ele mandou', 'Bom. Mostre: gire a Maré para a defesa (roda do mouse ↓ ou Z), cinco vezes.', { discipline: 1 }, { loyalty: 1 }),
+      o('Para que serve isso?', 'Quando um golpe pesado vier, o chão fica vermelho. Gire para a defesa no último instante e ele perde metade da força: Maré perfeita. Pergunte sempre.', { curiosity: 1, sincerity: 1 }),
+      g('Ir embora e treinar do seu jeito', 'Hm. Então que o seu jeito seja bom.', { stubbornness: 1 }, { freedom: 1 }),
     ],
   },
   rival: {
@@ -88,32 +97,32 @@ export const DIALOGUES: Record<DialogueId, DialogueDef> = {
   stranger: {
     id: 'stranger',
     npc: 'traveler',
-    text: 'Por favor… fui atacado na trilha. Pode me ajudar a chegar ao santuário? (Algo no olhar dele não parece certo.)',
+    text: 'Um homem sentado na beira da trilha, a perna sangrando. "Por favor… pode me ajudar a chegar ao santuário?" (Algo no olhar dele não parece certo.)',
     options: [
-      o('Claro. Apoie-se em mim.', 'Obrigado… há quem diga que bondade não paga. Eu discordo.', { empathy: 1, trust: 1 }, { mercy: 1 }),
-      o('Ajudo, mas fique à minha frente.', 'Justo. Eu faria o mesmo.', { empathy: 1, anxiety: 1 }),
-      o('Não tenho tempo para isso.', '…Então siga. Que a trilha seja gentil com você.', { empathy: -1, trust: -1 }),
+      g('Apoiá-lo no ombro até o santuário', 'Obrigado… há quem diga que bondade não paga. Eu discordo.', { empathy: 1, trust: 1 }, { mercy: 1 }),
+      g('Ajudar, mas fazê-lo andar na sua frente', 'Justo. Eu faria o mesmo.', { empathy: 1, anxiety: 1 }),
+      g('Seguir caminho', '…Então siga. Que a trilha seja gentil com você.', { empathy: -1, trust: -1 }),
     ],
   },
   temple: {
     id: 'temple',
     npc: 'pilgrim',
-    text: 'Este altar foi abandonado há anos, mas as moedas de ouro continuam aqui. Ninguém viria cobrar.',
+    text: 'Lá em cima, na Colina Norte, há um altar abandonado. As moedas de ouro continuam lá. Ninguém viria cobrar. Você pegaria?',
     options: [
-      o('Então eu levo.', 'O ouro não pesa na mão. Pesa depois.', { greed: 1 }, { law: -1 }),
-      o('Deixo onde está.', 'Há quem respeite o que não é seu mesmo sem plateia.', { greed: -1 }, { law: 1 }),
-      o('Pego uma moeda e deixo uma oferenda.', 'Uma troca com o que não se vê. Bonito.', { imagination: 1 }, { nature: 1 }),
+      o('Não. Deixo onde está.', 'Há quem respeite o que não é seu mesmo sem plateia. Vou lembrar disso.', { greed: -1 }, { law: 1 }),
+      o('Se ninguém cobra, é de quem pega.', 'O ouro não pesa na mão. Pesa depois.', { greed: 1 }, { law: -1 }),
+      o('Onde fica, exatamente?', 'Ao norte, subindo a rampa da colina. Marquei no seu mapa.', { curiosity: 1 }),
     ],
   },
   tournament: {
     id: 'tournament',
     npc: 'kael',
     requires: { after: 'rival' },
-    text: 'Vai ter um duelo no santuário. Diga a Oren que treinamos juntos e ninguém precisa saber que eu vou vencer roubando.',
+    text: 'Vamos duelar na trilha, a leste do santuário. Diga a Oren que treinamos juntos, e ninguém precisa saber que eu vou vencer roubando.',
     options: [
-      o('Fechado. Eu minto para ele.', 'Sabia que você entendia como o mundo funciona.', { sincerity: -1 }, { power: 1 }),
-      o('Não. Vou contar a verdade a Oren.', 'Tch. Você é mais chato do que parece.', { sincerity: 1 }, { loyalty: 1 }),
-      o('E se a gente lutar de verdade, sem trapaça?', '…Você sempre acha uma terceira saída, né?', { imagination: 1, stubbornness: 1 }),
+      o('Fechado. Eu minto para ele.', 'Sabia que você entendia como o mundo funciona. Te espero na trilha.', { sincerity: -1 }, { power: 1 }),
+      o('Não. Vou contar a verdade a Oren.', 'Tch. Sem duelo, então. Você é mais chato do que parece.', { sincerity: 1 }, { loyalty: 1 }),
+      o('E se a gente lutar de verdade, sem trapaça?', '…Você sempre acha uma terceira saída, né? Te espero na trilha.', { imagination: 1, stubbornness: 1 }),
     ],
   },
   freeNight: {
@@ -141,11 +150,11 @@ export const DIALOGUES: Record<DialogueId, DialogueDef> = {
   herald: {
     id: 'herald',
     npc: 'herald',
-    text: 'O Senhor de Varn procura gente forte. Jure lealdade a ele e terá terras, armas e homens.',
+    text: 'O Senhor de Varn procura gente forte. Ajoelhe e jure lealdade a ele: terá uma arma agora, e terras depois.',
     options: [
-      o('Aceito.', 'Sábia escolha. O Senhor recompensa os seus.', { competitiveness: 1 }, { power: 1 }),
-      o('Recuso. E diga a ele que não tenho dono.', 'Palavras perigosas. Vou lembrar do seu rosto.', { courage: 1 }, { freedom: 1 }),
-      o('Aceito… (e um dia derrubo ele por dentro).', 'Bem-vindo, então.', { sincerity: -1 }, { vengeance: 1 }),
+      g('Ajoelhar e jurar', 'Sábia escolha. Tome: uma lâmina digna de quem serve ao Senhor. Em Varn, ele vai cobrar.', { competitiveness: 1 }, { power: 1 }),
+      o('Recuso. E diga a ele que não tenho dono.', 'Palavras perigosas. Vou lembrar do seu rosto. E os homens dele também.', { courage: 1 }, { freedom: 1 }),
+      g('Jurar com os dedos cruzados', 'Bem-vindo, então. Tome a lâmina.', { sincerity: -1 }, { vengeance: 1 }),
     ],
   },
   animal: {
@@ -153,9 +162,9 @@ export const DIALOGUES: Record<DialogueId, DialogueDef> = {
     npc: 'huntress',
     text: 'Uma raposa-de-cristal ferida bem no meio da minha caçada. Vale uma fortuna. Quer ela?',
     options: [
-      o('Vamos cuidar dela.', 'Ela não vai esquecer. Elas nunca esquecem.', { empathy: 1 }, { nature: 1 }),
-      o('Presa fácil. Eu fico com ela.', 'Rápido e limpo, pelo menos.', { greed: 1 }, { nature: -1 }),
-      o('Antes, quero ver o que a feriu.', 'Boa pergunta. Pegadas grandes… vindas da ponte.', { curiosity: 1, courage: 1 }),
+      g('Cuidar da ferida dela', 'Ela não vai esquecer. Elas nunca esquecem.', { empathy: 1 }, { nature: 1 }),
+      g('Ficar com ela', 'Rápido e limpo, pelo menos. O cristal vira um bom amuleto.', { greed: 1 }, { nature: -1 }),
+      g('Seguir as pegadas de quem a feriu', 'Pegadas grandes… vindas da ponte. E uma delas afunda menos: o Guardião poupa a perna esquerda.', { curiosity: 1, courage: 1 }),
     ],
   },
   prisoner: {
@@ -163,9 +172,9 @@ export const DIALOGUES: Record<DialogueId, DialogueDef> = {
     npc: 'lys',
     text: 'Pegamos um batedor dos Lançadores rondando o acampamento. Ele se rendeu. A decisão é sua, forasteiro.',
     options: [
-      o('Ele teria matado a gente. Que pague.', 'Feito. Os outros vão entender o recado.', { wrath: 1 }, { vengeance: 1, mercy: -1 }),
-      o('Soltem ele. Quem se rende merece viver.', 'Generoso. Espero que ele lembre disso.', { empathy: 1 }, { mercy: 1 }),
-      o('Primeiro quero saber o que ele viu.', 'Ele fala muito quando tem medo. Os ninhos ficam nas encostas.', { curiosity: 1, discipline: 1 }, { knowledge: 1 }),
+      g('Executar o batedor', 'Feito. Os outros vão entender o recado — e não vão mais se render a você.', { wrath: 1 }, { vengeance: 1, mercy: -1 }),
+      g('Cortar as cordas', 'Generoso. Ele vai contar aos outros que você poupa quem larga a arma.', { empathy: 1 }, { mercy: 1 }),
+      g('Interrogá-lo antes', 'Ele fala muito quando tem medo. Os ninhos ficam nas encostas: marquei no seu mapa.', { curiosity: 1, discipline: 1 }, { knowledge: 1 }),
     ],
   },
   bridge: {
@@ -173,9 +182,9 @@ export const DIALOGUES: Record<DialogueId, DialogueDef> = {
     npc: null,
     text: 'O Guardião bloqueia a única ponte do vale. Daqui dá para ouvir a respiração dele, lenta e pesada.',
     options: [
-      o('Avanço e enfrento.', 'Você firma o passo na madeira da ponte.', { courage: 1, impulsivity: 1 }),
-      o('Observo até achar uma fraqueza.', 'Ele sempre gira o corpo antes do golpe pesado. Anotado.', { discipline: 1, curiosity: 1 }),
-      o('Volto e me preparo melhor.', 'Não há vergonha em escolher a hora da luta.', { anxiety: 1, perseverance: 1 }),
+      g('Avançar e enfrentar', 'Você firma o passo na madeira da ponte.', { courage: 1, impulsivity: 1 }),
+      g('Observar até achar uma fraqueza', 'Ele sempre gira o corpo antes do golpe pesado. Agora você vai ver chegando.', { discipline: 1, curiosity: 1 }),
+      g('Voltar e se preparar melhor', 'Não há vergonha em escolher a hora da luta. Quando voltar, volte calmo.', { anxiety: 1, perseverance: 1 }),
     ],
   },
 };

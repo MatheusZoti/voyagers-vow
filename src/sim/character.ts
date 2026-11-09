@@ -61,6 +61,8 @@ export interface Character {
   nemesis: { region: string; kind: string; home: { x: number; y: number }; name: string } | null;
   /** altares já resolvidos: pegou as moedas ou deixou */
   shrines: Record<string, 'taken' | 'left'>;
+  /** o que aconteceu nas situações (consequências e ecos), ex.: stranger=trusted, oath=sworn */
+  flags: Record<string, string | number>;
 }
 
 /** Saves de antes dos equipamentos ganham equipamento e mochila vazios. */
@@ -73,6 +75,7 @@ export function ensureGear(c: Character): void {
   if (!Array.isArray(c.shifts)) c.shifts = [];
   if (c.nemesis === undefined) c.nemesis = null;
   if (!c.shrines) c.shrines = {};
+  if (!c.flags) c.flags = {};
 }
 
 /** XP para o próximo nível. (Playtest 09/11: nível 5 em 8 min era rápido demais; agora ~1,8× mais.) */
@@ -133,6 +136,7 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
     shifts: [],
     nemesis: null,
     shrines: {},
+    flags: {},
   };
   refreshEloUnlocks(c);
   elos[0]!.technique = first;
