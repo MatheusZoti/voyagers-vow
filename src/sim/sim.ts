@@ -59,6 +59,8 @@ import {
   type VoiceMoment,
 } from './psyche/shifts';
 import { VALUE_IDS, VALUE_NAMES, type ValueId } from './psyche/traits';
+import { fameLabel, fameOf, greeting, GREET_DIST, GREET_EACH_S, GREET_GAP_S, type FameTag } from './psyche/fame';
+import { dominantEmotion } from './psyche/emotions';
 import { STRONG_VALUE } from './psyche/traits';
 import {
   isSpell,
@@ -173,6 +175,8 @@ export type SimEvent =
   | { t: 'milestone'; value: ValueId; state: StrongState; title: string; lines: string[] }
   | { t: 'voice'; text: string }
   | { t: 'surrender'; id: number; x: number; y: number }
+  | { t: 'npcSay'; npc: NpcId; text: string }
+  | { t: 'fame'; region: string; label: string }
   | { t: 'spared'; id: number; x: number; y: number }
   | { t: 'dialogue'; id: DialogueId }
   | { t: 'telegraphLine'; x: number; y: number; dir: Vec2; length: number; width: number; duration: number }
@@ -246,6 +250,11 @@ export class Simulation {
   duel: { enemyId: number; cheat: boolean; center: Vec2 } | null = null;
   /** tempo nesta região (s), para os ecos que esperam um pouco */
   private regionTime = 0;
+  /** quando cada NPC comentou pela última vez (tempo jogado) */
+  private greetedAt: Partial<Record<NpcId, number>> = {};
+  private lastGreetAt = -999;
+  private greetTick = 0;
+  private fleeWarned = false;
   private lastDefenseShift = -999;
   private distressRolled = false;
   /** sorteios dos eventos de mundo (separado: não muda o resto da simulação) */
@@ -575,6 +584,11 @@ export class Simulation {
     this.updateProgress(dt);
     if (this.worldEvents) this.updateDistress(dt);
     this.updateSituations(dt);
+    this.greetTick += dt;
+    if (this.greetTick >= 0.5) {
+      this.greetTick = 0;
+      this.updateGreetings();
+    }
 
     const notices = tickPsyche(psy, dt, {
       playTime: this.playTime,
@@ -1399,11 +1413,23 @@ export class Simulation {
       return;
     }
     if (e.hp <= 0) this.killEnemy(e);
-    else if (e.def.humanoid && !e.summoned && !e.surrenderChecked && e.hp < e.maxHp * SURRENDER.below) {
+    else if (e.def.humanoid && !e.summoned && !e.surrenderChecked && this.fameHere() === 'ruthless' && e.hp < e.maxHp * 0.35) {
+      // Com fama de crueldade, ninguém se rende: metade foge cedo, o resto luta até o fim.
+      e.surrenderChecked = true;
+      if (this.worldRng.chance(0.5)) {
+        Object.assign(e, { state: 'return', evading: true, aggro: false, attack: null, stuck: 0 });
+        if (!this.fleeWarned) {
+          this.fleeWarned = true;
+          this.notice(`O ${e.def.name} foge de você: sua fama chegou antes.`, 'info');
+        }
+      }
+    } else if (e.def.humanoid && !e.summoned && !e.surrenderChecked && e.hp < e.maxHp * SURRENDER.below) {
       // Uma chance por vida: perdendo, um humano pode largar a arma.
       e.surrenderChecked = true;
       const pr = this.c.flags.prisoner;
-      const chance = pr === 'executed' ? 0 : pr === 'freed' ? 0.8 : SURRENDER.chance;
+      let chance = pr === 'executed' ? 0 : pr === 'freed' ? 0.8 : SURRENDER.chance;
+      // Com fama de piedade, humanos se rendem mais a você.
+      if (this.fameHere() === 'mercy') chance = Math.min(0.9, chance + 0.25);
       if (this.worldRng.chance(chance)) this.surrender(e);
     }
   }
@@ -1444,6 +1470,7 @@ export class Simulation {
     this.notice(`O ${e.def.name} foge, poupado.`, 'good');
     this.gainXp(Math.round(e.def.xp * TUNING.xp * tierScale(this.map.tier).xp), false);
     this.shape(`Poupou um ${e.def.name} rendido`, { mercy: 3, vengeance: -1 }, { id: 'calm', intensity: 0.25, duration: 12 });
+    this.famed('mercy');
   }
 
   private executeSurrendered(e: Enemy): void {
@@ -1452,6 +1479,7 @@ export class Simulation {
     const cruel: ValueId = v.power > v.vengeance ? 'power' : 'vengeance';
     const emotion = this.c.psyche.traits.empathy > 60 ? { id: 'shame' as const, intensity: 0.3, duration: 30 } : { id: 'pride' as const, intensity: 0.2, duration: 10 };
     this.shape(`Executou um ${e.def.name} rendido`, { [cruel]: 3, mercy: -2 }, emotion);
+    this.famed('ruthless');
     this.events.push({ t: 'damage', x: e.pos.x, y: e.pos.y, amount: Math.max(1, Math.ceil(e.hp)), target: 'enemy', id: e.id, big: true });
     this.killEnemy(e);
   }
@@ -1465,7 +1493,7 @@ export class Simulation {
       this.distressTimer += dt;
       if (this.distressTimer < DISTRESS.afterS || p.dead || this.inCombat() || this.inSanctuary()) return;
       this.distressRolled = true;
-      if (!this.worldRng.chance(DISTRESS.chance)) return;
+      if (this.fameHere() === 'ruthless' || !this.worldRng.chance(DISTRESS.chance)) return;
       const spot = this.findDistressSpot();
       if (!spot) return;
       const guards = [0, 1].map((i) => {
@@ -1503,9 +1531,11 @@ export class Simulation {
         this.itemDrops.push({ id: this.nextId++, item, pos: { x: d.pos.x + 0.8, y: d.pos.y }, expiresAt: this.time + 180 });
       }
       this.shape('Salvou um viajante cercado', { mercy: 3, loyalty: 2 }, { id: 'joy', intensity: 0.3, duration: 20 });
+      this.famed('mercy');
     } else {
       this.notice('Os gritos ficam para trás.', 'bad');
       this.shape('Deixou um viajante para trás', { freedom: 2, mercy: -1 });
+      this.famed('ruthless');
     }
   }
 
@@ -1636,6 +1666,8 @@ export class Simulation {
         break;
       case 'prisoner': {
         f.prisoner = ['executed', 'freed', 'questioned'][option]!;
+        if (option === 0) this.famed('ruthless', 2);
+        if (option === 1) this.famed('mercy', 2);
         if (option === 2) for (const s of this.map.spawns.filter((x) => x.kind === 'slinger')) this.reveal(s.x + 0.5, s.y + 0.5, 5);
         if (f.oath === 'sworn') {
           if (option === 0) this.shape('Obedeceu ao Senhor de Varn', { loyalty: 2 });
@@ -1735,6 +1767,53 @@ export class Simulation {
     if (this.duel && p.dead) this.endDuel(false);
   }
 
+  // -------------------------------------------------------------------------
+  // O mundo lembra (Fase 4 da Psique): fama por região e falas que notam você
+  // -------------------------------------------------------------------------
+
+  /** A fama que você tem aqui (ou null). */
+  fameHere(): FameTag | null {
+    return fameOf(this.c.fame[this.map.id]);
+  }
+
+  /** "conhecido pela piedade" (ou null), nesta região ou noutra. */
+  fameLabel(region = this.map.id): string | null {
+    return fameLabel(fameOf(this.c.fame[region]));
+  }
+
+  /** Um ato que se espalha na região; quando a fama muda, o jogador fica sabendo. */
+  private famed(tag: FameTag, n = 1): void {
+    const region = this.map.id;
+    const before = this.fameHere();
+    const counts = (this.c.fame[region] ??= {});
+    counts[tag] = (counts[tag] ?? 0) + n;
+    const now = this.fameHere();
+    if (now && now !== before) {
+      const label = fameLabel(now)!;
+      this.emit({ t: 'fame', region, label });
+      this.notice(`Em ${this.map.name}, você agora é ${label}.`, 'info');
+    }
+  }
+
+  /** NPCs perto comentam quem você é (emoção forte, fama aqui, Valor mais forte), sem clique. */
+  private updateGreetings(): void {
+    const p = this.player;
+    if (p.dead || this.playTime - this.lastGreetAt < GREET_GAP_S) return;
+    const psy = this.c.psyche;
+    const dom = dominantEmotion(psy.emotions);
+    for (const n of this.map.npcs) {
+      if (Math.hypot(n.x - p.pos.x, n.y - p.pos.y) > GREET_DIST) continue;
+      if (this.dialogueFor(n.id)) continue; // tem conversa nova: o "!" já chama
+      if (this.playTime - (this.greetedAt[n.id] ?? -999) < GREET_EACH_S) continue;
+      const text = greeting(n.id, { emotion: dom ? { id: dom.id, intensity: dom.intensity } : null, fame: this.fameHere(), values: psy.values });
+      if (!text) continue;
+      this.greetedAt[n.id] = this.playTime;
+      this.lastGreetAt = this.playTime;
+      this.emit({ t: 'npcSay', npc: n.id, text });
+      return;
+    }
+  }
+
   /** O Guardião despertou: a raposa e a ponte cobram o que você fez. */
   private bossEchoes(boss: Enemy): void {
     const f = this.c.flags;
@@ -1817,6 +1896,7 @@ export class Simulation {
       this.gainXp(Math.round(60 * TUNING.xp), false);
       this.notice(d.cheat ? 'Kael cai de joelhos: "Tá… você venceu. Mesmo eu roubando."' : 'Kael cai de joelhos: "Tá… você venceu. Desta vez."', 'good');
       this.shape('Venceu o duelo com Kael', { power: 1 }, { id: 'pride', intensity: 0.4, duration: 30 });
+      this.famed('brave');
     } else {
       this.notice(fled ? 'Você deixou o duelo. Kael ri de longe.' : d.cheat ? 'Kael ri: "Eu disse que você apanhava." Você sabe que ele trapaceou.' : 'Kael ri: "Eu disse que você apanhava."', 'bad');
       const t = this.c.psyche.traits;
@@ -1850,13 +1930,16 @@ export class Simulation {
         } else this.itemDrops.push({ id: this.nextId++, item, pos: { x: s.x + 0.8, y: s.y }, expiresAt: this.time + 180 });
       }
       this.shape('Pegou as moedas de um altar', { power: 2, law: -3 });
+      this.famed('greedy');
       if (this.c.flags.promise === 'leave') {
         this.notice('Você disse a Ilsa que deixaria o altar em paz.', 'bad');
         this.shape('Quebrou a palavra dada a Ilsa', { law: -3 }, { id: 'shame', intensity: 0.3, duration: 30 });
+        this.famed('greedy');
       }
       return 'O ouro não pesa na mão. Pesa depois.';
     }
     this.shape('Deixou as moedas do altar', { law: 3 }, { id: 'calm', intensity: 0.2, duration: 12 });
+    this.famed('honest');
     return 'Há quem respeite o que não é seu mesmo sem plateia.';
   }
 
@@ -1978,6 +2061,7 @@ export class Simulation {
       this.c.nemesis = null;
       this.notice('Você derrotou o seu algoz.', 'good');
       this.shape(`Derrotou o seu algoz (${e.def.name})`, { vengeance: 5 }, { id: 'pride', intensity: 0.35, duration: 20 });
+      this.famed('brave');
       this.voice('nemesis');
     }
     p.needs.fight = clamp(p.needs.fight + 0.12, 0, 1);
@@ -1987,6 +2071,7 @@ export class Simulation {
     if (e.def.boss) {
       p.bossEngaged = false;
       const first = !this.c.bossDefeated;
+      if (first) this.famed('brave', 2);
       this.c.bossDefeated = true;
       this.feel('killBoss');
       this.notice(first ? 'O Guardião da Ponte caiu! A passagem está aberta.' : 'O Guardião cai outra vez.', 'good');
@@ -2021,6 +2106,7 @@ export class Simulation {
     const m = this.mods;
     // A Guarda (armaduras) absorve parte do golpe sempre, mesmo em defesa zero.
     let mult = def.incomingMult * m.incoming * (1 - this.stats().guard);
+    if (opts.source?.def.humanoid && this.fameHere() === 'ruthless') mult *= 1.15;
     const defenseZero = this.time < p.defenseZeroUntil;
     let perfect = false;
     if (defenseZero) {

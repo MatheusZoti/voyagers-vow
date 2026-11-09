@@ -87,7 +87,8 @@ export class GameView {
   private distressRig: Rig | null = null;
   private distressRing!: THREE.Mesh;
   /** balão da voz interna (um de cada vez) */
-  private bubble: { el: HTMLDivElement; age: number; life: number } | null = null;
+  /** Balões de fala: a voz interna (npc null) e o que os NPCs comentam ao te ver. */
+  private bubbles: Array<{ el: HTMLDivElement; age: number; life: number; npc: NpcId | null }> = [];
   private trapMeshes: THREE.Group[] = [];
   private echoMesh: THREE.Group;
   private dangerRing: THREE.Mesh;
@@ -482,6 +483,9 @@ export class GameView {
           break;
         case 'voice':
           this.say(ev.text);
+          break;
+        case 'npcSay':
+          this.say(ev.text, ev.npc);
           break;
         case 'spared': {
           const v = this.enemies.get(ev.id);
@@ -918,14 +922,18 @@ export class GameView {
     this.updateFloaters(dt);
   }
 
-  /** Voz interna: um balão curto sobre a cabeça do personagem. */
-  say(text: string): void {
-    this.bubble?.el.remove();
+  /** Um balão curto sobre a cabeça: a voz interna do personagem, ou um NPC que te notou. */
+  say(text: string, npc: NpcId | null = null): void {
+    this.bubbles = this.bubbles.filter((b) => (b.npc === npc ? (b.el.remove(), false) : true));
     const el = document.createElement('div');
-    el.className = 'voice-bubble';
-    el.textContent = text;
+    el.className = npc ? 'voice-bubble npc' : 'voice-bubble';
+    if (npc) {
+      const name = document.createElement('b');
+      name.textContent = NPCS[npc].name;
+      el.append(name, document.createTextNode(text));
+    } else el.textContent = text;
     this.floaterLayer.appendChild(el);
-    this.bubble = { el, age: 0, life: 3.4 };
+    this.bubbles.push({ el, age: 0, life: npc ? 3 + text.length * 0.045 : 3.4, npc });
   }
 
   private updateFloaters(dt: number): void {
@@ -939,18 +947,20 @@ export class GameView {
       mat0.color.set(EMOTION_COLORS[dom.id]);
       mat0.opacity = (0.12 + 0.4 * dom.intensity) * (0.8 + 0.2 * Math.sin(this.time * 3));
     } else mat0.opacity = 0;
-    if (this.bubble) {
-      const b = this.bubble;
+    for (let i = this.bubbles.length - 1; i >= 0; i--) {
+      const b = this.bubbles[i]!;
       b.age += dt;
-      v.copy(this.player.root.position);
-      v.y += 2.5;
+      const who = b.npc ? this.npcs.find((n) => n.id === b.npc)?.rig.root : this.player.root;
+      if (!who || !who.visible || b.age >= b.life) {
+        b.el.remove();
+        this.bubbles.splice(i, 1);
+        continue;
+      }
+      v.copy(who.position);
+      v.y += b.npc ? 2.9 : 2.5;
       v.project(this.camera);
       b.el.style.transform = `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, -100%)`;
       b.el.style.opacity = String(Math.min(1, b.age * 6, (b.life - b.age) * 2));
-      if (b.age >= b.life) {
-        b.el.remove();
-        this.bubble = null;
-      }
     }
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       const f = this.floaters[i]!;
@@ -986,7 +996,7 @@ export class GameView {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     for (const f of this.floaters) f.el.remove();
-    this.bubble?.el.remove();
+    for (const b of this.bubbles) b.el.remove();
     for (const n of this.npcs) n.label.remove();
   }
 }

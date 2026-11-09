@@ -5,6 +5,7 @@ import { clamp, Rng } from './math';
 import type { Item, Slot } from './items';
 import type { Echo } from './world/entities';
 import type { PsycheShift } from './psyche/shifts';
+import type { FameCounts } from './psyche/fame';
 import { computeStats } from './stats';
 import type { DialogueId } from './psyche/dialogues';
 import type { RegionId } from './world/map';
@@ -63,6 +64,8 @@ export interface Character {
   shrines: Record<string, 'taken' | 'left'>;
   /** o que aconteceu nas situações (consequências e ecos), ex.: stranger=trusted, oath=sworn */
   flags: Record<string, string | number>;
+  /** fama por região: o que se fala de você em cada lugar */
+  fame: Record<string, FameCounts>;
 }
 
 /** Saves de antes dos equipamentos ganham equipamento e mochila vazios. */
@@ -76,6 +79,7 @@ export function ensureGear(c: Character): void {
   if (c.nemesis === undefined) c.nemesis = null;
   if (!c.shrines) c.shrines = {};
   if (!c.flags) c.flags = {};
+  if (!c.fame) c.fame = {};
 }
 
 /** XP para o próximo nível. (Playtest 09/11: nível 5 em 8 min era rápido demais; agora ~1,8× mais.) */
@@ -137,6 +141,7 @@ export function createCharacter(name: string, affinity: Affinity, seed = Date.no
     nemesis: null,
     shrines: {},
     flags: {},
+    fame: {},
   };
   refreshEloUnlocks(c);
   elos[0]!.technique = first;

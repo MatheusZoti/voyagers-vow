@@ -412,6 +412,34 @@
   border-top-color: rgba(245, 240, 226, 0.94);
 }
 
+/* Um NPC que te notou: fala de verdade (não a voz interna), em vidro escuro */
+.voice-bubble.npc {
+  max-width: 260px;
+  white-space: normal;
+  background: rgba(16, 20, 28, 0.9);
+  border: 1px solid rgba(240, 207, 122, 0.35);
+  color: #eef1f6;
+  font: 500 13px/1.35 Inter, sans-serif;
+  text-align: center;
+}
+.voice-bubble.npc b {
+  display: block;
+  font: 700 10px Inter, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f0cf7a;
+  margin-bottom: 2px;
+}
+.voice-bubble.npc::after {
+  border-top-color: rgba(16, 20, 28, 0.9);
+}
+.region-card em {
+  display: block;
+  margin-top: 4px;
+  font: italic 500 13px Inter, sans-serif;
+  color: #f0cf7a;
+}
+
 /* Escolha por gesto: a opção é uma ação, não uma fala */
 .dl-opt.gesture span {
   font-style: italic;

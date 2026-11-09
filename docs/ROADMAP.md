@@ -42,11 +42,9 @@ Fonte de verdade do design: o GDD "Sistema de Aura, Psique e Maestria" (document
 - [x] Psique, Fase 2 (ações que moldam os Valores): Lançadores perdendo se rendem (afastar-se poupa → Misericórdia; golpear executa → Vingança ou Poder, com loot); algoz marcado entre sessões (vencê-lo → Vingança); viajante em apuros na trilha (salvar → Misericórdia e Lealdade + recompensa; deixar → Liberdade); altares com escolha por gesto (pegar → Poder, Lei ↓ e um item; deixar → Lei); livros → Conhecimento; fugir → Liberdade. Atos deliberados sussurram na hora
 - Natureza (caçar além do necessário) fica para quando houver criaturas que não atacam
 - [x] Psique, Fase 3 (situações com consequência e eco): escolhas viram gestos e o mundo cumpre o que promete — viajante ferido (presente ou emboscada, conforme ele for honesto), treino de Oren vira tarefa de Maré, duelo de verdade com Kael (não letal; trapaceia se você mentir por ele), juramento ao Senhor de Varn (arma agora; cobrança em Varn, ou emboscada se recusar), raposa-de-cristal (distrai o Guardião, vira amuleto ou revela o ponto fraco), batedor de Lys (Lançadores nunca mais se rendem, ou se rendem mais; ou ninhos no mapa), ponte (Guardião mais lento) e a palavra dada a Ilsa sobre o altar. NPCs lembram o que você fez
+- [x] Psique, Fase 4 (o mundo lembra): o que você faz numa região vira fama ali (piedade, crueldade, ganância, honra, coragem), sem números. NPCs comentam sozinhos quando você passa perto (emoção forte, fama, Valor mais forte); o cartão da região e a aba "Como você mudou" dizem o que falam de você. Com fama de piedade, humanos se rendem mais; com fama de crueldade, ninguém se rende (alguns fogem), batem mais forte e ninguém pede socorro
 
 ## Próximo
-
-- Psique, Fase 4: falas que notam você, reputação por região, inimigos que reagem
-
 
 - Sensação de jogo e equilíbrio: painel de debug para ajustar números ao vivo, impacto nos golpes (pausa no acerto, recuo), sons
 - Mais magias por afinidade e onde cada uma cai (tabela de drops por região)

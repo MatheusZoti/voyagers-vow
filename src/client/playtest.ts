@@ -71,6 +71,9 @@ export interface PlaytestLog {
     strongEnd: string[];
     /** "Como você mudou": causas e direções (as 40 mais recentes) */
     shifts?: Array<{ t: number; cause: string; changes: string[] }>;
+    /** O mundo lembra: falas de NPCs que notaram você e fama que pegou */
+    greetings?: Array<{ t: number; npc: string; text: string }>;
+    fame?: Array<{ t: number; region: string; label: string }>;
   };
 }
 
@@ -313,6 +316,12 @@ export class PlaytestRecorder {
           break;
         case 'voice':
           psy.voices.push({ t: round(L.playS, 0), text: ev.text });
+          break;
+        case 'npcSay':
+          (psy.greetings ??= []).push({ t: round(L.playS, 0), npc: ev.npc, text: ev.text });
+          break;
+        case 'fame':
+          (psy.fame ??= []).push({ t: round(L.playS, 0), region: ev.region, label: ev.label });
           break;
         case 'itemPickup': {
           const it = c.bag[c.bag.length - 1];

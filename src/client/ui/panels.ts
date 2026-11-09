@@ -9,6 +9,7 @@ import type { Simulation } from '../../sim/sim';
 import { formatStat, tierLevels, type StatLine } from '../../sim/stats';
 import { regionName } from '../../sim/world/regions';
 import { shiftName } from '../../sim/psyche/shifts';
+import { FAME_COLOR, FAME_NOUN, fameOf } from '../../sim/psyche/fame';
 import {
   BAG_SIZE,
   formatItemStat,
@@ -592,12 +593,19 @@ export class Panels {
   /** "Como você mudou": cada ato marcante com setas para o que mexeu (sem números). */
   private shiftList(): string {
     const c = this.sim.c;
-    if (!c.shifts.length) return `<p class="empty-note">Conversas, lutas e escolhas mudam quem você é. Cada mudança aparece aqui, com o que a causou.</p>`;
+    // O mundo lembra: o que se fala de você em cada região (sem números).
+    const fame = Object.keys(c.fame)
+      .map((r) => [r, fameOf(c.fame[r])] as const)
+      .filter((x) => x[1])
+      .map(([r, tag]) => `<i class="sh-chip fame" style="--c:${FAME_COLOR[tag!]}">${escapeHtml(regionName(r))}: conhecido pela ${FAME_NOUN[tag!]}</i>`)
+      .join('');
+    const fameRow = fame ? `<div class="fame-row"><small>O que dizem de você</small><span class="sh-chips">${fame}</span></div>` : '';
+    if (!c.shifts.length) return fameRow +  `<p class="empty-note">Conversas, lutas e escolhas mudam quem você é. Cada mudança aparece aqui, com o que a causou.</p>`;
     const ago = (t: number) => {
       const m = Math.max(0, Math.round((c.playTime - t) / 60));
       return m < 1 ? 'agora' : m < 60 ? `há ${m} min` : `há ${Math.round(m / 60)} h`;
     };
-    return `<ol class="shift-list">${c.shifts
+    return `${fameRow}<ol class="shift-list">${c.shifts
       .map(
         (s) => `<li><span class="sh-cause">${escapeHtml(s.cause)}</span><span class="sh-when">${ago(s.t)}</span><span class="sh-chips">${s.changes
           .map((ch) => {
