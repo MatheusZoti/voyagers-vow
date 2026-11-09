@@ -27,13 +27,13 @@ export interface Tuning {
 }
 
 export const DEFAULT_TUNING: Tuning = {
-  playerDamage: 1,
+  playerDamage: 1.15,
   enemyDamage: 1,
   enemyHp: 1,
   enemySpeed: 1,
   enemyWindup: 1,
   flowRegen: 1,
-  spellCost: 1,
+  spellCost: 0.93,
   cooldown: 1,
   xp: 1,
   knockback: 1,

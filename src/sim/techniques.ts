@@ -116,7 +116,6 @@ export interface SpellFx {
   chargeS?: number;
   defenseZeroS?: number;
   critBase?: number;
-  critPerMastery?: number;
   /** cura: fração da vida máxima; bônus extra abaixo de lowHpFrac */
   healFrac?: number;
   healLowBonus?: number;
@@ -146,8 +145,6 @@ export const SPELL_RULES = {
   stunModS: 0.8,
   /** Restaurar: cura 6% da vida máxima se acertar alguém */
   restoreFrac: 0.06,
-  /** Maestria da magia: +2% de efeito por nível */
-  masteryPerLevel: 0.02,
 } as const;
 
 const ALL_PACTS: PactId[] = [...PACT_IDS];
@@ -186,7 +183,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     // Ponto não é um golpe em si (carrega o próximo): "se errar" não se aplica.
     pacts: NO_MISS,
     mods: ['damage', 'cadence', 'restore', 'stun', 'shatter'],
-    fx: { shape: 'charge', chargeS: 4, defenseZeroS: 2, critBase: 2.5, critPerMastery: 0.1 },
+    fx: { shape: 'charge', chargeS: 4, defenseZeroS: 2, critBase: 2.6 },
   },
   // ----- Projeção
   flowLance: {
@@ -502,20 +499,10 @@ export const STARTER_SPELLS: Record<Affinity, [SpellId, SpellId]> = {
 export const TECHNIQUES = SPELLS;
 export type TechniqueDef = SpellDef;
 
-/** Tudo o que tem Maestria. */
-export type MasteryId = SpellId | Exclude<Posture, 'open'> | 'veil' | 'impetus' | 'tide' | 'basic' | 'capacity';
-export const FIXED_MASTERY_IDS: readonly MasteryId[] = ['basic', 'veil', 'silence', 'impetus', 'gaze', 'tide', 'capacity'];
-export const MASTERY_IDS: readonly MasteryId[] = [...FIXED_MASTERY_IDS, ...SPELL_IDS];
-export const MASTERY_NAMES: Record<MasteryId, string> = {
-  basic: 'Golpe básico',
-  veil: 'Véu',
-  silence: 'Silêncio',
-  impetus: 'Ímpeto',
-  gaze: 'Olhar',
-  tide: 'Maré',
-  capacity: 'Capacidade do Fluxo',
-  ...(Object.fromEntries(SPELL_IDS.map((id) => [id, SPELLS[id].name])) as Record<SpellId, string>),
-};
+/** Só as magias têm Maestria. */
+export type MasteryId = SpellId;
+export const MASTERY_IDS: readonly MasteryId[] = SPELL_IDS;
+export const MASTERY_NAMES = Object.fromEntries(SPELL_IDS.map((id) => [id, SPELLS[id].name])) as Record<SpellId, string>;
 
 /**
  * Ressonância: etiquetas da magia x traços. Multiplica a Maestria (e divide o custo de Fluxo).

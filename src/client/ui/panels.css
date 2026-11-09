@@ -1070,8 +1070,123 @@ kbd {
 
 /* ---------- Maestria ---------- */
 .grid.mastery {
-  grid-template-columns: 1.7fr 1fr;
-  align-items: start;
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+  min-height: 0;
+}
+.ms-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ms-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.ms-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--txt);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.ms-row:hover {
+  border-color: var(--line-2);
+}
+.ms-row.sel {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 10%, transparent);
+}
+.ms-ic {
+  color: var(--c);
+  display: flex;
+}
+.ms-txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ms-txt b {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ms-txt small {
+  font-size: 10px;
+  color: var(--mut);
+}
+.ms-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.ms-bar i {
+  display: block;
+  height: 100%;
+  background: var(--c);
+}
+.ms-lvl {
+  font: 700 16px Inter, sans-serif;
+  color: var(--c);
+}
+.ms-lvl small {
+  font-size: 10px;
+  color: var(--mut);
+  font-weight: 500;
+}
+.ms-ladder {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ms-ladder li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--mut);
+}
+.ms-ladder .ml-n {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 700 10px Inter, sans-serif;
+  border: 1px solid var(--line-2);
+}
+.ms-ladder li.done {
+  color: var(--txt);
+}
+.ms-ladder li.done .ml-n {
+  background: var(--c);
+  border-color: var(--c);
+  color: #111;
+}
+.ms-ladder li.now {
+  color: var(--txt);
+  font-weight: 600;
+}
+.ms-ladder li.now .ml-n {
+  border-color: var(--c);
+  color: var(--c);
+  box-shadow: 0 0 8px var(--c);
 }
 .constellation {
   width: 100%;

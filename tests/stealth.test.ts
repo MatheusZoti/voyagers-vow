@@ -30,19 +30,4 @@ describe('Silêncio', () => {
     expect(g.aggro).toBe(false);
   });
 
-  it('o raio de percepção encolhe com a Maestria do Silêncio', () => {
-    const { sim, g } = setup();
-    const r1 = sim.stealthRadius(g);
-    sim.c.mastery.silence.level = 15;
-    expect(sim.stealthRadius(g)).toBeLessThan(r1 * 0.6);
-  });
-
-  it('passar despercebido perto de inimigos treina o Silêncio', () => {
-    const { sim, g } = setup();
-    const before = sim.c.mastery.silence.level;
-    sim.player.pos = { x: g.pos.x - (sim.stealthRadius(g) + 1), y: g.pos.y };
-    for (let i = 0; i < 3 / TICK; i++) sim.step(still());
-    expect(g.aggro).toBe(false);
-    expect(sim.c.mastery.silence.level).toBeGreaterThan(before);
-  });
 });

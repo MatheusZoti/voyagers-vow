@@ -3,12 +3,12 @@ import { AFFINITY_RING, affinityPenalty, hexDistance, minSlotFor } from '../src/
 import { computeFlowMods, createTide, shiftTide, tickTide } from '../src/sim/flow/flow';
 import { equipError, evaluateSlot, newSlot, pointsForLevel } from '../src/sim/elos';
 import {
-  decay,
-  deathPenalty,
-  GRACE_PLAYED_S,
+  MASTERY_MAX,
+  maxEloFor,
+  maxPactLevelFor,
+  migrateMasteryLevel,
   newMastery,
   recordUse,
-  sharpnessMult,
 } from '../src/sim/mastery';
 import { reactTo } from '../src/sim/psyche/emotions';
 import { chooseCrisis, createPsyche, psycheEvent, tickPsyche } from '../src/sim/psyche/psyche';
@@ -103,59 +103,29 @@ describe('Grade de Elos', () => {
 });
 
 describe('Maestria', () => {
-  const traits = neutralTraits();
-
-  it('alvo trivial rende quase nada; risco real rende muito mais', () => {
-    const easy = newMastery();
-    const hard = newMastery();
-    for (let i = 0; i < 30; i++) {
-      recordUse(easy, 10, { risk: 0.05, traits, playTime: i });
-      recordUse(hard, 10, { risk: 2, traits, playTime: i });
-    }
-    expect(hard.level).toBeGreaterThan(easy.level + 1);
-  });
-
-  it('não perde nada dentro da carência de tempo jogado', () => {
+  it('sobe com o uso e para no nível máximo', () => {
     const r = newMastery();
-    r.level = r.peak = 10;
-    r.sharpness = 1;
-    decay(r, 3600, GRACE_PLAYED_S - 1, traits);
-    expect(r.level).toBe(10);
-    expect(r.sharpness).toBe(1);
+    expect(recordUse(r, 60)).toBe(true);
+    expect(Math.floor(r.level)).toBe(2);
+    recordUse(r, 1e9);
+    expect(r.level).toBe(MASTERY_MAX);
   });
 
-  it('desuso respeita o piso de 50% do pico', () => {
-    const r = newMastery();
-    r.level = r.peak = 10;
-    for (let h = 0; h < 2000; h++) decay(r, 3600, GRACE_PLAYED_S + h * 3600, traits);
-    expect(r.level).toBeCloseTo(5, 5);
-    expect(r.sharpness).toBe(0);
+  it('cada nível deixa a magia subir um Elo, até o 8', () => {
+    expect(maxEloFor(1, 1)).toBe(2);
+    expect(maxEloFor(1, 4)).toBe(5);
+    expect(maxEloFor(3, 2)).toBe(5);
+    expect(maxEloFor(1, MASTERY_MAX)).toBe(8);
   });
 
-  it('reaprender abaixo do pico é ~3x mais rápido', () => {
-    const fresh = newMastery();
-    fresh.level = 5;
-    fresh.peak = 5;
-    const relearn = newMastery();
-    relearn.level = 5;
-    relearn.peak = 10;
-    recordUse(fresh, 20, { risk: 1, traits, playTime: 0 });
-    recordUse(relearn, 20, { risk: 1, traits, playTime: 0 });
-    expect((relearn.level - 5) / (fresh.level - 5)).toBeCloseTo(3, 5);
+  it('Restrições de até metade da Maestria, arredondada para cima', () => {
+    expect([1, 2, 3, 4, 5, 6, 7].map(maxPactLevelFor)).toEqual([1, 1, 2, 2, 3, 3, 4]);
   });
 
-  it('Afiação multiplica entre 85% e 110%', () => {
-    expect(sharpnessMult(0)).toBeCloseTo(0.85);
-    expect(sharpnessMult(1)).toBeCloseTo(1.1);
-  });
-
-  it('penalidade de morte zera a Afiação e respeita o piso', () => {
-    const r = newMastery();
-    r.level = r.peak = 8;
-    r.sharpness = 0.9;
-    deathPenalty(r, 0.9);
-    expect(r.level).toBe(4);
-    expect(r.sharpness).toBe(0);
+  it('a Maestria antiga (1–20) vira a nova (1–7) na proporção', () => {
+    expect(migrateMasteryLevel(1)).toBe(1);
+    expect(migrateMasteryLevel(20)).toBe(MASTERY_MAX);
+    expect(Math.floor(migrateMasteryLevel(10))).toBe(3);
   });
 });
 

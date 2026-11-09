@@ -1,6 +1,6 @@
-import { isAffinity, type Affinity } from './flow/affinity';
-import { newSlot, type EloSlot } from './elos';
-import { newMastery, type MasteryRecord } from './mastery';
+import { isAffinity, minSlotFor, type Affinity } from './flow/affinity';
+import { newSlot, PACTS, type EloSlot } from './elos';
+import { masteryForElo, masteryForPact, migrateMasteryLevel, newMastery, type MasteryRecord } from './mastery';
 import { clamp, Rng } from './math';
 import type { Item, Slot } from './items';
 import type { Echo } from './world/entities';
@@ -11,7 +11,7 @@ import type { DialogueId } from './psyche/dialogues';
 import type { RegionId } from './world/map';
 import { createPsyche, type PsycheState } from './psyche/psyche';
 import { neutralTraits, neutralValues, TRAIT_IDS } from './psyche/traits';
-import { isSpell, MASTERY_IDS, sanitizeSlot, STARTER_SPELLS, type MasteryId, type SpellId } from './techniques';
+import { isSpell, MASTERY_IDS, sanitizeSlot, SPELLS, STARTER_SPELLS, type MasteryId, type SpellId } from './techniques';
 
 /** Personagem persistente: o que o servidor guardaria entre sessões. */
 export interface Character {
@@ -234,9 +234,31 @@ export function migrateCharacter(raw: unknown): Character | null {
   return migrated;
 }
 
-/** Garante um registro de Maestria para cada magia (novas magias entram com o tempo). */
+/**
+ * Garante um registro de Maestria para cada magia (novas magias entram com o tempo) e converte
+ * a Maestria antiga (1–20, com Posturas e Fluxo) para a nova (1–7, só magias).
+ * Nada equipado se perde: a Maestria sobe o bastante para o Elo e as Restrições em uso.
+ */
 export function ensureMastery(c: Character): void {
-  for (const id of MASTERY_IDS) if (!c.mastery[id]) c.mastery[id] = newMastery();
+  const raw = c.mastery as unknown as Record<string, Partial<MasteryRecord> & { sharpness?: number }>;
+  const old = Object.values(raw).some((r) => r && 'sharpness' in r);
+  const next = {} as Record<MasteryId, MasteryRecord>;
+  for (const id of MASTERY_IDS) {
+    const r = raw[id];
+    const lvl = typeof r?.level === 'number' ? r.level : 1;
+    next[id] = { level: old ? migrateMasteryLevel(lvl) : Math.max(1, lvl) };
+  }
+  if (old) {
+    for (const slot of c.elos) {
+      if (!slot.technique || !isSpell(slot.technique)) continue;
+      const s = SPELLS[slot.technique];
+      const minElo = minSlotFor(c.affinity, s.affinity, s.minLevel);
+      const needPact = Math.max(0, ...slot.restrictions.map((id) => PACTS[id]?.level ?? 0));
+      const need = Math.max(masteryForElo(minElo, slot.level), needPact ? masteryForPact(needPact) : 1);
+      next[slot.technique].level = Math.max(next[slot.technique].level, need);
+    }
+  }
+  c.mastery = next;
 }
 
 export function learnSpell(c: Character, id: SpellId): boolean {

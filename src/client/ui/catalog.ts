@@ -94,9 +94,8 @@ export function spellEntries(sim: Simulation, st: CatalogState, ctx: PickContext
       return !q || norm(`${s.name} ${s.role} ${AFFINITY_NAMES[s.affinity]} ${s.desc}`).includes(q);
     })
     .map((id) => {
-      const need = spellNeed(sim, id);
-      const blocked = ctx !== null && ctx.slot.level < need;
-      return { id, why: blocked ? `Precisa de Elo ${need} ou maior` : null, hide: blocked, on: ctx?.slot.technique === id };
+      const why = ctx ? sim.equipProblem(ctx.slot.level, id) : null;
+      return { id, why, hide: why !== null, on: ctx?.slot.technique === id };
     });
   const hidden = ctx && !st.showAll ? list.filter((e) => e.hide).length : 0;
   if (ctx && !st.showAll) list = list.filter((e) => !e.hide);
@@ -119,7 +118,7 @@ function pactState(sim: Simulation, ctx: PickContext | null, id: PactId): { why:
   const spell = slot.technique ? SPELLS[slot.technique as SpellId] : null;
   if (!spell) return { why: 'Escolha uma magia para o Elo primeiro', hide: false, on: false };
   if (!spell.pacts.includes(id)) return { why: `Não combina com ${spell.name}`, hide: true, on: false };
-  return { why: canAddRestriction(slot, id), hide: false, on: false };
+  return { why: canAddRestriction(slot, id, sim.maxPactLevel(spell.id)), hide: false, on: false };
 }
 
 export function pactEntries(sim: Simulation, st: CatalogState, ctx: PickContext | null): { list: Entry<PactId>[]; hidden: number } {
@@ -311,7 +310,7 @@ function howItWorks(s: SpellDef): string[] {
     case 'charge':
       return [
         `Não causa dano sozinho: carrega o <b>próximo golpe</b> (básico ou magia) dado em até <b>${sec(fx.chargeS!)}</b>.`,
-        `O golpe carregado vira crítico: <b>×${num(fx.critBase!)}</b> +${num(fx.critPerMastery!)} por nível de Maestria, vezes (70% + 30% da potência do Elo), vezes +20% por ponto de Dano na forja.`,
+        `O golpe carregado vira crítico: <b>×${num(fx.critBase!)}</b>, vezes (70% + 30% da potência do Elo), vezes +20% por ponto de Dano na forja.`,
         `Por <b>${sec(fx.defenseZeroS!)}</b> você fica com <b>defesa zero</b>: a Maré e o Véu não reduzem nada do dano que você recebe.`,
         `Com a Restrição "Só contra elites", a carga espera um alvo de elite e não se gasta em inimigos comuns.`,
         `Abalo, Restaurar e Quebra-Guarda da forja agem no golpe crítico.`,
@@ -477,7 +476,7 @@ function commonRules(): string {
   const rows = [
     `<b>Custo e recarga vêm do Elo</b>, não da magia: Elo 1 custa ${ELO_TABLE[1]!.cost}% da reserva e recarrega em ${sec(ELO_TABLE[1]!.cooldown)}; Elo 8 custa ${ELO_TABLE[8]!.cost}% e recarrega em ${sec(ELO_TABLE[8]!.cooldown)}. O Fluxo é pago ao lançar, mesmo se errar.`,
     `<b>Potência</b>: cada nível efetivo acima do 1 soma +30% de dano. Restrições sobem o nível efetivo; magias de outra afinidade perdem nível pela distância no pentágono.`,
-    `<b>Dano final</b> = dano base × potência × forja × Maré × emoções × Afiação × Maestria (+${pct(R.masteryPerLevel)} por nível) × nível do personagem (+4% por nível) × Foco (+10%).`,
+    `<b>Dano final</b> = dano base × potência × forja × Maré × emoções × Foco (+10%). A Maestria não muda o dano: ela decide até qual Elo a magia sobe e quais Restrições cabem nela.`,
     `<b>Só atinge o que você vê</b>: inimigos fora do seu raio de visão (10 m; 14 m com o Olhar) são ignorados.`,
     `<b>Armadura</b> do inimigo reduz o dano, a menos que a magia a ignore (Quebra-Guarda, Punho do Voto a cada ${SPELLS.votePunch.fx.pierceEvery} acertos).`,
     `<b>Recuo</b>: cada acerto empurra o inimigo um pouco (elites, ${pct(R.eliteKnockMult)}; o chefe não se move) e o faz perseguir você.`,
@@ -495,16 +494,17 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
   const res = resonance(s.tags, c.psyche.traits);
   const resText =
     res > 1
-      ? `<span class="good">Forte</span>: −${pct(1 - 1 / res)} de custo e Maestria ${pct(res - 1)} mais rápida.`
+      ? `<span class="good">Forte</span>: −${pct(1 - 1 / res)} de custo.`
       : res < 1
-        ? `<span class="bad">Fraca</span>: +${pct(1 / Math.max(0.5, res) - 1)} de custo e Maestria ${pct(1 - res)} mais lenta.`
+        ? `<span class="bad">Fraca</span>: +${pct(1 / Math.max(0.5, res) - 1)} de custo.`
         : 'Neutra.';
 
   let preview = '';
   let action = '';
   if (ctx) {
     const slot = ctx.slot;
-    const blocked = slot.level < need;
+    const problem = sim.equipProblem(slot.level, id);
+    const blocked = problem !== null;
     if (!blocked) {
       const kept = slot.restrictions.filter((p) => s.pacts.includes(p));
       const temp: EloSlot = { ...slot, technique: id, restrictions: kept, mods: slot.technique === id ? slot.mods : {} };
@@ -517,7 +517,7 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
         ${slot.technique && slot.technique !== id && Object.keys(slot.mods).length ? '<p class="pv-warn">A forja deste Elo será zerada.</p>' : ''}
       </div>`;
     }
-    if (blocked) action = `<button class="btn" disabled>${icon('lock', 14)} Precisa de Elo ${need}+</button>`;
+    if (blocked) action = `<button class="btn" disabled>${icon('lock', 14)} ${problem}</button>`;
     else if (!ctx.editable) action = `<button class="btn" disabled>${icon('lock', 14)} Só no santuário, fora de combate</button>`;
     else if (slot.technique === id) action = `<button class="btn" disabled>Equipada neste Elo</button><button class="btn ghost" data-cat-act="clear">Esvaziar o Elo</button>`;
     else if (where) action = `<button class="btn primary" data-cat-act="equip">Trocar com o Elo ${where.level}</button>`;
@@ -556,7 +556,7 @@ function spellDetail(sim: Simulation, id: SpellId, ctx: PickContext | null): str
         'O jeito de agir da magia. Cada natureza combina com traços da sua personalidade: agressiva com Coragem e Ira; protetora com Empatia e Disciplina; enganadora com pouca Sinceridade; paciente com Perseverança e Disciplina. Essa combinação define a Ressonância.',
       )}</dt><dd>${s.tags.length ? s.tags.map((t) => NATURE_NAMES[t].charAt(0).toUpperCase() + NATURE_NAMES[t].slice(1)).join(' e ') : '—'}</dd></div>
       ${ctx ? `<div><dt>Equipada</dt><dd>${where ? `Elo ${where.level}` : 'Não'}</dd></div>` : ''}
-      <div><dt>Ressonância ${hintTip('O quanto a natureza da magia combina com a sua personalidade. Muda o custo de Fluxo e a velocidade com que a Maestria sobe.')}</dt><dd>${resText}</dd></div>
+      <div><dt>Ressonância ${hintTip('O quanto a natureza da magia combina com a sua personalidade. Muda o custo de Fluxo.')}</dt><dd>${resText}</dd></div>
     </dl>
     <h6 class="cd-sub">Restrições compatíveis <small>${s.pacts.length} de ${PACT_IDS.length}</small></h6>
     <div class="cd-chips">${pacts}</div>

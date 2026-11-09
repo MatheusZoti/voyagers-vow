@@ -9,7 +9,7 @@ import {
   type Character,
 } from './character';
 import { equipError, evaluateSlot, PACTS, trimMods, type EffectiveInfo, type EloSlot } from './elos';
-import { AFFINITY_COLORS, AFFINITY_NAMES, type Affinity } from './flow/affinity';
+import { AFFINITY_COLORS, AFFINITY_NAMES, minSlotFor, type Affinity } from './flow/affinity';
 import {
   computeFlowMods,
   createTide,
@@ -24,18 +24,7 @@ import {
   type Posture,
   type TideState,
 } from './flow/flow';
-import {
-  decay,
-  deathPenalty,
-  displayLevel,
-  masteryCostMult,
-  MASTERY_CAPACITY,
-  modifierDiscount,
-  recordUse,
-  riskFactor,
-  sharpnessMult,
-  totalMastery,
-} from './mastery';
+import { displayLevel, maxEloFor, maxPactLevelFor, recordUse, riskFactor } from './mastery';
 import { angleBetween, clamp, dist, normalize, Rng, type Vec2 } from './math';
 import type { PsycheEventKind } from './psyche/emotions';
 import { applyDialogueChoice, DIALOGUES, NPCS, type DialogueDef, type DialogueId, type NpcId } from './psyche/dialogues';
@@ -344,17 +333,12 @@ export class Simulation {
     this.lastPlayerPos = { ...this.player.pos };
     // Chegou de outra região: o personagem comenta.
     if (arrive) this.outbox.push({ t: 'voice', text: voiceLine('newRegion', character.psyche.traits) });
-    for (const m of Object.values(character.mastery)) m.sessionUses = 0;
     for (const slot of character.elos) {
-      sanitizeSlot(slot);
-      // Regra de equipar (Elo mínimo = 1 + distância): desequipa o que não cabe mais.
-      if (slot.technique && this.equipProblem(slot.level, slot.technique as SpellId)) {
-        slot.technique = null;
-        sanitizeSlot(slot);
-      }
+      // Regra de equipar (Elo mínimo e Maestria): desequipa o que não cabe mais.
+      this.fitSlot(slot);
       // Custos de forja podem mudar entre versões: remove o que passou do orçamento.
       const info = this.slotInfo(slot);
-      if (info && slot.technique) trimMods(slot, info, modifierDiscount(character.mastery[slot.technique as MasteryId]));
+      if (info && slot.technique) trimMods(slot, info, 0);
     }
   }
 
@@ -407,7 +391,29 @@ export class Simulation {
   /** Por que esta magia não entra neste Elo (ou null se entra). */
   equipProblem(slotLevel: number, spell: SpellId): string | null {
     const s = SPELLS[spell];
-    return equipError(slotLevel, this.c.affinity, s.affinity, s.minLevel);
+    const low = equipError(slotLevel, this.c.affinity, s.affinity, s.minLevel);
+    if (low) return low;
+    const lvl = displayLevel(this.c.mastery[spell]);
+    const max = maxEloFor(this.minEloFor(spell), lvl);
+    return slotLevel <= max ? null : `Maestria ${lvl} leva ${s.name} só até o Elo ${max}.`;
+  }
+
+  /** Arruma o Elo depois de trocar a magia: tira o que não se aplica, o que a Maestria não comporta e o que não cabe no Elo. */
+  fitSlot(slot: EloSlot): void {
+    sanitizeSlot(slot);
+    if (slot.technique && this.equipProblem(slot.level, slot.technique as SpellId)) {
+      slot.technique = null;
+      sanitizeSlot(slot);
+    }
+    if (slot.technique) {
+      const cap = this.maxPactLevel(slot.technique as SpellId);
+      slot.restrictions = slot.restrictions.filter((id) => PACTS[id].level <= cap);
+    }
+  }
+
+  /** Nível máximo de Restrição que cabe na magia deste Elo (pela Maestria dela). */
+  maxPactLevel(spell: SpellId): number {
+    return maxPactLevelFor(displayLevel(this.c.mastery[spell]));
   }
 
   // -------------------------------------------------------------------------
@@ -469,7 +475,7 @@ export class Simulation {
     const gear = Object.values(c.equipment)
       .map((it) => (it ? `${it.uid}${resonanceState(it, c.psyche.values)?.[0] ?? ''}` : '0'))
       .join(',');
-    const key = `${c.level}|${c.lifeCostLost}|${displayLevel(c.mastery.capacity)}|${gear}`;
+    const key = `${c.level}|${c.lifeCostLost}|${gear}`;
     if (key !== this.statsKey || !this.statsCache) {
       this.statsKey = key;
       this.statsCache = computeStats(c);
@@ -519,7 +525,7 @@ export class Simulation {
       values: this.c.psyche.values,
       characterAffinity: this.c.affinity,
       techniqueAffinity: tech.affinity,
-      modDiscount: modifierDiscount(this.c.mastery[slot.technique as MasteryId]),
+      modDiscount: 0,
     });
   }
 
@@ -530,7 +536,7 @@ export class Simulation {
     const st = this.stats();
     const focus = st.focus && st.focus.affinity === tech.affinity ? st.focus.cost : 1;
     return (
-      ((info.costPct / 100) * this.flowMax() * masteryCostMult(this.c.mastery[tech.id]) * this.mods.techniqueCost * TUNING.spellCost * st.flowCost * focus) /
+      ((info.costPct / 100) * this.flowMax() * this.mods.techniqueCost * TUNING.spellCost * st.flowCost * focus) /
       Math.max(0.5, res)
     );
   }
@@ -724,26 +730,7 @@ export class Simulation {
       const tone: NoticeTone =
         n.type === 'crisisWarning' || n.type === 'crisisStart' ? 'crisis' : n.type === 'longMemory' || n.type === 'memory' ? 'memory' : 'info';
       this.notice(n.text, tone);
-      if (n.type === 'crisisStart' && this.c.psyche.crisis.phase === 'active') {
-        // Uma Crise derruba a Afiação das técnicas em uso.
-        const inUse = this.c.elos.filter((s) => s.technique).map((s) => s.technique as MasteryId);
-        for (const id of ['basic', ...this.stanceMastery(), ...inUse] as MasteryId[]) {
-          const r = this.c.mastery[id];
-          r.sharpness = Math.max(0, r.sharpness - 0.2);
-        }
-      }
     }
-  }
-
-  /** Maestrias da postura e do lado da Maré em uso agora. */
-  private stanceMastery(): MasteryId[] {
-    const p = this.player;
-    const ids: MasteryId[] = [];
-    if (p.posture !== 'open') ids.push(p.posture);
-    const lvl = tideLevel(p.tide.value);
-    if (lvl < 0) ids.push('veil');
-    if (lvl > 0) ids.push('impetus');
-    return ids;
   }
 
   private feel(kind: PsycheEventKind, magnitude = 1): void {
@@ -754,18 +741,20 @@ export class Simulation {
     if (moment) this.voice(moment);
   }
 
-  private train(id: MasteryId, baseXp: number, risk: number): void {
+  /** Maestria de uma magia: sobe com o uso, mais rápido sob risco real. */
+  private train(id: SpellId, baseXp: number, risk: number): void {
     const r = this.c.mastery[id];
-    const tech = isSpell(id) ? SPELLS[id] : null;
-    const others = totalMastery(Object.values(this.c.mastery));
-    const up = recordUse(r, baseXp, {
-      risk,
-      traits: this.c.psyche.traits,
-      resonance: tech ? resonance(tech.tags, this.c.psyche.traits) : 1,
-      playTime: this.playTime,
-      totalMastery: others,
-    });
-    if (up) this.notice(`Maestria: ${MASTERY_NAMES[id]} chegou ao nível ${displayLevel(r)}`, 'good');
+    if (!recordUse(r, baseXp * risk)) return;
+    const lvl = displayLevel(r);
+    const spell = SPELLS[id];
+    const elo = maxEloFor(this.minEloFor(id), lvl);
+    this.notice(`Maestria: ${spell.name} chegou ao nível ${lvl}. Agora vai até o Elo ${elo} e aceita Restrições de até +${maxPactLevelFor(lvl)}.`, 'good');
+  }
+
+  /** Elo mínimo da magia para este personagem (nível mínimo + distância no pentágono). */
+  minEloFor(id: SpellId): number {
+    const s = SPELLS[id];
+    return minSlotFor(this.c.affinity, s.affinity, s.minLevel);
   }
 
   private currentRisk(target?: Enemy): number {
@@ -805,7 +794,7 @@ export class Simulation {
 
     // Maré: degraus rumo à defesa (Véu) ou ao ataque (Ímpeto).
     if (input.tideSteps) shiftTide(p.tide, input.tideSteps);
-    tickTide(p.tide, dt, this.mods, displayLevel(c.mastery.tide) * 0.04, this.time);
+    tickTide(p.tide, dt, this.mods, 0, this.time);
 
     // Reserva de Fluxo: a postura e a Maré fora do centro drenam.
     const def = POSTURES[p.posture];
@@ -836,7 +825,6 @@ export class Simulation {
         this.sneakAcc += dt;
         if (this.sneakAcc >= 1) {
           this.sneakAcc -= 1;
-          this.train('silence', 2 * near.length, this.currentRisk(near[0]));
         }
       }
     }
@@ -847,8 +835,6 @@ export class Simulation {
       if (this.impetusAcc >= 1) {
         this.impetusAcc -= 1;
         const risk = this.currentRisk();
-        this.train('impetus', 1.5, risk);
-        this.train('capacity', 1.2, risk);
       }
     }
 
@@ -882,7 +868,6 @@ export class Simulation {
       if (p.meditateTime >= 6) {
         p.meditateTime = 0;
         this.feel('meditate');
-        this.train('silence', 4, 1);
       }
       if (c.elos.some((e) => e.sealed)) {
         p.penanceTime += dt;
@@ -1027,7 +1012,6 @@ export class Simulation {
     return (
       this.mods.outgoing *
       tideOutgoing(p.tide.value) *
-      (tideLevel(p.tide.value) > 0 ? 1 + 0.005 * (displayLevel(this.c.mastery.impetus) - 1) : 1) *
       this.stats().power *
       (this.focused() ? 1.1 : 1)
     );
@@ -1050,8 +1034,6 @@ export class Simulation {
     // Pequeno avanço a cada golpe: dá peso ao ataque.
     moveWithCollision(this.map, p.pos, p.facing.x * (finisher ? 0.35 : 0.18), p.facing.y * (finisher ? 0.35 : 0.18), 0.35);
     this.events.push({ t: 'swing', x: p.pos.x, y: p.pos.y, dir: { ...p.facing }, range, finisher });
-    const sharp = sharpnessMult(this.c.mastery.basic.sharpness);
-    const mastery = 1 + 0.03 * (displayLevel(this.c.mastery.basic) - 1);
     let hitAny = false;
     for (const e of this.enemies) {
       if (e.state === 'dead') continue;
@@ -1060,10 +1042,9 @@ export class Simulation {
       const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
       if (d > 0.6 && angleBetween(to, p.facing) > arc) continue;
       hitAny = true;
-      const dmg = 10 * form.damage * (finisher ? 1.5 : 1) * this.outgoingMult() * sharp * mastery;
+      const dmg = 10 * form.damage * (finisher ? 1.5 : 1) * this.outgoingMult();
       this.hitEnemy(e, dmg, { ignoreArmor: false, source: 'basic', knock: (finisher ? 7 : 2.5) * form.knock, big: finisher });
       if (finisher && !e.def.elite) this.stunEnemy(e, 0.3 + form.stun);
-      this.train('basic', 3, this.currentRisk(e));
     }
     if (hitAny) p.lastCombatAt = this.time;
   }
@@ -1116,17 +1097,14 @@ export class Simulation {
   // Magias
   // -------------------------------------------------------------------------
 
-  /** Dano de uma magia neste Elo: nível efetivo, forja, postura, Maré, Maestria e Afiação. */
+  /** Dano de uma magia neste Elo: nível efetivo, forja, postura e Maré. */
   private spellDamage(spell: SpellDef, slot: EloSlot, info: EffectiveInfo): number {
-    const r = this.c.mastery[spell.id];
     return (
       spell.baseDamage *
       info.power *
       (1 + 0.2 * (slot.mods.damage ?? 0)) *
       this.outgoingMult() *
       this.mods.signature *
-      sharpnessMult(r.sharpness) *
-      (1 + SPELL_RULES.masteryPerLevel * (displayLevel(r) - 1)) *
       this.focusMult(spell.affinity)
     );
   }
@@ -1526,13 +1504,11 @@ export class Simulation {
     const pointAllowed = !pointSlot?.restrictions.includes('eliteOnly') || e.def.elite;
     if (this.time < p.pointUntil && pointSlot && pointAllowed) {
       const info = this.slotInfo(pointSlot);
-      const pm = this.c.mastery.point;
       const mods = pointSlot.mods;
       dmg *=
-        (SPELLS.point.fx.critBase! + SPELLS.point.fx.critPerMastery! * displayLevel(pm)) *
+        SPELLS.point.fx.critBase! *
         (0.7 + 0.3 * (info?.power ?? 1)) *
-        (1 + 0.2 * (mods.damage ?? 0)) *
-        sharpnessMult(pm.sharpness);
+        (1 + 0.2 * (mods.damage ?? 0));
       crit = true;
       p.pointUntil = -1;
       if (mods.shatter) ignoreArmor = true;
@@ -1859,7 +1835,6 @@ export class Simulation {
       f.exerciseCount = Number(f.exerciseCount ?? 0) + 1;
       if (Number(f.exerciseCount) >= 5) {
         f.exercise = 'done';
-        this.train('veil', 40, 1);
         this.notice('Oren: "Bom. O corpo aprende antes da cabeça."', 'good');
         this.shape('Treinou a Maré com Oren', { loyalty: 1 });
       } else this.notice(`Maré para a defesa: ${f.exerciseCount}/5`, 'info');
@@ -2269,8 +2244,6 @@ export class Simulation {
     if (defenseZero) {
       // Defesa zero: sem o Véu e sem a Maré (o Ponto pôs todo o Fluxo no golpe).
     } else {
-      const veilBonus = tideLevel(p.tide.value) < 0 ? 0.005 * (displayLevel(this.c.mastery.veil) - 1) : 0;
-      mult *= 1 - veilBonus;
       if (tideLevel(p.tide.value) < 0) mult *= 1 - this.stats().veil;
       mult *= tideIncoming(p.tide.value);
       if (opts.heavy && p.tide.value <= 0.3 && this.time - p.tide.lastDefenseShiftAt <= 1.0) {
@@ -2302,7 +2275,6 @@ export class Simulation {
     p.lastHitTakenAt = this.time;
     p.lastCombatAt = this.time;
     this.events.push({ t: 'damage', x: p.pos.x, y: p.pos.y, amount: dmg, target: 'player' });
-    if (tideLevel(p.tide.value) < 0 && !defenseZero) this.train('veil', Math.max(1, raw - dmg) * 0.3, this.currentRisk(opts.source));
     if (perfect) {
       this.events.push({ t: 'perfectTide', x: p.pos.x, y: p.pos.y });
       this.notice('Maré perfeita!', 'good');
@@ -2311,7 +2283,6 @@ export class Simulation {
         this.notice('Maré perfeita: girar para a defesa no último instante de um golpe pesado corta o dano pela metade e treina a Maré.', 'info');
       }
       this.feel('perfectTide');
-      this.train('tide', 20, this.currentRisk(opts.source));
     }
     if (dmg >= this.maxHp() * 0.15) this.feel('heavyHit', Math.min(2, dmg / (this.maxHp() * 0.3)));
     if (p.hp <= 0) this.killPlayer();
@@ -2368,8 +2339,6 @@ export class Simulation {
       c.xp += xpToNext(c.level);
     }
     c.xp = Math.max(0, c.xp);
-    for (const slot of c.elos) if (slot.technique) deathPenalty(c.mastery[slot.technique as MasteryId], row.masteryLoss);
-    deathPenalty(c.mastery.basic, row.masteryLoss);
     // Morrer de novo antes de recuperar o Eco anterior: ele se desfaz, com o que tinha.
     const old = c.echo;
     if (old?.items.length) this.notice(`Seu Eco anterior se desfez, e com ele: ${old.items.map((x) => itemName(x.item)).join(', ')}.`, 'bad');
@@ -2496,10 +2465,9 @@ export class Simulation {
     return d < e.def.aggroRadius || (e.aggro && d < e.def.aggroRadius * 2);
   }
 
-  /** Até onde um inimigo comum percebe você em Silêncio: encolhe com a Maestria do Silêncio. */
+  /** Até onde um inimigo comum percebe você em Silêncio. */
   stealthRadius(e: Enemy): number {
-    const lvl = displayLevel(this.c.mastery.silence);
-    return Math.max(1.2, e.def.aggroRadius * (0.6 - 0.02 * (lvl - 1)));
+    return Math.max(1.2, e.def.aggroRadius * 0.6);
   }
 
   private updateEnemies(dt: number): void {
@@ -2534,9 +2502,7 @@ export class Simulation {
 
       // Sombra: revelado pelo Olhar ou muito perto.
       if (e.def.shadowed) {
-        const was = e.revealed;
         e.revealed = (gazing && dist(e.pos, p.pos) < 14) || dist(e.pos, p.pos) < 1.8 || e.hurtAgo < 1.5;
-        if (!was && e.revealed && gazing) this.train('gaze', 4, this.currentRisk(e));
       }
 
       if (e.stun > 0) {
@@ -3014,9 +2980,7 @@ export class Simulation {
         continue;
       }
       const d = dist(t.pos, p.pos);
-      const was = t.revealed;
       t.revealed = gazing && d < 12;
-      if (!was && t.revealed) this.train('gaze', 2, 1);
       if (!p.dead && d < 0.75) {
         t.armed = false;
         t.rearmIn = 60;
@@ -3037,9 +3001,6 @@ export class Simulation {
       c.penaltyClock = 0;
       this.notice('Sua penalidade de morte diminuiu.', 'good');
     }
-    // Desuso (tempo jogado). Acima da capacidade, as outras esquecem mais rápido.
-    const over = totalMastery(Object.values(c.mastery)) > MASTERY_CAPACITY;
-    for (const r of Object.values(c.mastery)) decay(r, dt, this.playTime, c.psyche.traits, over);
     // Vida nunca acima do máximo (Pacto de vida).
     this.player.hp = Math.min(this.player.hp, this.maxHp());
   }

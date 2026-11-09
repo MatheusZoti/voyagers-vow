@@ -1,7 +1,7 @@
-import { AFFINITY_COLORS, AFFINITY_NAMES, minSlotFor } from '../../sim/flow/affinity';
+import { AFFINITY_COLORS, AFFINITY_NAMES, AFFINITY_RING, minSlotFor } from '../../sim/flow/affinity';
 import { canAddRestriction, PACTS, trimMods, type EffectiveInfo, type ModId, type PactId } from '../../sim/elos';
 import { eloUnlockHint, xpToNext } from '../../sim/character';
-import { displayLevel, GRACE_PLAYED_S, masteryCostMult, modifierDiscount, sharpnessMult } from '../../sim/mastery';
+import { displayLevel, MASTERY_MAX, maxEloFor, maxPactLevelFor, masteryForPact, xpForLevel } from '../../sim/mastery';
 import { EMOTION_COLORS, EMOTION_NAMES, type Emotion } from '../../sim/psyche/emotions';
 import { CRISIS_DESC, CRISIS_NAMES } from '../../sim/psyche/psyche';
 import { STRONG_VALUE, TRAIT_GROUPS, VALUE_NAMES } from '../../sim/psyche/traits';
@@ -30,15 +30,10 @@ import {
   type Slot,
 } from '../../sim/items';
 import {
-  isSpell,
-  MASTERY_NAMES,
-  NATURE_NAMES,
-  resonance,
   sanitizeSlot,
   SPELL_IDS,
   SPELLS,
   TECHNIQUES,
-  type MasteryId,
   type SpellId,
   type TechniqueId,
 } from '../../sim/techniques';
@@ -47,8 +42,6 @@ import type { Sfx } from '../sfx';
 import type { PlaytestRecorder } from '../playtest';
 import { escapeHtml, hintTip } from '../util';
 import {
-  buildConstellation,
-  constellation,
   emotionWheel,
   forgeEqualizer,
   levelLadder,
@@ -83,20 +76,6 @@ const TRAIT_GROUP_COLOR: Record<string, string> = Object.fromEntries(
   Object.entries(TRAIT_GROUPS).flatMap(([g, ids]) => ids.map((id) => [id, GROUP_COLORS[g] ?? '#cfd8e3'])),
 );
 
-const SPELL_MASTERY = '+2% de efeito por nível; −1,5% de custo de Fluxo por nível; −1 no custo dos modificadores a cada 5 níveis.';
-
-const MASTERY_EFFECT: Record<MasteryId, string> = {
-  ...(Object.fromEntries(SPELL_IDS.map((id) => [id, SPELL_MASTERY])) as Record<SpellId, string>),
-  point: 'Crítico mais forte (+0,1x por nível); −1,5% de custo por nível.',
-  basic: '+3% de dano do golpe básico por nível.',
-  veil: '+0,5% de redução de dano com a Maré na defesa (Véu) por nível. Sobe recebendo golpes nela.',
-  silence: 'Inimigos te percebem de mais perto (−2% do raio por nível). Sobe passando despercebido perto de inimigos e meditando.',
-  impetus: '+0,5% de dano com a Maré no ataque (Ímpeto) por nível. Sobe sustentando-a em combate.',
-  gaze: 'Sobe revelando inimigos em Sombra e armadilhas.',
-  tide: '+4% de velocidade da Maré por nível. Sobe com Marés perfeitas.',
-  capacity: '+4 de reserva de Fluxo por nível. Sobe sustentando a Maré no ataque.',
-};
-
 /** "?" no título de um card: explicação no hover (ou foco pelo teclado). */
 const tip = hintTip;
 
@@ -110,7 +89,7 @@ export class Panels {
   playtest: PlaytestRecorder | null = null;
   private playtestMsg = '';
   private selectedElo = 2;
-  private selectedNode: MasteryId = 'basic';
+  private selectedNode: SpellId | null = null;
   /** Grade de Elos: o Elo, ou o catálogo para escolher a magia / uma Restrição */
   private eloView: 'elo' | CatalogKind = 'elo';
   private codexKind: CatalogKind = 'spells';
@@ -298,7 +277,7 @@ export class Panels {
     }
     if (t.dataset.gearAct) return this.gearAction(t.dataset.gearAct);
     if (t.dataset.node) {
-      this.selectedNode = t.dataset.node as MasteryId;
+      this.selectedNode = t.dataset.node as SpellId;
       return this.render();
     }
     if (t.dataset.mem) {
@@ -664,7 +643,7 @@ export class Panels {
       <div class="psy-col">
       <section class="card traits-card">
         <h4>Personalidade ${tip(
-          '16 traços, cada um entre dois polos. Eles decidem sua afinidade e a ressonância das magias: as que combinam com você ganham Maestria mais rápido. Mudam devagar com o que você faz e com memórias marcantes. Os traços mais fortes aparecem destacados; passe o mouse numa linha para ler a frase.',
+          '16 traços, cada um entre dois polos. Eles decidem a ressonância das magias: as que combinam com você custam menos Fluxo. Mudam devagar com o que você faz e com memórias marcantes. Os traços mais fortes aparecem destacados; passe o mouse numa linha para ler a frase.',
         )}</h4>
         <div class="tgrid">${groups}</div>
       </section>
@@ -740,7 +719,7 @@ export class Panels {
     const editable = this.editable();
     const tech = slot.technique ? TECHNIQUES[slot.technique as TechniqueId] : null;
     const lockNote = editable ? '' : `<div class="alert warn">Só dá para reconfigurar no santuário, fora de combate. Você ainda pode consultar tudo.</div>`;
-    const fits = c.knownSpells.filter((id) => spellNeed(sim, id) <= slot.level).length;
+    const fits = c.knownSpells.filter((id) => !sim.equipProblem(slot.level, id)).length;
     const head = (info: EffectiveInfo | null) => `<div class="ed-head">
         <h3>Elo ${slot.level} <kbd class="ek big" title="Tecla deste Elo">${SLOT_KEYS[slot.level - 1]}</kbd></h3>
         ${info ? `<div class="eff-big ${info.beyondLimit ? 'beyond' : ''}"><span>nível efetivo</span><b>${info.effective}</b>${info.beyondLimit ? '<em>Além-limite</em>' : ''}</div>` : ''}
@@ -756,7 +735,6 @@ export class Panels {
         <div class="ed-sec"><h5>Restrições</h5><p class="empty-note">Escolha uma magia primeiro: cada magia aceita Restrições diferentes.</p></div>`;
     }
     const info = sim.slotInfo(slot)!;
-    const discount = modifierDiscount(c.mastery[tech.id]);
     const cost = Math.round(sim.slotCost(slot, info));
     const stats = [
       ['Potência', `×${info.power.toFixed(2)}`, 'pelo nível efetivo'],
@@ -803,8 +781,8 @@ export class Panels {
       <div class="stats">${stats}</div>
       <div class="ed-sec"><h5>Restrições <small>${slot.restrictions.length}/${info.maxRestrictions} · cada nível = +1 nível efetivo</small></h5>
         <div class="sockets">${sockets}</div></div>
-      <div class="ed-sec"><h5>Forja <small>${discount ? `Maestria: −${discount} no custo de cada modificador` : 'clique nos pontos para distribuir'}</small></h5>
-        ${forgeEqualizer(slot, info, tech, discount, editable)}</div>`;
+      <div class="ed-sec"><h5>Forja <small>clique nos pontos para distribuir</small></h5>
+        ${forgeEqualizer(slot, info, tech, 0, editable)}</div>`;
   }
 
   // -------------------------------------------------------------------------
@@ -851,11 +829,11 @@ export class Panels {
     if (other) {
       other.technique = slot.technique;
       other.mods = {};
-      sanitizeSlot(other);
+      this.sim.fitSlot(other);
     }
     slot.technique = id;
     slot.mods = {};
-    sanitizeSlot(slot);
+    this.sim.fitSlot(slot);
     this.sfx?.ui();
   }
 
@@ -863,10 +841,11 @@ export class Panels {
     const c = this.sim.c;
     const slot = c.elos[this.selectedElo - 1]!;
     if (!on) slot.restrictions = slot.restrictions.filter((x) => x !== id);
-    else if (!canAddRestriction(slot, id) && slot.technique && SPELLS[slot.technique as SpellId].pacts.includes(id)) slot.restrictions.push(id);
+    else if (slot.technique && !canAddRestriction(slot, id, this.sim.maxPactLevel(slot.technique as SpellId)) && SPELLS[slot.technique as SpellId].pacts.includes(id))
+      slot.restrictions.push(id);
     else return;
     const info = this.sim.slotInfo(slot);
-    if (info && slot.technique) trimMods(slot, info, modifierDiscount(c.mastery[slot.technique as MasteryId]));
+    if (info && slot.technique) trimMods(slot, info, 0);
     this.sfx?.ui();
   }
 
@@ -947,46 +926,61 @@ export class Panels {
   // -------------------------------------------------------------------------
 
   private masteryTab(): string {
-    const c = this.sim.c;
-    const aff = AFFINITY_COLORS[c.affinity];
-    const id = this.selectedNode;
-    const r = c.mastery[id];
-    const lvl = displayLevel(r);
-    const idle = this.sim.playTime - r.lastUsedAt;
-    const graceLeft = Math.max(0, GRACE_PLAYED_S - idle);
-    const nodes = buildConstellation(c.knownSpells);
-    const node = nodes.find((n) => n.id === id) ?? nodes[0]!;
-    const spell = isSpell(id) ? SPELLS[id] : null;
-    const res = spell ? resonance(spell.tags, c.psyche.traits) : 1;
-    const techRow =
-      spell
-        ? `<div class="kv"><span>Custo de Fluxo</span><b>${Math.round((1 - masteryCostMult(r)) * 100)}% mais barato</b></div>
-           <div class="kv"><span>Modificadores</span><b>${modifierDiscount(r) ? `−${modifierDiscount(r)} ponto` : 'sem desconto (nível 5)'}</b></div>`
-        : '';
+    const sim = this.sim;
+    const c = sim.c;
+    const known = [...c.knownSpells].sort(
+      (a, b) => AFFINITY_RING.indexOf(SPELLS[a].affinity) - AFFINITY_RING.indexOf(SPELLS[b].affinity) || SPELLS[a].name.localeCompare(SPELLS[b].name, 'pt'),
+    );
+    if (!this.selectedNode || !known.includes(this.selectedNode)) this.selectedNode = c.elos.find((e) => e.technique)?.technique as SpellId ?? known[0] ?? null;
+    const sel = this.selectedNode;
+    const rows = known
+      .map((id) => {
+        const s = SPELLS[id];
+        const r = c.mastery[id];
+        const lvl = displayLevel(r);
+        const color = AFFINITY_COLORS[s.affinity];
+        const eloAt = c.elos.find((e) => e.technique === id)?.level;
+        return `<button class="ms-row ${id === sel ? 'sel' : ''}" data-node="${id}" style="--c:${color}">
+          <span class="ms-ic">${icon(s.icon, 20)}</span>
+          <span class="ms-txt"><b>${s.name}</b><small>${AFFINITY_NAMES[s.affinity]}${eloAt ? ` · no Elo ${eloAt}` : ''}</small>
+            <span class="ms-bar"><i style="width:${lvl >= MASTERY_MAX ? 100 : (r.level - lvl) * 100}%"></i></span></span>
+          <span class="ms-lvl">${lvl}<small>/${MASTERY_MAX}</small></span>
+        </button>`;
+      })
+      .join('');
+    let detail = '<p class="empty-note">Nenhuma magia conhecida.</p>';
+    if (sel) {
+      const s = SPELLS[sel];
+      const r = c.mastery[sel];
+      const lvl = displayLevel(r);
+      const color = AFFINITY_COLORS[s.affinity];
+      const minElo = sim.minEloFor(sel);
+      const ladder = Array.from({ length: MASTERY_MAX }, (_, i) => {
+        const n = i + 1;
+        const elo = maxEloFor(minElo, n);
+        const pact = maxPactLevelFor(n);
+        const prevElo = n > 1 ? maxEloFor(minElo, n - 1) : 0;
+        const prevPact = n > 1 ? maxPactLevelFor(n - 1) : 0;
+        const gains = [elo > prevElo ? `até o Elo ${elo}` : '', pact > prevPact ? `Restrições até +${pact}` : ''].filter(Boolean).join(' · ');
+        const state = n < lvl ? 'done' : n === lvl ? 'now' : 'next';
+        return `<li class="${state}"><span class="ml-n">${n}</span><span>${gains || '<span class="muted">—</span>'}</span></li>`;
+      }).join('');
+      const toNext = lvl >= MASTERY_MAX ? null : Math.ceil((1 - (r.level - lvl)) * xpForLevel(lvl));
+      detail = `<div class="md-head"><span class="md-ic" style="color:${color}">${icon(s.icon, 30)}</span><div><h3>${s.name}</h3><span class="muted">Maestria ${lvl} de ${MASTERY_MAX}</span></div></div>
+        <div class="bigbar"><i style="width:${lvl >= MASTERY_MAX ? 100 : (r.level - lvl) * 100}%;background:${color}"></i></div>
+        <div class="kv"><span>Elos</span><b>do ${minElo} ao ${maxEloFor(minElo, lvl)}</b></div>
+        <div class="kv"><span>Restrições</span><b>até +${maxPactLevelFor(lvl)}</b></div>
+        <div class="kv"><span>Próximo nível</span><b>${toNext === null ? 'máximo' : `faltam ${toNext} de XP`}</b></div>
+        <ol class="ms-ladder" style="--c:${color}">${ladder}</ol>
+        <p class="tip">Sobe usando a magia: cada acerto conta, e vale mais sob risco real (inimigos mais fortes, vida baixa, elites por perto). Ler um livro de uma magia que você já conhece também ensina. A Maestria nunca cai.</p>
+        <p class="tip">O Elo mínimo (${minElo}) vem do nível da magia e da distância da afinidade dela até a sua. Restrições de +4 pedem Maestria ${masteryForPact(4)}.</p>`;
+    }
     return `<div class="grid mastery">
-      <section class="card const-card">
-        <h4>Maestria <span class="hint-i" title="Você fica bom no que faz. Anel dourado: progresso do nível. Anel externo: Afiação.">?</span></h4>
-        ${constellation(c.mastery, c.knownSpells, id, aff)}
-        <div class="legend"><span><i class="lg prog" style="background:${aff}"></i>progresso do nível</span><span><i class="lg sharp"></i>Afiação</span><span class="muted">clique num nó para ver detalhes</span></div>
+      <section class="card ms-card">
+        <h4>Maestria ${tip('Só as magias têm Maestria. Ela decide até qual Elo a magia pode subir (Elo mínimo + nível de Maestria) e o nível das Restrições que cabem nela (metade da Maestria, arredondada para cima).')}</h4>
+        <div class="ms-list">${rows}</div>
       </section>
-      <section class="card mdetail">
-        <div class="md-head"><span class="md-ic" style="color:${aff}">${icon(node.icon, 30)}</span><div><h3>${MASTERY_NAMES[id]}</h3><span class="muted">Nível ${lvl} de 20${r.peak >= lvl + 1 ? ` · pico ${Math.floor(r.peak)}` : ''}</span></div></div>
-        <div class="bigbar"><i style="width:${(r.level - lvl) * 100}%;background:${aff}"></i></div>
-        <p class="card-sub">${MASTERY_EFFECT[id]}</p>
-        <div class="kv"><span>Afiação</span><b>${Math.round(r.sharpness * 100)}% · eficácia ×${sharpnessMult(r.sharpness).toFixed(2)}</b></div>
-        ${techRow}
-        <div class="kv"><span>Desuso</span><b>${graceLeft > 0 ? `protegido por mais ${Math.ceil(graceLeft / 3600)} h jogadas` : 'perdendo Afiação'}</b></div>
-        <div class="kv"><span>Piso</span><b>nunca abaixo do nível ${Math.max(1, Math.floor(r.peak * 0.5))}</b></div>
-        ${
-          spell
-            ? `<div class="note">
-          <b>Ressonância</b>
-          <p>${spell.name} é ${spell.tags.map((t) => NATURE_NAMES[t]).join(' e ')} — ${res > 1 ? 'ressoa com quem você é: custa menos e aprende mais rápido.' : res < 1 ? 'dissonante com quem você é: aprende pela metade.' : 'neutra com a sua personalidade.'}</p>
-        </div>`
-            : ''
-        }
-        <p class="tip">A Maestria sobe mais rápido sob risco real: inimigos mais fortes, vida baixa, elites por perto.</p>
-      </section>
+      <section class="card mdetail">${detail}</section>
     </div>`;
   }
 

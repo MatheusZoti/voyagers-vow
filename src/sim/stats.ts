@@ -3,7 +3,6 @@ import { AFFINITY_NAMES, type Affinity } from './flow/affinity';
 import { BASE_FLOW_MAX, BASE_FLOW_REGEN } from './flow/flow';
 import { itemDef, itemName, itemStats, RESONANCE_MULT, resonanceState, SLOT_NAMES, SLOTS, WEAPON_FORMS, type ItemStat, type WeaponForm } from './items';
 import { VALUE_NAMES } from './psyche/traits';
-import { displayLevel } from './mastery';
 
 /**
  * Atributos derivados do personagem. Não há pontos para distribuir: cada atributo é a soma
@@ -63,8 +62,6 @@ export interface CharacterStats {
 export const HP_PER_LEVEL = 12;
 /** Fluxo máximo por nível acima do 1. */
 export const FLOW_PER_LEVEL = 3;
-/** Fluxo máximo por nível de Maestria de Capacidade acima do 1. */
-export const FLOW_PER_CAPACITY = 4;
 /** A Guarda nunca absorve mais do que isto. */
 export const GUARD_CAP = 0.6;
 /** Tetos dos efeitos especiais. */
@@ -84,7 +81,6 @@ export function tierLevels(tier: number): { min: number; max: number } {
 
 export function computeStats(c: Character): CharacterStats {
   const lv = c.level - 1;
-  const cap = displayLevel(c.mastery.capacity) - 1;
   // O que cada peça vestida soma, por atributo.
   const gear: Partial<Record<ItemStat, StatPart[]>> = {};
   let weapon: WeaponForm = 'fists';
@@ -115,7 +111,6 @@ export function computeStats(c: Character): CharacterStats {
 
   const flowParts: StatPart[] = [{ source: 'Base', value: BASE_FLOW_MAX }];
   if (lv > 0) flowParts.push({ source: `Nível ${c.level}`, value: FLOW_PER_LEVEL * lv });
-  if (cap > 0) flowParts.push({ source: `Maestria: Capacidade ${cap + 1}`, value: FLOW_PER_CAPACITY * cap });
   flowParts.push(...from('flowMax'));
   const flowMax = sum(flowParts);
 

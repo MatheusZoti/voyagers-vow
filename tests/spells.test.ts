@@ -46,7 +46,7 @@ describe('Catálogo de magias', () => {
   it('cada magia tem os números que a sua forma pede (o Grimório mostra todos)', () => {
     const need: Record<string, string[]> = {
       dash: ['pierceEvery'],
-      charge: ['chargeS', 'defenseZeroS', 'critBase', 'critPerMastery'],
+      charge: ['chargeS', 'defenseZeroS', 'critBase'],
       beam: [],
       delayed: ['delayS'],
       cone: ['coneHalfDeg'],
@@ -323,5 +323,44 @@ describe('Segunda leva de magias', () => {
     sim.player.pos = { x: g.pos.x - 3, y: g.pos.y };
     sim.step({ ...emptyInput(), aim: at, useSlot: def.minLevel });
     expect(Math.hypot(g.pos.x - at.x, g.pos.y - at.y)).toBeLessThan(1.5);
+  });
+});
+
+describe('Maestria decide até onde a magia vai', () => {
+  it('Maestria 1 leva a magia só até o Elo mínimo + 1; subir a Maestria libera Elos mais altos', () => {
+    const c = createCharacter('Teste', 'vigor', 11);
+    const sim = new Simulation(c, 5);
+    expect(sim.equipProblem(2, 'votePunch')).toBeNull();
+    expect(sim.equipProblem(3, 'votePunch')).toMatch(/Maestria 1/);
+    c.mastery.votePunch.level = 3;
+    expect(sim.equipProblem(4, 'votePunch')).toBeNull();
+    expect(sim.equipProblem(5, 'votePunch')).not.toBeNull();
+  });
+
+  it('Restrições acima do que a Maestria comporta não entram', () => {
+    const c = createCharacter('Teste', 'vigor', 11);
+    const sim = new Simulation(c, 5);
+    const slot = c.elos[0]!;
+    slot.restrictions = ['eliteOnly', 'lifeCost']; // +1 e +3
+    sim.fitSlot(slot);
+    expect(slot.restrictions).toEqual(['eliteOnly']);
+    c.mastery.votePunch.level = 5;
+    expect(sim.maxPactLevel('votePunch')).toBe(3);
+  });
+
+  it('save antigo: a Maestria vira 1–7 e nada equipado se perde', () => {
+    const c = createCharacter('Teste', 'vigor', 11) as unknown as Record<string, unknown>;
+    const raw = c as unknown as { elos: Array<{ level: number; unlocked: boolean; technique: string | null; restrictions: string[] }>; mastery: Record<string, unknown> };
+    raw.elos[2]!.unlocked = true;
+    raw.elos[2]!.technique = 'flowLance';
+    raw.elos[2]!.restrictions = ['lifeCost'];
+    raw.mastery = { votePunch: { level: 20, peak: 20, sharpness: 1 }, flowLance: { level: 1, peak: 1, sharpness: 0.5 }, tide: { level: 9, peak: 9, sharpness: 1 } };
+    const m = migrateCharacter(JSON.parse(JSON.stringify(c)))!;
+    expect(m.mastery.votePunch.level).toBe(7);
+    expect((m.mastery as Record<string, unknown>).tide).toBeUndefined();
+    const sim = new Simulation(m, 5);
+    expect(m.elos[2]!.technique).toBe('flowLance');
+    expect(m.elos[2]!.restrictions).toEqual(['lifeCost']);
+    expect(sim.equipProblem(3, 'flowLance')).toBeNull();
   });
 });

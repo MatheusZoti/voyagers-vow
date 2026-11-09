@@ -291,9 +291,10 @@ export function equipError(slotLevel: number, characterAffinity: Affinity, spell
 }
 
 /** Valida e explica por que uma mudança não cabe. */
-export function canAddRestriction(slot: EloSlot, id: PactId): string | null {
+export function canAddRestriction(slot: EloSlot, id: PactId, maxPactLevel: number): string | null {
   const row = ELO_TABLE[slot.level]!;
   if (slot.restrictions.includes(id)) return 'Cláusula já está neste Elo.';
+  if (PACTS[id].level > maxPactLevel) return `Precisa de mais Maestria na magia: hoje ela aceita Restrições de até +${maxPactLevel}.`;
   if (slot.restrictions.length >= row.restrictions) return `Elo ${slot.level} aceita no máximo ${row.restrictions} Restrição(ões).`;
   return null;
 }
