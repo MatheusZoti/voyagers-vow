@@ -55,6 +55,9 @@ export const SURRENDER = { below: 0.22, chance: 0.45, spareDist: 9, spareAfterS:
 /** Viajante em apuros: aparece às vezes na trilha depois de um tempo na região. */
 export const DISTRESS = { afterS: 75, chance: 0.7, noticeDist: 13, leaveDist: 28, leaveS: 8 };
 
+/** Raios (m) em que o oculto se revela: sombras e armadilhas aparecem de perto; o Olhar alcança longe. */
+export const DETECT = { shadow: 6, trap: 4.5, gazeShadow: 14, gazeTrap: 12 };
+
 /** Quanto tempo de jogo o Eco espera por você (s). */
 export const ECHO_LIFE_S = 30 * 60;
 import { TUNING } from './tuning';
@@ -2351,7 +2354,7 @@ export class Simulation {
 
       // Sombra: revelado pelo Olhar ou muito perto.
       if (e.def.shadowed) {
-        e.revealed = (gazing && dist(e.pos, p.pos) < 14) || dist(e.pos, p.pos) < 1.8 || e.hurtAgo < 1.5;
+        e.revealed = dist(e.pos, p.pos) < (gazing ? DETECT.gazeShadow : DETECT.shadow) || e.hurtAgo < 1.5;
       }
 
       if (e.stun > 0) {
@@ -2829,7 +2832,7 @@ export class Simulation {
         continue;
       }
       const d = dist(t.pos, p.pos);
-      t.revealed = gazing && d < 12;
+      t.revealed = d < (gazing ? DETECT.gazeTrap : DETECT.trap);
       if (!p.dead && d < 0.75) {
         t.armed = false;
         t.rearmIn = 60;
