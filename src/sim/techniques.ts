@@ -603,188 +603,188 @@ export const SPELLS: Record<SpellId, SpellDef> = {
   },
   // ===== Terceira leva: duas magias por nível (1 a 8) em cada afinidade =====
   // ----- Vigor
-  ironSkin: mk('ironSkin', 'Pele de Ferro', 'vigor', 2, 'Proteção', 'shield', 0, 0, 0, 'Endurece o corpo com o Fluxo: por alguns segundos, todo golpe dói bem menos.', {
+  ironSkin: mk('ironSkin', 'Pele de Ferro', 'vigor', 2, 'Proteção', 'ironSkin', 0, 0, 0, 'Endurece o corpo com o Fluxo: por alguns segundos, todo golpe dói bem menos.', {
     shape: 'self', healFrac: 0, healLowBonus: 0, lowHpFrac: 0, guardS: 5, guardMult: 0.6,
   }),
-  bullRush: mk('bullRush', 'Investida do Touro', 'vigor', 3, 'Investida', 'signature', 22, 5, 1.3, 'Uma investida longa de ombro: atropela, empurra e deixa tonto quem estiver no fim do caminho.', {
+  bullRush: mk('bullRush', 'Investida do Touro', 'vigor', 3, 'Investida', 'bullRush', 22, 5, 1.3, 'Uma investida longa de ombro: atropela, empurra e deixa tonto quem estiver no fim do caminho.', {
     shape: 'dash', pierceEvery: 3, pushM: 2.5, stunS: 0.5,
   }),
-  risingUppercut: mk('risingUppercut', 'Gancho Ascendente', 'vigor', 4, 'Atordoar', 'fists', 34, 2.6, 0, 'Um gancho de baixo para cima com todo o peso do corpo. Quem leva fica atordoado.', {
+  risingUppercut: mk('risingUppercut', 'Gancho Ascendente', 'vigor', 4, 'Atordoar', 'risingUppercut', 34, 2.6, 0, 'Um gancho de baixo para cima com todo o peso do corpo. Quem leva fica atordoado.', {
     shape: 'arc', arcDeg: 120, stunS: 1.2,
   }),
-  bloodFrenzy: mk('bloodFrenzy', 'Fúria de Sangue', 'vigor', 4, 'Fúria', 'impetus', 0, 0, 0, 'Deixa o Fluxo ferver nas veias: por alguns segundos, todos os seus golpes e magias ferem mais.', {
+  bloodFrenzy: mk('bloodFrenzy', 'Fúria de Sangue', 'vigor', 4, 'Fúria', 'bloodFrenzy', 0, 0, 0, 'Deixa o Fluxo ferver nas veias: por alguns segundos, todos os seus golpes e magias ferem mais.', {
     shape: 'self', healFrac: 0, healLowBonus: 0, lowHpFrac: 0, empowerS: 6, empowerMult: 1.35,
   }),
-  leechStrike: mk('leechStrike', 'Golpe Vampírico', 'vigor', 5, 'Roubo de vida', 'heart', 36, 2.8, 1.2, 'Avança e golpeia arrancando o Fluxo do inimigo: metade do dano causado volta como vida.', {
+  leechStrike: mk('leechStrike', 'Golpe Vampírico', 'vigor', 5, 'Roubo de vida', 'leechStrike', 36, 2.8, 1.2, 'Avança e golpeia arrancando o Fluxo do inimigo: metade do dano causado volta como vida.', {
     shape: 'dash', pierceEvery: 3, lifesteal: 0.5,
   }),
-  warCry: mk('warCry', 'Brado de Guerra', 'vigor', 5, 'Atordoar em área', 'repel', 14, 0, 5, 'Um grito carregado de Fluxo que paralisa de medo todos ao redor.', {
+  warCry: mk('warCry', 'Brado de Guerra', 'vigor', 5, 'Atordoar em área', 'warCry', 14, 0, 5, 'Um grito carregado de Fluxo que paralisa de medo todos ao redor.', {
     shape: 'aura', pushM: 0.5, stunS: 1.5,
   }),
-  meteorLeap: mk('meteorLeap', 'Salto do Meteoro', 'vigor', 6, 'Salto', 'quake', 44, 7, 3, 'Salta até o ponto mirado e cai como um meteoro: fere, empurra e desequilibra todos na queda.', {
+  meteorLeap: mk('meteorLeap', 'Salto do Meteoro', 'vigor', 6, 'Salto', 'meteorLeap', 44, 7, 3, 'Salta até o ponto mirado e cai como um meteoro: fere, empurra e desequilibra todos na queda.', {
     shape: 'leap', pushM: 1.5, stunS: 0.6,
   }),
-  unbreakable: mk('unbreakable', 'Inquebrável', 'vigor', 6, 'Proteção', 'shield', 0, 0, 0, 'Fecha as feridas e trava o corpo: cura na hora e reduz muito o dano recebido por alguns segundos.', {
+  unbreakable: mk('unbreakable', 'Inquebrável', 'vigor', 6, 'Proteção', 'unbreakable', 0, 0, 0, 'Fecha as feridas e trava o corpo: cura na hora e reduz muito o dano recebido por alguns segundos.', {
     shape: 'self', healFrac: 0.12, healLowBonus: 0.08, lowHpFrac: 0.35, guardS: 4, guardMult: 0.4,
   }),
-  thousandFists: mk('thousandFists', 'Mil Punhos', 'vigor', 7, 'Rajada', 'fists', 15, 3, 0, 'Uma saraivada de socos à sua frente: cinco golpes seguidos em menos de um segundo.', {
+  thousandFists: mk('thousandFists', 'Mil Punhos', 'vigor', 7, 'Rajada', 'thousandFists', 15, 3, 0, 'Uma saraivada de socos à sua frente: cinco golpes seguidos em menos de um segundo.', {
     shape: 'arc', arcDeg: 100, waves: 5, waveS: 0.15,
   }),
-  executioner: mk('executioner', 'Golpe do Carrasco', 'vigor', 7, 'Execução', 'mace', 50, 3, 1.2, 'Avança para o golpe final. Ignora a armadura e fere muito mais quem já está quase caindo.', {
+  executioner: mk('executioner', 'Golpe do Carrasco', 'vigor', 7, 'Execução', 'executioner', 50, 3, 1.2, 'Avança para o golpe final. Ignora a armadura e fere muito mais quem já está quase caindo.', {
     shape: 'dash', pierceEvery: 1, pierce: true, executeBelow: 0.35, executeMult: 2.5,
   }),
-  titanWrath: mk('titanWrath', 'Ira do Titã', 'vigor', 8, 'Devastação', 'quake', 70, 0, 5.5, 'Golpeia o chão com tudo o que tem: a terra explode ao redor, arremessa e atordoa todos por perto.', {
+  titanWrath: mk('titanWrath', 'Ira do Titã', 'vigor', 8, 'Devastação', 'titanWrath', 70, 0, 5.5, 'Golpeia o chão com tudo o que tem: a terra explode ao redor, arremessa e atordoa todos por perto.', {
     shape: 'aura', pushM: 4, stunS: 1.5,
   }),
-  lastStand: mk('lastStand', 'Último Voto', 'vigor', 8, 'Superação', 'point', 0, 0, 0, 'Seu voto final: cura muito, reduz o dano recebido e aumenta o dano causado por vários segundos.', {
+  lastStand: mk('lastStand', 'Último Voto', 'vigor', 8, 'Superação', 'lastStand', 0, 0, 0, 'Seu voto final: cura muito, reduz o dano recebido e aumenta o dano causado por vários segundos.', {
     shape: 'self', healFrac: 0.35, healLowBonus: 0.25, lowHpFrac: 0.35, guardS: 6, guardMult: 0.5, empowerS: 6, empowerMult: 1.5,
   }),
   // ----- Projeção
-  seekerBolt: mk('seekerBolt', 'Dardo Guiado', 'projection', 2, 'Alvo único', 'lance', 22, 9, 0, 'Um dardo de Fluxo que persegue o inimigo mais próximo da mira. Não precisa de pontaria.', {
+  seekerBolt: mk('seekerBolt', 'Dardo Guiado', 'projection', 2, 'Alvo único', 'seekerBolt', 22, 9, 0, 'Um dardo de Fluxo que persegue o inimigo mais próximo da mira. Não precisa de pontaria.', {
     shape: 'single', stunS: 0,
   }),
-  twinLance: mk('twinLance', 'Lanças Trigêmeas', 'projection', 3, 'Leque perfurante', 'fan', 16, 9, 0.45, 'Três lanças de Fluxo num leque estreito. Cada uma atravessa todos os inimigos no caminho.', {
+  twinLance: mk('twinLance', 'Lanças Trigêmeas', 'projection', 3, 'Leque perfurante', 'twinLance', 16, 9, 0.45, 'Três lanças de Fluxo num leque estreito. Cada uma atravessa todos os inimigos no caminho.', {
     shape: 'fan', fanCount: 3, fanDeg: 24, through: true,
   }),
-  burstOrb: mk('burstOrb', 'Esfera Explosiva', 'projection', 3, 'Explosão', 'orbs', 26, 9, 2.4, 'Uma esfera que estoura quase na hora no ponto mirado e espalha os inimigos para longe do centro.', {
+  burstOrb: mk('burstOrb', 'Esfera Explosiva', 'projection', 3, 'Explosão', 'burstOrb', 26, 9, 2.4, 'Uma esfera que estoura quase na hora no ponto mirado e espalha os inimigos para longe do centro.', {
     shape: 'delayed', delayS: 0.35, pushM: 2,
   }),
-  flowBarrage: mk('flowBarrage', 'Rajada de Fluxo', 'projection', 4, 'Rajada', 'lance', 13, 9, 0.5, 'Quatro disparos seguidos em linha reta, cada um na direção para onde você está virado na hora.', {
+  flowBarrage: mk('flowBarrage', 'Rajada de Fluxo', 'projection', 4, 'Rajada', 'flowBarrage', 13, 9, 0.5, 'Quatro disparos seguidos em linha reta, cada um na direção para onde você está virado na hora.', {
     shape: 'beam', waves: 4, waveS: 0.2,
   }),
-  piercingRay: mk('piercingRay', 'Raio Perfurante', 'projection', 5, 'Perfurar', 'bolt', 46, 12, 0.9, 'Um raio largo e concentrado que atravessa tudo e ignora a armadura.', {
+  piercingRay: mk('piercingRay', 'Raio Perfurante', 'projection', 5, 'Perfurar', 'piercingRay', 46, 12, 0.9, 'Um raio largo e concentrado que atravessa tudo e ignora a armadura.', {
     shape: 'beam', pierce: true,
   }),
-  clusterRain: mk('clusterRain', 'Chuva de Estilhaços', 'projection', 5, 'Bombardeio', 'orbs', 15, 9, 3, 'Quatro levas de estilhaços caem sobre o ponto mirado, uma a cada meio segundo.', {
+  clusterRain: mk('clusterRain', 'Chuva de Estilhaços', 'projection', 5, 'Bombardeio', 'clusterRain', 15, 9, 3, 'Quatro levas de estilhaços caem sobre o ponto mirado, uma a cada meio segundo.', {
     shape: 'delayed', delayS: 0.5, waves: 4, waveS: 0.5,
   }),
-  arcaneMortar: mk('arcaneMortar', 'Morteiro Arcano', 'projection', 6, 'Bombardeio', 'star', 55, 10, 3.6, 'Um projétil pesado em arco alto. Quem sobrevive ao impacto continua queimando por 1,5 s.', {
+  arcaneMortar: mk('arcaneMortar', 'Morteiro Arcano', 'projection', 6, 'Bombardeio', 'arcaneMortar', 55, 10, 3.6, 'Um projétil pesado em arco alto. Quem sobrevive ao impacto continua queimando por 1,5 s.', {
     shape: 'delayed', delayS: 0.9, dotTicks: 3, dotFrac: 0.15,
   }),
-  ricochet: mk('ricochet', 'Ricochete', 'projection', 6, 'Saltos', 'bolt', 26, 10, 5, 'Um disparo que quica de inimigo em inimigo sem perder força.', {
+  ricochet: mk('ricochet', 'Ricochete', 'projection', 6, 'Saltos', 'ricochet', 26, 10, 5, 'Um disparo que quica de inimigo em inimigo sem perder força.', {
     shape: 'chain', jumps: 5, jumpFalloff: 1,
   }),
-  starfall: mk('starfall', 'Chuva de Estrelas', 'projection', 7, 'Bombardeio', 'star', 34, 10, 3.4, 'Três estrelas caem em sequência sobre o ponto mirado. Cada uma atordoa quem estiver embaixo.', {
+  starfall: mk('starfall', 'Chuva de Estrelas', 'projection', 7, 'Bombardeio', 'starfall', 34, 10, 3.4, 'Três estrelas caem em sequência sobre o ponto mirado. Cada uma atordoa quem estiver embaixo.', {
     shape: 'delayed', delayS: 0.8, waves: 3, waveS: 0.7, stunS: 0.5,
   }),
-  sunderingLance: mk('sunderingLance', 'Lança do Juízo', 'projection', 7, 'Canhão', 'lance', 72, 12, 1.2, 'Uma lança enorme de Fluxo: atravessa a fileira inteira, empurra e atordoa.', {
+  sunderingLance: mk('sunderingLance', 'Lança do Juízo', 'projection', 7, 'Canhão', 'sunderingLance', 72, 12, 1.2, 'Uma lança enorme de Fluxo: atravessa a fileira inteira, empurra e atordoa.', {
     shape: 'beam', pushM: 3, stunS: 0.6,
   }),
-  cataclysm: mk('cataclysm', 'Cataclismo', 'projection', 8, 'Devastação', 'star', 110, 10, 5, 'Rasga o céu sobre o ponto mirado. Demora a cair, mas nada que estiver embaixo fica de pé.', {
+  cataclysm: mk('cataclysm', 'Cataclismo', 'projection', 8, 'Devastação', 'cataclysm', 110, 10, 5, 'Rasga o céu sobre o ponto mirado. Demora a cair, mas nada que estiver embaixo fica de pé.', {
     shape: 'delayed', delayS: 1.6, stunS: 1.5,
   }),
-  needleStorm: mk('needleStorm', 'Tempestade de Agulhas', 'projection', 8, 'Leque', 'fan', 18, 9, 0.35, 'Quinze agulhas num leque enorme. De perto, quase todas acertam o mesmo alvo.', {
+  needleStorm: mk('needleStorm', 'Tempestade de Agulhas', 'projection', 8, 'Leque', 'needleStorm', 18, 9, 0.35, 'Quinze agulhas num leque enorme. De perto, quase todas acertam o mesmo alvo.', {
     shape: 'fan', fanCount: 15, fanDeg: 120,
   }),
   // ----- Mutação
-  staticTouch: mk('staticTouch', 'Toque Estático', 'mutation', 2, 'Atordoar', 'bolt', 16, 2.6, 0, 'Uma descarga curta à sua frente que trava os músculos de quem estiver perto.', {
+  staticTouch: mk('staticTouch', 'Toque Estático', 'mutation', 2, 'Atordoar', 'staticTouch', 16, 2.6, 0, 'Uma descarga curta à sua frente que trava os músculos de quem estiver perto.', {
     shape: 'arc', arcDeg: 90, stunS: 0.8,
   }),
-  elasticSnare: mk('elasticSnare', 'Laço Elástico', 'mutation', 3, 'Puxar e prender', 'pull', 12, 8, 0, 'Um fio elástico agarra o inimigo mais perto da mira, traz até você e o deixa preso.', {
+  elasticSnare: mk('elasticSnare', 'Laço Elástico', 'mutation', 3, 'Puxar e prender', 'elasticSnare', 12, 8, 0, 'Um fio elástico agarra o inimigo mais perto da mira, traz até você e o deixa preso.', {
     shape: 'single', stunS: 0, pull: true, rootS: 1.5, rootBossS: 0.6,
   }),
-  forkLightning: mk('forkLightning', 'Relâmpago Bifurcado', 'mutation', 4, 'Elétrico', 'bolt', 22, 8, 5, 'Um relâmpago que salta entre até seis inimigos e deixa cada um tonto por um instante.', {
+  forkLightning: mk('forkLightning', 'Relâmpago Bifurcado', 'mutation', 4, 'Elétrico', 'forkLightning', 22, 8, 5, 'Um relâmpago que salta entre até seis inimigos e deixa cada um tonto por um instante.', {
     shape: 'chain', jumps: 5, jumpFalloff: 0.9, stunS: 0.3,
   }),
-  venomWhip: mk('venomWhip', 'Chicote Venenoso', 'mutation', 4, 'Veneno', 'whip', 18, 5, 0, 'O chicote de Fluxo vira veneno: o corte continua ferindo por 2 s, sem ligar para a armadura.', {
+  venomWhip: mk('venomWhip', 'Chicote Venenoso', 'mutation', 4, 'Veneno', 'venomWhip', 18, 5, 0, 'O chicote de Fluxo vira veneno: o corte continua ferindo por 2 s, sem ligar para a armadura.', {
     shape: 'arc', arcDeg: 80, dotTicks: 4, dotFrac: 0.3,
   }),
-  stormVortex: mk('stormVortex', 'Vórtice Elétrico', 'mutation', 5, 'Zona que suga', 'well', 8, 8, 3, 'Uma zona de eletricidade que fere a cada meio segundo e arrasta quem está dentro para o centro.', {
+  stormVortex: mk('stormVortex', 'Vórtice Elétrico', 'mutation', 5, 'Zona que suga', 'stormVortex', 8, 8, 3, 'Uma zona de eletricidade que fere a cada meio segundo e arrasta quem está dentro para o centro.', {
     shape: 'zone', durationS: 5, tickS: 0.5, pullM: 0.7,
   }),
-  rubberBody: mk('rubberBody', 'Corpo de Borracha', 'mutation', 5, 'Proteção', 'shield', 0, 0, 0, 'Seu corpo fica elástico: um escudo absorve os golpes e o que passa dói menos.', {
+  rubberBody: mk('rubberBody', 'Corpo de Borracha', 'mutation', 5, 'Proteção', 'rubberBody', 0, 0, 0, 'Seu corpo fica elástico: um escudo absorve os golpes e o que passa dói menos.', {
     shape: 'ward', shieldFrac: 0.3, shieldS: 6, guardS: 6, guardMult: 0.75,
   }),
-  acidRain: mk('acidRain', 'Chuva Ácida', 'mutation', 6, 'Zona', 'drop', 10, 9, 4, 'Uma chuva corrosiva cobre uma área grande por 6 s. O ácido ignora armadura.', {
+  acidRain: mk('acidRain', 'Chuva Ácida', 'mutation', 6, 'Zona', 'acidRain', 10, 9, 4, 'Uma chuva corrosiva cobre uma área grande por 6 s. O ácido ignora armadura.', {
     shape: 'zone', durationS: 6, tickS: 0.5,
   }),
-  thunderLash: mk('thunderLash', 'Açoite Trovejante', 'mutation', 6, 'Golpe longo', 'whip', 48, 6.5, 0, 'Um chicote de raio, estreito e muito longo. Quem é atingido fica atordoado.', {
+  thunderLash: mk('thunderLash', 'Açoite Trovejante', 'mutation', 6, 'Golpe longo', 'thunderLash', 48, 6.5, 0, 'Um chicote de raio, estreito e muito longo. Quem é atingido fica atordoado.', {
     shape: 'arc', arcDeg: 60, stunS: 1,
   }),
-  chainStorm: mk('chainStorm', 'Tempestade em Cadeia', 'mutation', 7, 'Elétrico', 'bolt', 34, 9, 6, 'A descarga definitiva: salta entre até nove inimigos quase sem perder força.', {
+  chainStorm: mk('chainStorm', 'Tempestade em Cadeia', 'mutation', 7, 'Elétrico', 'chainStorm', 34, 9, 6, 'A descarga definitiva: salta entre até nove inimigos quase sem perder força.', {
     shape: 'chain', jumps: 8, jumpFalloff: 0.95,
   }),
-  livingWires: mk('livingWires', 'Fios Vivos', 'mutation', 7, 'Puxar e prender', 'pull', 26, 8, 0, 'Fios elásticos num cone largo: puxam todos para perto de você e os deixam presos no lugar.', {
+  livingWires: mk('livingWires', 'Fios Vivos', 'mutation', 7, 'Puxar e prender', 'livingWires', 26, 8, 0, 'Fios elásticos num cone largo: puxam todos para perto de você e os deixam presos no lugar.', {
     shape: 'cone', coneHalfDeg: 60, rootS: 2, rootBossS: 0.8,
   }),
-  metamorphosis: mk('metamorphosis', 'Metamorfose', 'mutation', 8, 'Transformação', 'impetus', 0, 0, 0, 'Você muda a própria natureza: cura um pouco, causa muito mais dano e recebe menos por 8 s.', {
+  metamorphosis: mk('metamorphosis', 'Metamorfose', 'mutation', 8, 'Transformação', 'metamorphosis', 0, 0, 0, 'Você muda a própria natureza: cura um pouco, causa muito mais dano e recebe menos por 8 s.', {
     shape: 'self', healFrac: 0.15, healLowBonus: 0, lowHpFrac: 0, guardS: 8, guardMult: 0.7, empowerS: 8, empowerMult: 1.6,
   }),
-  plasmaNova: mk('plasmaNova', 'Nova de Plasma', 'mutation', 8, 'Devastação', 'repel', 80, 0, 6, 'Seu Fluxo vira plasma e explode ao redor: fere, atordoa e continua queimando por 2 s.', {
+  plasmaNova: mk('plasmaNova', 'Nova de Plasma', 'mutation', 8, 'Devastação', 'plasmaNova', 80, 0, 6, 'Seu Fluxo vira plasma e explode ao redor: fere, atordoa e continua queimando por 2 s.', {
     shape: 'aura', pushM: 1, stunS: 1.2, dotTicks: 4, dotFrac: 0.2,
   }),
   // ----- Forja
-  conjuredKnives: mk('conjuredKnives', 'Facas Conjuradas', 'forge', 2, 'Leque', 'fan', 13, 8, 0.35, 'Materializa três facas e as arremessa num leque curto. Cada uma para no primeiro inimigo.', {
+  conjuredKnives: mk('conjuredKnives', 'Facas Conjuradas', 'forge', 2, 'Leque', 'conjuredKnives', 13, 8, 0.35, 'Materializa três facas e as arremessa num leque curto. Cada uma para no primeiro inimigo.', {
     shape: 'fan', fanCount: 3, fanDeg: 20,
   }),
-  conjuredHammer: mk('conjuredHammer', 'Martelo Conjurado', 'forge', 3, 'Esmagar', 'mace', 30, 4, 2, 'Um martelo enorme aparece no ar e desce perto de você. Quem leva fica atordoado.', {
+  conjuredHammer: mk('conjuredHammer', 'Martelo Conjurado', 'forge', 3, 'Esmagar', 'conjuredHammer', 30, 4, 2, 'Um martelo enorme aparece no ar e desce perto de você. Quem leva fica atordoado.', {
     shape: 'delayed', delayS: 0.5, stunS: 0.7,
   }),
-  bladeFence: mk('bladeFence', 'Cerca de Lâminas', 'forge', 4, 'Zona', 'spikes', 9, 8, 2.4, 'Lâminas giram no ponto mirado por 5 s e cortam quem ficar ali, sem ligar para a armadura.', {
+  bladeFence: mk('bladeFence', 'Cerca de Lâminas', 'forge', 4, 'Zona', 'bladeFence', 9, 8, 2.4, 'Lâminas giram no ponto mirado por 5 s e cortam quem ficar ali, sem ligar para a armadura.', {
     shape: 'zone', durationS: 5, tickS: 0.5,
   }),
-  greatsword: mk('greatsword', 'Montante Conjurado', 'forge', 4, 'Golpe amplo', 'blade', 38, 3.8, 0, 'Uma espada de duas mãos feita de Fluxo: um giro quase completo que afasta todos.', {
+  greatsword: mk('greatsword', 'Montante Conjurado', 'forge', 4, 'Golpe amplo', 'greatsword', 38, 3.8, 0, 'Uma espada de duas mãos feita de Fluxo: um giro quase completo que afasta todos.', {
     shape: 'arc', arcDeg: 220, pushM: 1.5,
   }),
-  ironCage: mk('ironCage', 'Jaula de Ferro', 'forge', 5, 'Controle', 'chains', 20, 8, 3, 'Uma jaula se fecha sobre a área mirada e prende todos por muito tempo. Funciona em elites.', {
+  ironCage: mk('ironCage', 'Jaula de Ferro', 'forge', 5, 'Controle', 'ironCage', 20, 8, 3, 'Uma jaula se fecha sobre a área mirada e prende todos por muito tempo. Funciona em elites.', {
     shape: 'targetArea', rootS: 4, rootBossS: 1.5,
   }),
-  bulwark: mk('bulwark', 'Baluarte', 'forge', 5, 'Escudo', 'shield', 0, 0, 0, 'Uma muralha de Fluxo ao redor do corpo: um escudo grande e duradouro.', {
+  bulwark: mk('bulwark', 'Baluarte', 'forge', 5, 'Escudo', 'bulwark', 0, 0, 0, 'Uma muralha de Fluxo ao redor do corpo: um escudo grande e duradouro.', {
     shape: 'ward', shieldFrac: 0.45, shieldS: 8,
   }),
-  ballista: mk('ballista', 'Balista Conjurada', 'forge', 6, 'Canhão', 'lance', 62, 12, 0.8, 'Um virote gigante atravessa a fileira e crava todos os atingidos no chão.', {
+  ballista: mk('ballista', 'Balista Conjurada', 'forge', 6, 'Canhão', 'ballista', 62, 12, 0.8, 'Um virote gigante atravessa a fileira e crava todos os atingidos no chão.', {
     shape: 'beam', rootS: 1.5, rootBossS: 0.6,
   }),
-  spikeField: mk('spikeField', 'Campo de Estacas', 'forge', 6, 'Emboscada', 'spikes', 24, 8, 2.6, 'Três levas de estacas brotam no ponto mirado. Cada leva fere e prende de novo.', {
+  spikeField: mk('spikeField', 'Campo de Estacas', 'forge', 6, 'Emboscada', 'spikeField', 24, 8, 2.6, 'Três levas de estacas brotam no ponto mirado. Cada leva fere e prende de novo.', {
     shape: 'delayed', delayS: 0.4, waves: 3, waveS: 0.4, rootS: 0.8, rootBossS: 0.3,
   }),
-  swordRain: mk('swordRain', 'Chuva de Espadas', 'forge', 7, 'Bombardeio', 'blade', 20, 9, 3.4, 'Cinco levas de espadas caem do céu sobre o ponto mirado e atravessam qualquer armadura.', {
+  swordRain: mk('swordRain', 'Chuva de Espadas', 'forge', 7, 'Bombardeio', 'swordRain', 20, 9, 3.4, 'Cinco levas de espadas caem do céu sobre o ponto mirado e atravessam qualquer armadura.', {
     shape: 'delayed', delayS: 0.5, waves: 5, waveS: 0.35, pierce: true,
   }),
-  guillotine: mk('guillotine', 'Guilhotina', 'forge', 7, 'Execução', 'blade', 70, 8, 0, 'Uma lâmina cai sobre o inimigo mais perto da mira. Fere em dobro quem já está quase caindo.', {
+  guillotine: mk('guillotine', 'Guilhotina', 'forge', 7, 'Execução', 'guillotine', 70, 8, 0, 'Uma lâmina cai sobre o inimigo mais perto da mira. Fere em dobro quem já está quase caindo.', {
     shape: 'single', stunS: 0, executeBelow: 0.3, executeMult: 2,
   }),
-  endlessArmory: mk('endlessArmory', 'Arsenal Infinito', 'forge', 8, 'Devastação', 'fan', 30, 10, 0.45, 'Onze armas conjuradas voam num leque largo, e cada uma atravessa todos no caminho.', {
+  endlessArmory: mk('endlessArmory', 'Arsenal Infinito', 'forge', 8, 'Devastação', 'endlessArmory', 30, 10, 0.45, 'Onze armas conjuradas voam num leque largo, e cada uma atravessa todos no caminho.', {
     shape: 'fan', fanCount: 11, fanDeg: 100, through: true,
   }),
-  fortress: mk('fortress', 'Fortaleza', 'forge', 8, 'Escudo', 'shield', 0, 0, 0, 'Você vira uma fortaleza: um escudo enorme por 10 s, e o que passar por ele dói bem menos.', {
+  fortress: mk('fortress', 'Fortaleza', 'forge', 8, 'Escudo', 'fortress', 0, 0, 0, 'Você vira uma fortaleza: um escudo enorme por 10 s, e o que passar por ele dói bem menos.', {
     shape: 'ward', shieldFrac: 0.7, shieldS: 10, guardS: 10, guardMult: 0.6,
   }),
   // ----- Domínio
-  backOff: mk('backOff', 'Ordem: Afaste-se', 'dominion', 2, 'Empurrão', 'repel', 12, 5, 0, 'Uma ordem num cone à sua frente: quem escuta é arremessado para longe.', {
+  backOff: mk('backOff', 'Ordem: Afaste-se', 'dominion', 2, 'Empurrão', 'backOff', 12, 5, 0, 'Uma ordem num cone à sua frente: quem escuta é arremessado para longe.', {
     shape: 'cone', coneHalfDeg: 45, pushM: 4,
   }),
-  mindSpike: mk('mindSpike', 'Estaca Mental', 'dominion', 3, 'Alvo único', 'discord', 28, 9, 0, 'Crava uma ordem direto na mente do inimigo mais perto da mira. Ignora a armadura e atordoa um instante.', {
+  mindSpike: mk('mindSpike', 'Estaca Mental', 'dominion', 3, 'Alvo único', 'mindSpike', 28, 9, 0, 'Crava uma ordem direto na mente do inimigo mais perto da mira. Ignora a armadura e atordoa um instante.', {
     shape: 'single', stunS: 0.5, pierce: true,
   }),
-  discordChoir: mk('discordChoir', 'Coro da Discórdia', 'dominion', 4, 'Controle em área', 'discord', 0, 8, 3, 'Marca todos os inimigos comuns numa área: por 5 s eles lutam uns contra os outros.', {
+  discordChoir: mk('discordChoir', 'Coro da Discórdia', 'dominion', 4, 'Controle em área', 'discordChoir', 0, 8, 3, 'Marca todos os inimigos comuns numa área: por 5 s eles lutam uns contra os outros.', {
     shape: 'mark', charmS: 5, charmDamageMult: 1.5, charmSeekM: 12,
   }),
-  weightOfCommand: mk('weightOfCommand', 'Peso do Comando', 'dominion', 4, 'Esmagar', 'kneel', 34, 8, 2.4, 'Sua vontade cai como um peso sobre o ponto mirado: fere e atordoa quem estiver ali.', {
+  weightOfCommand: mk('weightOfCommand', 'Peso do Comando', 'dominion', 4, 'Esmagar', 'weightOfCommand', 34, 8, 2.4, 'Sua vontade cai como um peso sobre o ponto mirado: fere e atordoa quem estiver ali.', {
     shape: 'delayed', delayS: 0.5, stunS: 0.8,
   }),
-  sleepOrder: mk('sleepOrder', 'Ordem: Durma', 'dominion', 5, 'Atordoar em área', 'kneel', 8, 8, 3, 'Todos na área mirada caem no sono: ficam atordoados e não saem do lugar. Funciona em elites.', {
+  sleepOrder: mk('sleepOrder', 'Ordem: Durma', 'dominion', 5, 'Atordoar em área', 'sleepOrder', 8, 8, 3, 'Todos na área mirada caem no sono: ficam atordoados e não saem do lugar. Funciona em elites.', {
     shape: 'targetArea', rootS: 3, rootBossS: 1, stunS: 2.5,
   }),
-  puppetStrings: mk('puppetStrings', 'Fios de Marionete', 'dominion', 5, 'Controle', 'discord', 0, 9, 0, 'Toma o controle de um inimigo comum por 10 s. Ele bate nos aliados com muito mais força.', {
+  puppetStrings: mk('puppetStrings', 'Fios de Marionete', 'dominion', 5, 'Controle', 'puppetStrings', 0, 9, 0, 'Toma o controle de um inimigo comum por 10 s. Ele bate nos aliados com muito mais força.', {
     shape: 'mark', charmS: 10, charmDamageMult: 2.5, charmSeekM: 12,
   }),
-  blackHole: mk('blackHole', 'Buraco Negro', 'dominion', 6, 'Agrupar', 'well', 30, 9, 5, 'Dobra o espaço numa área grande: arrasta todos para o centro e os deixa atordoados lá.', {
+  blackHole: mk('blackHole', 'Buraco Negro', 'dominion', 6, 'Agrupar', 'blackHole', 30, 9, 5, 'Dobra o espaço numa área grande: arrasta todos para o centro e os deixa atordoados lá.', {
     shape: 'vortex', stunS: 1,
   }),
-  sovereignVoice: mk('sovereignVoice', 'Voz do Soberano', 'dominion', 6, 'Empurrão', 'repel', 20, 0, 5, 'Uma ordem que ninguém ao redor consegue ignorar: todos são arremessados longe e ficam atordoados.', {
+  sovereignVoice: mk('sovereignVoice', 'Voz do Soberano', 'dominion', 6, 'Empurrão', 'sovereignVoice', 20, 0, 5, 'Uma ordem que ninguém ao redor consegue ignorar: todos são arremessados longe e ficam atordoados.', {
     shape: 'aura', pushM: 5, stunS: 1.5,
   }),
-  sentence: mk('sentence', 'Sentença', 'dominion', 7, 'Execução', 'kneel', 60, 9, 0, 'Condena um inimigo: dano alto, atordoamento longo e dano em dobro em quem já está quase caindo.', {
+  sentence: mk('sentence', 'Sentença', 'dominion', 7, 'Execução', 'sentence', 60, 9, 0, 'Condena um inimigo: dano alto, atordoamento longo e dano em dobro em quem já está quase caindo.', {
     shape: 'single', stunS: 3, executeBelow: 0.25, executeMult: 2,
   }),
-  rebellion: mk('rebellion', 'Rebelião', 'dominion', 7, 'Controle em área', 'discord', 0, 9, 5, 'Vira uma horda inteira: todos os inimigos comuns numa área grande lutam por você durante 8 s.', {
+  rebellion: mk('rebellion', 'Rebelião', 'dominion', 7, 'Controle em área', 'rebellion', 0, 9, 5, 'Vira uma horda inteira: todos os inimigos comuns numa área grande lutam por você durante 8 s.', {
     shape: 'mark', charmS: 8, charmDamageMult: 2, charmSeekM: 12,
   }),
-  singularity: mk('singularity', 'Singularidade', 'dominion', 8, 'Devastação', 'well', 60, 9, 6.5, 'Um ponto que engole tudo: arrasta todos numa área enorme, atordoa e continua esmagando por 2 s.', {
+  singularity: mk('singularity', 'Singularidade', 'dominion', 8, 'Devastação', 'singularity', 60, 9, 6.5, 'Um ponto que engole tudo: arrasta todos numa área enorme, atordoa e continua esmagando por 2 s.', {
     shape: 'vortex', stunS: 1.5, dotTicks: 4, dotFrac: 0.25,
   }),
-  absoluteOrder: mk('absoluteOrder', 'Ordem Absoluta', 'dominion', 8, 'Atordoar em área', 'kneel', 40, 0, 7, 'Uma única palavra, e todos ao redor ficam paralisados por muito tempo.', {
+  absoluteOrder: mk('absoluteOrder', 'Ordem Absoluta', 'dominion', 8, 'Atordoar em área', 'absoluteOrder', 40, 0, 7, 'Uma única palavra, e todos ao redor ficam paralisados por muito tempo.', {
     shape: 'aura', pushM: 0, stunS: 3.5,
   }),
 };
