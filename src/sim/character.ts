@@ -99,24 +99,13 @@ export function ensurePsyche(c: Character): void {
 export const xpToNext = (level: number) => Math.round(150 * Math.pow(level, 1.7));
 export const maxHpFor = (c: Character) => computeStats(c).hp;
 
-/**
- * Marcos que liberam Elos. Cada marco cumprido libera o PRÓXIMO Elo, sempre em ordem:
- * vencer o Guardião no nível 4 abre o Elo 4, e o nível 5 depois abre o Elo 5.
- */
-export const ELO_MILESTONES: Array<{ label: string; done: (c: Character) => boolean }> = [
-  { label: 'nível 3', done: (c) => c.level >= 3 },
-  { label: 'nível 5', done: (c) => c.level >= 5 },
-  { label: 'vencer o Guardião', done: (c) => c.bossDefeated },
-];
-const BASE_ELOS = 2;
+/** Nível de personagem que libera cada Elo: os Elos 1 e 2 já nascem abertos, o Elo N abre no nível N. */
+export const eloUnlockLevel = (eloLevel: number) => Math.max(1, eloLevel > 2 ? eloLevel : 1);
 
 /** Quantos Elos o personagem tem direito agora. */
-export const elosEarned = (c: Character) => BASE_ELOS + ELO_MILESTONES.filter((m) => m.done(c)).length;
+export const elosEarned = (c: Character) => Math.min(8, Math.max(2, c.level));
 
-/**
- * Abre os Elos a que o personagem tem direito, em ordem. Corrige saves antigos em que
- * um Elo alto abriu antes de um mais baixo (o Elo vazio volta a fechar; um com magia fica).
- */
+/** Abre os Elos a que o personagem tem direito pelo nível (um Elo com magia nunca volta a fechar). */
 export function refreshEloUnlocks(c: Character): number[] {
   const unlocked: number[] = [];
   const earned = elosEarned(c);
@@ -134,14 +123,8 @@ export function refreshEloUnlocks(c: Character): number[] {
 }
 
 /** O que falta para abrir cada Elo fechado (para a Grade de Elos). */
-export function eloUnlockHint(c: Character, level: number): string {
-  const missing = ELO_MILESTONES.filter((m) => !m.done(c)).map((m) => m.label);
-  const k = level - elosEarned(c); // 1 = o próximo a abrir
-  if (k < 1 || k > missing.length) return 'mais adiante';
-  if (missing.length === 1) return missing[0]!;
-  if (k === 1) return missing.join(' ou ');
-  if (k === missing.length) return missing.join(' e ');
-  return `${k} destes: ${missing.join(', ')}`;
+export function eloUnlockHint(_c: Character, level: number): string {
+  return `nível ${eloUnlockLevel(level)}`;
 }
 
 /**

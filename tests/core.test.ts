@@ -194,21 +194,16 @@ describe('Personagem', () => {
     expect(c.elos[1]!.technique).toBe('point');
   });
 
-  it('cada marco libera o próximo Elo, sempre em ordem', () => {
+  it('cada Elo abre no nível correspondente, em ordem', () => {
     const c = createCharacter('Teste', 'vigor', 7);
     const open = () => c.elos.filter((e) => e.unlocked).map((e) => e.level);
     c.level = 4;
-    refreshEloUnlocks(c);
-    expect(open()).toEqual([1, 2, 3]);
-    expect(eloUnlockHint(c, 4)).toBe('nível 5 ou vencer o Guardião');
-    expect(eloUnlockHint(c, 5)).toBe('nível 5 e vencer o Guardião');
-    // Vencer o Guardião antes do nível 5 abre o Elo 4, não o 5.
-    c.bossDefeated = true;
-    expect(refreshEloUnlocks(c)).toEqual([4]);
+    expect(refreshEloUnlocks(c)).toEqual([3, 4]);
     expect(open()).toEqual([1, 2, 3, 4]);
     expect(eloUnlockHint(c, 5)).toBe('nível 5');
-    c.level = 5;
-    expect(refreshEloUnlocks(c)).toEqual([5]);
+    c.level = 8;
+    expect(refreshEloUnlocks(c)).toEqual([5, 6, 7, 8]);
+    expect(open()).toHaveLength(8);
   });
 
   it('save antigo com o Elo 5 aberto e o 4 fechado é corrigido', () => {
