@@ -46,6 +46,7 @@ import {
 import { armorReduction, ENEMIES, SPELL_DROP_CHANCE, tierScale, type Projectile, type AttackDef, type Echo, type Enemy, type EnemyKind, type SpellDrop, type Trap } from './world/entities';
 import { exitAt, inCircle, isBlocked, moveWithCollision, Tile, type GameMap, type RegionId } from './world/map';
 import { buildRegion, regionName } from './world/regions';
+import { computeVision } from './world/vision';
 import { computeStats, type CharacterStats } from './stats';
 import { BAG_SIZE, ITEM_DROP_CHANCE, itemDef, itemMinLevel, itemName, lootPool, QUALITY_NAMES, resonanceState, resonanceText, rollItem, rollQuality, SLOTS, WEAPON_FORMS, type ItemDrop, type Slot } from './items';
 
@@ -238,6 +239,8 @@ export class Simulation {
   private wasInSanctuary = true;
   /** névoa de guerra desta região: 1 = já visto */
   readonly explored: Uint8Array;
+  /** tiles à vista agora (visão por andar: não se enxerga o andar de cima) */
+  readonly visible: Uint8Array;
   private exploredTile = -1;
   private exploredPosture: Posture | null = null;
   private bridgePrompted = false;
@@ -283,6 +286,7 @@ export class Simulation {
     this.traps = this.map.traps.map((p) => ({ pos: { ...p }, armed: true, revealed: false, rearmIn: 0 }));
     this.mods = this.withGear(computeFlowMods(character.psyche, 'open'));
     this.explored = new Uint8Array(this.map.w * this.map.h);
+    this.visible = new Uint8Array(this.map.w * this.map.h);
     const saved = character.explored?.[this.map.id] ?? '';
     for (let i = 0; i < saved.length && i < this.explored.length; i++) this.explored[i] = saved.charCodeAt(i) === 49 ? 1 : 0;
     this.explore();
@@ -316,7 +320,12 @@ export class Simulation {
 
   /** Está à vista agora? */
   isVisible(p: Vec2): boolean {
-    return !this.player.dead && dist(p, this.player.pos) <= this.visionRadius();
+    if (this.player.dead) return false;
+    this.explore(); // barato quando nada mudou; cobre teletransportes entre dois passos
+    const ix = Math.floor(p.x);
+    const iy = Math.floor(p.y);
+    if (ix < 0 || iy < 0 || ix >= this.map.w || iy >= this.map.h) return false;
+    return dist(p, this.player.pos) <= this.visionRadius() && this.visible[iy * this.map.w + ix] === 1;
   }
 
   isExplored(x: number, y: number): boolean {
@@ -333,16 +342,17 @@ export class Simulation {
     if (tileIdx === this.exploredTile && p.posture === this.exploredPosture) return;
     this.exploredTile = tileIdx;
     this.exploredPosture = p.posture;
+    // A máscara de andares/paredes vale para o tile inteiro, com folga: o jogador anda dentro do
+    // tile sem recalcular, e o raio exato é conferido em isVisible.
     const r = this.visionRadius();
+    computeVision(m, p.pos, r + 1.5, this.visible);
     let changed = false;
     for (let y = Math.max(0, Math.floor(p.pos.y - r)); y <= Math.min(m.h - 1, p.pos.y + r); y++)
       for (let x = Math.max(0, Math.floor(p.pos.x - r)); x <= Math.min(m.w - 1, p.pos.x + r); x++) {
-        if (Math.hypot(x + 0.5 - p.pos.x, y + 0.5 - p.pos.y) > r) continue;
         const i = y * m.w + x;
-        if (!this.explored[i]) {
-          this.explored[i] = 1;
-          changed = true;
-        }
+        if (!this.visible[i] || this.explored[i] || Math.hypot(x + 0.5 - p.pos.x, y + 0.5 - p.pos.y) > r) continue;
+        this.explored[i] = 1;
+        changed = true;
       }
     if (changed) {
       let s = '';

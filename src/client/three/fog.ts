@@ -97,8 +97,8 @@ export class FogOfWar {
       for (let x = 0; x < w; x++) {
         const i = y * w + x;
         const d = Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y);
-        // Borda da visão suave (2 m de transição).
-        const vis = sim.player.dead ? 0 : Math.max(0, Math.min(1, (r - d) / 2));
+        // Só o que a visão por andar alcança; borda do raio suave (2 m de transição).
+        const vis = sim.player.dead || !sim.visible[i] ? 0 : Math.max(0, Math.min(1, (r - d) / 2));
         const v = sim.explored[i] ? 0.5 + 0.5 * vis : 0.5 * vis;
         const b = Math.round(v * 255);
         this.data[i * 4] = b;
