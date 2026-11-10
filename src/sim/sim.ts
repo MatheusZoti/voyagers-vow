@@ -163,6 +163,12 @@ export interface PlayerState {
   /** Égide Conjurada: vida extra que absorve dano até shieldUntil */
   shield: number;
   shieldUntil: number;
+  /** magias de proteção: dano recebido × guardMult até guardUntil */
+  guardUntil: number;
+  guardMult: number;
+  /** magias de fúria: dano causado × empowerMult até empowerUntil */
+  empowerUntil: number;
+  empowerMult: number;
   lastCombatAt: number;
   flowLockUntil: number;
   slowUntil: number;
@@ -269,6 +275,10 @@ export class Simulation {
       exposedUntil: -1,
       shield: 0,
       shieldUntil: -1,
+      guardUntil: -1,
+      guardMult: 1,
+      empowerUntil: -1,
+      empowerMult: 1,
       lastCombatAt: -99,
       flowLockUntil: -1,
       slowUntil: -1,
@@ -911,7 +921,8 @@ export class Simulation {
       this.mods.outgoing *
       tideOutgoing(p.tide.value) *
       this.stats().power *
-      (this.focused() ? 1.1 : 1)
+      (this.focused() ? 1.1 : 1) *
+      (this.time < p.empowerUntil ? p.empowerMult : 1)
     );
   }
 
@@ -1078,79 +1089,122 @@ export class Simulation {
     const beyond = info.beyondLimit;
     let hits = 0;
 
-    switch (spell.id) {
-      case 'votePunch': {
+    const tint = beyond ? '#ffd84a' : color;
+    const fx = spell.fx;
+    const rad = (deg: number) => (deg * Math.PI) / 180;
+    /** Inimigo visível mais próximo da mira, dentro do alcance. */
+    const nearestToAim = (commonOnly = false) =>
+      this.live()
+        .filter((e) => (!commonOnly || !e.def.elite) && dist(e.pos, p.pos) <= range && (e.revealed || !e.def.shadowed))
+        .sort((a, b) => dist(a.pos, this.lastAim) - dist(b.pos, this.lastAim))[0];
+    /** Repete o golpe em ondas (fx.waves a cada fx.waveS); no fim, fecha a magia com o total de acertos. */
+    const inWaves = (firstAt: number, fire: () => number) => {
+      const n = fx.waves ?? 1;
+      let total = 0;
+      for (let i = 0; i < n; i++) {
+        const run = () => {
+          if (!this.player.dead) total += fire();
+          if (i === n - 1) this.afterSpell(slot, total);
+        };
+        const delay = firstAt + i * (fx.waveS ?? 0);
+        if (delay <= 0) run();
+        else this.pending.push({ at: this.time + delay, run });
+      }
+    };
+    /** Acerta todos num círculo. */
+    const hitCircle = (at: Vec2, r: number) => {
+      let h = 0;
+      for (const e of this.live()) if (dist(e.pos, at) <= r + e.def.radius && this.strike(spell, slot, e, dmg, at)) h++;
+      return h;
+    };
+    /** Acerta todos numa faixa reta a partir de `from`. */
+    const hitLine = (from: Vec2, dir: Vec2, len: number, struck?: Set<number>) => {
+      let h = 0;
+      for (const e of this.live()) {
+        const rx = e.pos.x - from.x;
+        const ry = e.pos.y - from.y;
+        const along = rx * dir.x + ry * dir.y;
+        const perp = Math.abs(rx * dir.y - ry * dir.x);
+        if (along < 0 || along > len + e.def.radius || perp > radius + e.def.radius) continue;
+        if (this.strike(spell, slot, e, dmg, from)) {
+          h++;
+          struck?.add(e.id);
+        }
+      }
+      return h;
+    };
+    const freeLength = (from: Vec2, dir: Vec2) => {
+      let len = 0;
+      while (len < range && !isBlocked(this.map, from.x + dir.x * (len + 0.3), from.y + dir.y * (len + 0.3))) len += 0.3;
+      return Math.min(len, range);
+    };
+
+    switch (fx.shape) {
+      case 'charge':
+        return this.castPoint(info);
+      case 'dash':
+      case 'leap': {
         const from = { ...p.pos };
-        for (let i = 0; i < 8; i++) moveWithCollision(this.map, p.pos, (p.facing.x * range) / 8, (p.facing.y * range) / 8, 0.35);
-        const center = { x: p.pos.x + p.facing.x * 0.6, y: p.pos.y + p.facing.y * 0.6 };
+        const leap = fx.shape === 'leap';
+        const goal = leap ? this.aimPoint(range) : { x: p.pos.x + p.facing.x * range, y: p.pos.y + p.facing.y * range };
+        const steps = leap ? 16 : 8;
+        const step = { x: (goal.x - from.x) / steps, y: (goal.y - from.y) / steps };
+        for (let i = 0; i < steps; i++) {
+          // Investidas longas param ao encostar no primeiro inimigo (não passam direto por ele).
+          if (!leap && range > 3 && this.live().some((e) => dist(e.pos, p.pos) <= e.def.radius + 0.9)) break;
+          moveWithCollision(this.map, p.pos, step.x, step.y, 0.35);
+        }
+        const center = leap ? { ...p.pos } : { x: p.pos.x + p.facing.x * 0.6, y: p.pos.y + p.facing.y * 0.6 };
         this.events.push({ t: 'signature', from, to: { ...p.pos }, radius, beyond });
         for (const e of this.live()) {
           if (dist(e.pos, center) > radius + e.def.radius) continue;
           e.signatureHits += 1;
-          if (this.spellHit(spell, slot, e, dmg, e.signatureHits % spell.fx.pierceEvery! === 0)) hits++;
+          const pierce = !!fx.pierceEvery && e.signatureHits % fx.pierceEvery === 0;
+          if (this.strike(spell, slot, e, dmg, leap ? center : from, pierce)) hits++;
         }
         return this.afterSpell(slot, hits);
       }
-      case 'point':
-        return this.castPoint(info);
-      case 'flowLance': {
-        const from = { ...p.pos };
-        const dir = { ...p.facing };
-        let len = 0;
-        while (len < range && !isBlocked(this.map, from.x + dir.x * (len + 0.3), from.y + dir.y * (len + 0.3))) len += 0.3;
-        len = Math.min(len, range);
-        const to = { x: from.x + dir.x * len, y: from.y + dir.y * len };
-        this.events.push({ t: 'beam', from, to, width: radius, color: beyond ? '#ffd84a' : color });
-        for (const e of this.live()) {
-          const rx = e.pos.x - from.x;
-          const ry = e.pos.y - from.y;
-          const along = rx * dir.x + ry * dir.y;
-          const perp = Math.abs(rx * dir.y - ry * dir.x);
-          if (along < 0 || along > len + e.def.radius || perp > radius + e.def.radius) continue;
-          if (this.spellHit(spell, slot, e, dmg)) hits++;
-        }
-        return this.afterSpell(slot, hits);
-      }
-      case 'orbRain': {
-        const at = this.aimPoint(range);
-        this.events.push({ t: 'spellMark', x: at.x, y: at.y, r: radius, duration: spell.fx.delayS!, color });
-        this.pending.push({
-          at: this.time + spell.fx.delayS!,
-          run: () => {
-            let h = 0;
-            this.events.push({ t: 'impact', x: at.x, y: at.y, r: radius, color: beyond ? '#ffd84a' : color });
-            for (const e of this.live()) if (dist(e.pos, at) <= radius + e.def.radius && this.spellHit(spell, slot, e, dmg)) h++;
-            this.afterSpell(slot, h);
-          },
+      case 'beam':
+        return inWaves(0, () => {
+          const from = { ...p.pos };
+          const dir = { ...p.facing };
+          const len = freeLength(from, dir);
+          this.events.push({ t: 'beam', from, to: { x: from.x + dir.x * len, y: from.y + dir.y * len }, width: radius, color: tint });
+          return hitLine(from, dir, len);
         });
-        return;
+      case 'delayed': {
+        const at = this.aimPoint(range);
+        this.events.push({ t: 'spellMark', x: at.x, y: at.y, r: radius, duration: fx.delayS! + ((fx.waves ?? 1) - 1) * (fx.waveS ?? 0), color });
+        return inWaves(fx.delayS!, () => {
+          this.events.push(fx.rootS ? { t: 'chains', x: at.x, y: at.y, r: radius, color } : { t: 'impact', x: at.x, y: at.y, r: radius, color: tint });
+          return hitCircle(at, radius);
+        });
       }
-      case 'elasticPull': {
+      case 'cone': {
         const targets: Vec2[] = [];
         for (const e of this.live()) {
           const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
           const d = Math.hypot(to.x, to.y);
-          if (d > range || (d > 0.8 && angleBetween(to, p.facing) > (spell.fx.coneHalfDeg! * Math.PI) / 180)) continue;
-          if (!this.spellHit(spell, slot, e, dmg)) continue;
+          if (d > range || (d > 0.8 && angleBetween(to, p.facing) > rad(fx.coneHalfDeg!))) continue;
+          // Com empurrão, o cone afasta; sem, puxa até você.
+          if (!this.strike(spell, slot, e, dmg, fx.pushM ? p.pos : null)) continue;
           hits++;
           targets.push({ ...e.pos });
-          this.shove(e, normalize({ x: -to.x, y: -to.y }), Math.max(0, d - (e.def.radius + 1)));
+          if (!fx.pushM) this.shove(e, normalize({ x: -to.x, y: -to.y }), Math.max(0, d - (e.def.radius + 1)));
           e.aggro = true;
         }
-        this.events.push({ t: 'tether', from: { ...p.pos }, targets, color });
+        if (fx.pushM) this.events.push({ t: 'slash', x: p.pos.x, y: p.pos.y, dir: { ...p.facing }, range, arc: rad(fx.coneHalfDeg! * 2), color: tint });
+        else this.events.push({ t: 'tether', from: { ...p.pos }, targets, color });
         return this.afterSpell(slot, hits);
       }
-      case 'discharge': {
-        const aim = this.lastAim;
-        const first = this.live()
-          .filter((e) => dist(e.pos, p.pos) <= range && (e.revealed || !e.def.shadowed))
-          .sort((a, b) => dist(a.pos, aim) - dist(b.pos, aim))[0];
+      case 'chain': {
+        const first = nearestToAim();
         if (!first) {
           this.events.push({ t: 'chain', points: [{ ...p.pos }, this.aimPoint(range)], color });
           return this.afterSpell(slot, 0);
         }
         const chain: Enemy[] = [first];
-        const jumps = spell.fx.jumps! + (slot.mods.area ?? 0);
+        const jumps = fx.jumps! + (slot.mods.area ?? 0);
         while (chain.length <= jumps) {
           const last = chain[chain.length - 1]!;
           const next = this.live()
@@ -1159,82 +1213,99 @@ export class Simulation {
           if (!next) break;
           chain.push(next);
         }
-        this.events.push({ t: 'chain', points: [{ ...p.pos }, ...chain.map((e) => ({ ...e.pos }))], color: beyond ? '#ffd84a' : color });
+        this.events.push({ t: 'chain', points: [{ ...p.pos }, ...chain.map((e) => ({ ...e.pos }))], color: tint });
         chain.forEach((e, i) => {
-          if (e.state !== 'dead' && this.spellHit(spell, slot, e, dmg * Math.pow(spell.fx.jumpFalloff!, i))) hits++;
+          if (e.state !== 'dead' && this.strike(spell, slot, e, dmg * Math.pow(fx.jumpFalloff!, i), null)) hits++;
         });
         return this.afterSpell(slot, hits);
       }
-      case 'chains': {
+      case 'targetArea': {
         const at = this.aimPoint(range);
-        this.events.push({ t: 'chains', x: at.x, y: at.y, r: radius, color });
+        this.events.push(fx.rootS ? { t: 'chains', x: at.x, y: at.y, r: radius, color } : { t: 'impact', x: at.x, y: at.y, r: radius, color: tint });
         for (const e of this.live()) {
-          if (dist(e.pos, at) > radius + e.def.radius) continue;
-          if (!this.spellHit(spell, slot, e, dmg)) continue;
+          if (dist(e.pos, at) > radius + e.def.radius || !this.strike(spell, slot, e, dmg, null)) continue;
           hits++;
-          e.rootUntil = this.time + (e.def.boss ? spell.fx.rootBossS! : spell.fx.rootS!);
           e.aggro = true;
         }
         return this.afterSpell(slot, hits);
       }
-      case 'conjuredBlade': {
-        const arc = (spell.fx.arcDeg! * Math.PI) / 180;
-        this.events.push({ t: 'slash', x: p.pos.x, y: p.pos.y, dir: { ...p.facing }, range, arc, color: beyond ? '#ffd84a' : color });
-        for (const e of this.live()) {
-          const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
-          const d = Math.hypot(to.x, to.y);
-          if (d > range + e.def.radius || (d > 0.6 && angleBetween(to, p.facing) > arc / 2)) continue;
-          if (this.spellHit(spell, slot, e, dmg)) hits++;
-        }
-        return this.afterSpell(slot, hits);
-      }
-      case 'repel':
-        return this.castAura(spell, slot, dmg, radius, beyond ? '#ffd84a' : color);
-      case 'discord': {
-        const aim = this.lastAim;
-        const target = this.live()
-          .filter((e) => !e.def.elite && dist(e.pos, p.pos) <= range && (e.revealed || !e.def.shadowed))
-          .sort((a, b) => dist(a.pos, aim) - dist(b.pos, aim))[0];
-        if (!target) {
-          this.notice('Marca da Discórdia: nenhum inimigo comum ao alcance.', 'warn');
+      case 'arc':
+        return inWaves(0, () => {
+          const arc = rad(fx.arcDeg!);
+          let h = 0;
+          this.events.push({ t: 'slash', x: p.pos.x, y: p.pos.y, dir: { ...p.facing }, range, arc, color: tint });
+          for (const e of this.live()) {
+            const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
+            const d = Math.hypot(to.x, to.y);
+            if (d > range + e.def.radius || (d > 0.6 && angleBetween(to, p.facing) > arc / 2)) continue;
+            if (this.strike(spell, slot, e, dmg, p.pos)) h++;
+          }
+          return h;
+        });
+      case 'aura':
+        this.events.push({ t: 'impact', x: p.pos.x, y: p.pos.y, r: radius, color: tint });
+        return this.afterSpell(slot, hitCircle({ ...p.pos }, radius));
+      case 'mark': {
+        // Só inimigos comuns: um só (o mais perto da mira) ou todos numa área.
+        const at = this.aimPoint(range);
+        const one = nearestToAim(true);
+        const targets = radius > 0 ? this.live().filter((e) => !e.def.elite && dist(e.pos, at) <= radius + e.def.radius && this.isVisible(e.pos)) : one ? [one] : [];
+        if (radius > 0) this.events.push({ t: 'impact', x: at.x, y: at.y, r: radius, color });
+        if (!targets.length) {
+          this.notice(`${spell.name}: nenhum inimigo comum ao alcance.`, 'warn');
           return this.afterSpell(slot, 0);
         }
-        target.charmedUntil = this.time + spell.fx.charmS!;
-        target.aggro = true;
-        target.state = 'chase';
-        this.train(spell.id, 10, this.currentRisk(target));
-        this.events.push({ t: 'mark', id: target.id, color });
-        return this.afterSpell(slot, 1);
+        for (const target of targets) {
+          target.charmedUntil = this.time + fx.charmS!;
+          target.charmMult = fx.charmDamageMult!;
+          target.aggro = true;
+          target.state = 'chase';
+          this.train(spell.id, 10, this.currentRisk(target));
+          this.events.push({ t: 'mark', id: target.id, color });
+        }
+        return this.afterSpell(slot, targets.length);
       }
-      case 'quake':
-        return this.castAura(spell, slot, dmg, radius, beyond ? '#ffd84a' : color);
-      case 'secondWind': {
-        const fx = spell.fx;
-        const low = p.hp / this.maxHp() < fx.lowHpFrac!;
-        const frac = (fx.healFrac! + (low ? fx.healLowBonus! : 0)) * (0.7 + 0.3 * info.power);
-        this.events.push({ t: 'impact', x: p.pos.x, y: p.pos.y, r: 1.4, color });
-        this.healPlayer(this.maxHp() * frac);
+      case 'self':
+      case 'ward': {
+        const scale = 0.7 + 0.3 * info.power;
+        this.events.push({ t: 'impact', x: p.pos.x, y: p.pos.y, r: 1.3, color });
+        if (fx.healFrac) {
+          const low = p.hp / this.maxHp() < (fx.lowHpFrac ?? 0);
+          this.healPlayer(this.maxHp() * (fx.healFrac + (low ? (fx.healLowBonus ?? 0) : 0)) * scale);
+        }
+        if (fx.shieldFrac) {
+          p.shield = Math.round(this.maxHp() * fx.shieldFrac * scale);
+          p.shieldUntil = this.time + fx.shieldS!;
+          this.notice(`${spell.name}: absorve ${p.shield} de dano por ${fx.shieldS} s.`, 'info');
+        }
+        if (fx.guardS) {
+          p.guardUntil = this.time + fx.guardS;
+          p.guardMult = fx.guardMult ?? 1;
+          this.notice(`${spell.name}: você recebe ${Math.round((1 - p.guardMult) * 100)}% menos dano por ${fx.guardS} s.`, 'info');
+        }
+        if (fx.empowerS) {
+          p.empowerUntil = this.time + fx.empowerS;
+          p.empowerMult = fx.empowerMult ?? 1;
+          this.notice(`${spell.name}: seu dano sobe ${Math.round((p.empowerMult - 1) * 100)}% por ${fx.empowerS} s.`, 'info');
+        }
         this.train(spell.id, 10, 1);
         return this.afterSpell(slot, 1);
       }
-      case 'conjuredWard': {
-        const fx = spell.fx;
-        p.shield = Math.round(this.maxHp() * fx.shieldFrac! * (0.7 + 0.3 * info.power));
-        p.shieldUntil = this.time + fx.shieldS!;
-        this.events.push({ t: 'impact', x: p.pos.x, y: p.pos.y, r: 1.2, color });
-        this.notice(`Égide: absorve ${p.shield} de dano por ${fx.shieldS} s.`, 'info');
-        this.train(spell.id, 10, 1);
-        return this.afterSpell(slot, 1);
-      }
-      case 'needleFan': {
-        const fx = spell.fx;
+      case 'fan': {
         const n = fx.fanCount!;
-        const spread = (fx.fanDeg! * Math.PI) / 180;
+        const spread = rad(fx.fanDeg!);
         const base = Math.atan2(p.facing.y, p.facing.x);
         const struck = new Set<number>();
         for (let i = 0; i < n; i++) {
-          const a = base - spread / 2 + (spread * i) / (n - 1);
+          const a = base - spread / 2 + (spread * i) / Math.max(1, n - 1);
           const dir = { x: Math.cos(a), y: Math.sin(a) };
+          if (fx.through) {
+            // Atravessa: cada disparo atinge todos no caminho.
+            const len = freeLength(p.pos, dir);
+            this.events.push({ t: 'beam', from: { ...p.pos }, to: { x: p.pos.x + dir.x * len, y: p.pos.y + dir.y * len }, width: radius, color: tint });
+            hitLine({ ...p.pos }, dir, len, struck);
+            continue;
+          }
           let len = 0;
           let target: Enemy | null = null;
           while (len < range && !target) {
@@ -1244,39 +1315,13 @@ export class Simulation {
             target = this.live().find((e) => dist(e.pos, at) <= e.def.radius + radius) ?? null;
           }
           const to = { x: p.pos.x + dir.x * len, y: p.pos.y + dir.y * len };
-          this.events.push({ t: 'beam', from: { ...p.pos }, to, width: radius, color: beyond ? '#ffd84a' : color });
-          if (target && target.state !== 'dead' && this.spellHit(spell, slot, target, dmg)) struck.add(target.id);
+          this.events.push({ t: 'beam', from: { ...p.pos }, to, width: radius, color: tint });
+          if (target && target.state !== 'dead' && this.strike(spell, slot, target, dmg, p.pos)) struck.add(target.id);
         }
         return this.afterSpell(slot, struck.size);
       }
-      case 'fallingStar':
-      case 'groundSpikes': {
+      case 'zone': {
         const at = this.aimPoint(range);
-        const fx = spell.fx;
-        this.events.push({ t: 'spellMark', x: at.x, y: at.y, r: radius, duration: fx.delayS!, color });
-        this.pending.push({
-          at: this.time + fx.delayS!,
-          run: () => {
-            let h = 0;
-            this.events.push(
-              spell.id === 'groundSpikes'
-                ? { t: 'chains', x: at.x, y: at.y, r: radius, color }
-                : { t: 'impact', x: at.x, y: at.y, r: radius, color: beyond ? '#ffd84a' : color },
-            );
-            for (const e of this.live()) {
-              if (dist(e.pos, at) > radius + e.def.radius || !this.spellHit(spell, slot, e, dmg)) continue;
-              h++;
-              if (fx.stunS) this.stunEnemy(e, fx.stunS);
-              if (fx.rootS) e.rootUntil = this.time + (e.def.boss ? fx.rootBossS! : fx.rootS);
-            }
-            this.afterSpell(slot, h);
-          },
-        });
-        return;
-      }
-      case 'acidPool': {
-        const at = this.aimPoint(range);
-        const fx = spell.fx;
         const pulses = Math.round(fx.durationS! / fx.tickS!);
         this.events.push({ t: 'spellMark', x: at.x, y: at.y, r: radius, duration: fx.durationS!, color });
         let total = 0;
@@ -1284,74 +1329,87 @@ export class Simulation {
           this.pending.push({
             at: this.time + fx.tickS! * i,
             run: () => {
-              for (const e of this.live()) if (dist(e.pos, at) <= radius + e.def.radius && this.spellHit(spell, slot, e, dmg, true)) total++;
-              // "Se errar" não se aplica (NO_MISS); Restaurar não está na forja da poça.
+              for (const e of this.live()) {
+                const to = { x: at.x - e.pos.x, y: at.y - e.pos.y };
+                const d = Math.hypot(to.x, to.y);
+                if (d > radius + e.def.radius || !this.spellHit(spell, slot, e, dmg, true)) continue;
+                total++;
+                // Zona que suga: arrasta um pouco para o centro a cada pulso.
+                if (fx.pullM && d > 0.4) this.shove(e, normalize(to), Math.min(fx.pullM, d - 0.3));
+              }
+              if (fx.pullM) this.events.push({ t: 'impact', x: at.x, y: at.y, r: radius * 0.5, color });
+              // "Se errar" não se aplica (NO_MISS); Restaurar não está na forja das zonas.
               if (i === pulses) this.afterSpell(slot, Math.max(1, total));
             },
           });
         }
         return;
       }
-      case 'razorWhip': {
-        const arc = (spell.fx.arcDeg! * Math.PI) / 180;
-        this.events.push({ t: 'slash', x: p.pos.x, y: p.pos.y, dir: { ...p.facing }, range, arc, color: beyond ? '#ffd84a' : color });
-        for (const e of this.live()) {
-          const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
-          const d = Math.hypot(to.x, to.y);
-          if (d > range + e.def.radius || (d > 0.6 && angleBetween(to, p.facing) > arc / 2)) continue;
-          if (this.spellHit(spell, slot, e, dmg)) hits++;
-        }
-        return this.afterSpell(slot, hits);
-      }
-      case 'kneel': {
-        const aim = this.lastAim;
-        const target = this.live()
-          .filter((e) => dist(e.pos, p.pos) <= range && (e.revealed || !e.def.shadowed))
-          .sort((a, b) => dist(a.pos, aim) - dist(b.pos, aim))[0];
+      case 'single': {
+        const target = nearestToAim();
         if (!target) {
-          this.notice('Ordem: nenhum inimigo ao alcance.', 'warn');
+          this.notice(`${spell.name}: nenhum inimigo ao alcance.`, 'warn');
           return this.afterSpell(slot, 0);
         }
         this.events.push({ t: 'mark', id: target.id, color });
-        if (this.spellHit(spell, slot, target, dmg)) {
+        if (fx.pull) this.events.push({ t: 'tether', from: { ...p.pos }, targets: [{ ...target.pos }], color });
+        else if (spell.baseDamage >= 20) this.events.push({ t: 'beam', from: { ...p.pos }, to: { ...target.pos }, width: 0.3, color: tint });
+        if (this.strike(spell, slot, target, dmg, null)) {
           hits = 1;
-          this.stunEnemy(target, spell.fx.stunS!);
+          const to = { x: p.pos.x - target.pos.x, y: p.pos.y - target.pos.y };
+          const d = Math.hypot(to.x, to.y);
+          if (fx.pull && target.state !== 'dead') this.shove(target, normalize(to), Math.max(0, d - (target.def.radius + 1)));
         }
         return this.afterSpell(slot, hits);
       }
-      case 'gravityWell': {
+      case 'vortex': {
         const at = this.aimPoint(range);
         const targets: Vec2[] = [];
         for (const e of this.live()) {
           const to = { x: at.x - e.pos.x, y: at.y - e.pos.y };
           const d = Math.hypot(to.x, to.y);
-          if (d > radius + e.def.radius || !this.spellHit(spell, slot, e, dmg)) continue;
+          if (d > radius + e.def.radius || !this.strike(spell, slot, e, dmg, null)) continue;
           hits++;
           targets.push({ ...e.pos });
           if (d > 0.5) this.shove(e, normalize(to), Math.max(0, d - (e.def.radius + 0.3)));
           e.aggro = true;
         }
-        this.events.push({ t: 'impact', x: at.x, y: at.y, r: radius, color: beyond ? '#ffd84a' : color });
+        this.events.push({ t: 'impact', x: at.x, y: at.y, r: radius, color: tint });
         this.events.push({ t: 'tether', from: at, targets, color });
         return this.afterSpell(slot, hits);
       }
     }
   }
 
-  /** Atinge todos ao redor, empurra e atordoa (Comando de Recuo, Pisão Sísmico). */
-  private castAura(spell: SpellDef, slot: EloSlot, dmg: number, radius: number, color: string): void {
-    const p = this.player;
-    let hits = 0;
-    this.events.push({ t: 'impact', x: p.pos.x, y: p.pos.y, r: radius, color });
-    for (const e of this.live()) {
-      const to = { x: e.pos.x - p.pos.x, y: e.pos.y - p.pos.y };
-      if (Math.hypot(to.x, to.y) > radius + e.def.radius) continue;
-      if (!this.spellHit(spell, slot, e, dmg)) continue;
-      hits++;
-      this.shove(e, normalize(to), spell.fx.pushM!);
-      this.stunEnemy(e, spell.fx.stunS!);
+  /**
+   * Acerto de magia com os efeitos da ficha (fx): execução, roubo de vida, atordoar, prender,
+   * empurrar a partir de `from` e dano contínuo. Retorna se valeu.
+   */
+  private strike(spell: SpellDef, slot: EloSlot, e: Enemy, dmg: number, from: Vec2 | null, pierce = false): boolean {
+    const fx = spell.fx;
+    const amount = fx.executeBelow && e.hp < e.maxHp * fx.executeBelow ? dmg * (fx.executeMult ?? 1) : dmg;
+    const before = e.hp;
+    if (!this.spellHit(spell, slot, e, amount, pierce || !!fx.pierce)) return false;
+    if (fx.lifesteal) this.healPlayer(Math.max(0, before - Math.max(0, e.hp)) * fx.lifesteal);
+    if (e.state === 'dead') return true;
+    if (fx.stunS) this.stunEnemy(e, fx.stunS);
+    if (fx.rootS) {
+      e.rootUntil = this.time + (e.def.boss ? (fx.rootBossS ?? fx.rootS * 0.4) : fx.rootS);
+      e.aggro = true;
     }
-    this.afterSpell(slot, hits);
+    if (fx.pushM && from) {
+      const to = { x: e.pos.x - from.x, y: e.pos.y - from.y };
+      if (Math.hypot(to.x, to.y) > 0.01) this.shove(e, normalize(to), fx.pushM);
+    }
+    if (fx.dotTicks && dmg > 0)
+      for (let i = 1; i <= fx.dotTicks; i++)
+        this.pending.push({
+          at: this.time + 0.5 * i,
+          run: () => {
+            if (e.state !== 'dead' && e.state !== 'surrendered' && e.hp > 0) this.hitEnemy(e, dmg * (fx.dotFrac ?? 0.2), { ignoreArmor: true, source: 'spell' });
+          },
+        });
+    return true;
   }
 
   private castPoint(info: EffectiveInfo): void {
@@ -2040,8 +2098,11 @@ export class Simulation {
     e.rootUntil = -1;
     if (!e.summoned && this.rng.chance(SPELL_DROP_CHANCE[e.kind])) {
       // Prefere magias que o personagem ainda não conhece.
-      const unknown = SPELL_IDS.filter((id) => !this.c.knownSpells.includes(id));
-      const spell = this.rng.pick(unknown.length ? unknown : SPELL_IDS);
+      // Regiões mais fundas deixam cair magias de nível mais alto; chefes e elites, um nível acima.
+      const cap = 2 + 3 * this.map.tier + (e.def.elite ? 1 : 0);
+      const pool = SPELL_IDS.filter((id) => SPELLS[id].minLevel <= cap);
+      const unknown = pool.filter((id) => !this.c.knownSpells.includes(id));
+      const spell = this.rng.pick(unknown.length ? unknown : pool);
       this.drops.push({ id: this.nextId++, spell, pos: { ...e.pos }, expiresAt: this.time + (e.def.boss ? 600 : 120) });
       this.notice(`${e.def.name} deixou cair um grimório.`, 'good');
     }
@@ -2092,6 +2153,7 @@ export class Simulation {
     let mult = def.incomingMult * m.incoming * (1 - this.stats().guard);
     if (opts.source?.def.humanoid && this.cruel()) mult *= 1.15;
     if (this.time < p.exposedUntil) mult *= 1.5;
+    if (this.time < p.guardUntil) mult *= p.guardMult;
     const defenseZero = this.time < p.defenseZeroUntil;
     let perfect = false;
     if (defenseZero) {
@@ -2597,7 +2659,7 @@ export class Simulation {
       if (e.timer <= 0) {
         this.events.push({ t: 'enemySwing', id: e.id, dir: { ...e.facing }, range: atk.range });
         if (d <= atk.range + foe.def.radius + 0.3) {
-          const dmg = Math.max(1, Math.round(atk.damage * SPELLS.discord.fx.charmDamageMult! * (1 - armorReduction(foe.def.armor))));
+          const dmg = Math.max(1, Math.round(atk.damage * (e.charmMult ?? SPELLS.discord.fx.charmDamageMult!) * (1 - armorReduction(foe.def.armor))));
           foe.hp -= dmg;
           foe.hurtAgo = 0;
           this.events.push({ t: 'damage', x: foe.pos.x, y: foe.pos.y, amount: dmg, target: 'enemy', id: foe.id });

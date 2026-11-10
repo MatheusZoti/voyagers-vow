@@ -226,6 +226,8 @@ export interface Enemy {
   rootUntil: number;
   /** sob a Marca da Discórdia até este tempo (luta contra os aliados) */
   charmedUntil: number;
+  /** dano do controlado contra os aliados (vem da magia que o marcou) */
+  charmMult?: number;
   /** já decidiu se se rende nesta vida (só uma chance por vida) */
   surrenderChecked?: boolean;
   /** quando se rendeu (tempo da sessão) */

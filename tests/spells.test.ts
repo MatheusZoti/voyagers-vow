@@ -26,10 +26,12 @@ function castOn(spell: SpellId, kind: Enemy['kind'] = 'grunt') {
 }
 
 describe('Catálogo de magias', () => {
-  it('20 magias, 4 por afinidade, cada uma com um papel', () => {
-    expect(SPELL_IDS).toHaveLength(20);
+  it('80 magias: 16 por afinidade, duas em cada nível de 1 a 8, cada uma com um papel', () => {
+    expect(SPELL_IDS).toHaveLength(80);
+    expect(new Set(SPELL_IDS.map((id) => SPELLS[id].name)).size).toBe(80);
     for (const aff of ['vigor', 'mutation', 'forge', 'dominion', 'projection'] as const) {
-      expect(SPELL_IDS.filter((id) => SPELLS[id].affinity === aff)).toHaveLength(4);
+      expect(SPELL_IDS.filter((id) => SPELLS[id].affinity === aff)).toHaveLength(16);
+      for (let lvl = 1; lvl <= 8; lvl++) expect(SPELL_IDS.filter((id) => SPELLS[id].affinity === aff && SPELLS[id].minLevel === lvl), `${aff} nível ${lvl}`).toHaveLength(2);
       for (const id of STARTER_SPELLS[aff]) expect(SPELLS[id].affinity).toBe(aff);
     }
     for (const id of SPELL_IDS) expect(SPELLS[id].role.length).toBeGreaterThan(0);
@@ -61,6 +63,7 @@ describe('Catálogo de magias', () => {
       ward: ['shieldFrac', 'shieldS'],
       single: ['stunS'],
       vortex: [],
+      leap: [],
     };
     for (const id of SPELL_IDS) {
       const fx = SPELLS[id].fx as unknown as Record<string, unknown>;
@@ -235,7 +238,7 @@ function castHigh(spell: SpellId, seconds = 0.5) {
   const def = SPELLS[spell];
   const c = createCharacter('Teste', def.affinity as Affinity, 11);
   c.knownSpells = [...SPELL_IDS];
-  for (const slot of c.elos) Object.assign(slot, { technique: null, unlocked: slot.level <= 4 });
+  for (const slot of c.elos) Object.assign(slot, { technique: null, unlocked: true });
   const slot = c.elos[def.minLevel - 1]!;
   slot.technique = spell;
   const sim = new Simulation(c, 5);
@@ -249,6 +252,48 @@ function castHigh(spell: SpellId, seconds = 0.5) {
   return { sim, target, events, slot };
 }
 const hurt = (events: SimEvent[], id: number) => events.filter((e) => e.t === 'damage' && e.target === 'enemy' && e.id === id && e.amount > 0).length;
+
+describe('Terceira leva de magias (níveis 2 a 8)', () => {
+  const third = SPELL_IDS.slice(20);
+  const harmful = third.filter((id) => SPELLS[id].baseDamage > 0);
+
+  it.each(harmful)('%s fere o alvo', (spell) => {
+    const { target, events } = castHigh(spell, 3.2);
+    expect(hurt(events, target.id)).toBeGreaterThan(0);
+  });
+
+  it.each(third.filter((id) => SPELLS[id].baseDamage === 0))('%s (sem dano) é lançada e gasta Fluxo', (spell) => {
+    const { sim } = castHigh(spell, 0.2);
+    expect(sim.player.slotCd[SPELLS[spell].minLevel]).toBeGreaterThan(0);
+  });
+
+  it('Pele de Ferro reduz o dano recebido; Fúria de Sangue aumenta o causado', () => {
+    const { sim } = castHigh('ironSkin', 0.1);
+    expect(sim.player.guardUntil).toBeGreaterThan(sim.time);
+    expect(sim.player.guardMult).toBe(SPELLS.ironSkin.fx.guardMult);
+    const fury = castHigh('bloodFrenzy', 0.1).sim;
+    expect(fury.player.empowerUntil).toBeGreaterThan(fury.time);
+  });
+
+  it('Golpe Vampírico devolve vida', () => {
+    const def = SPELLS.leechStrike;
+    const c = createCharacter('Teste', 'vigor', 11);
+    for (const slot of c.elos) Object.assign(slot, { technique: null, unlocked: true });
+    c.elos[def.minLevel - 1]!.technique = 'leechStrike';
+    c.knownSpells = [...SPELL_IDS];
+    const sim = new Simulation(c, 5);
+    const target = sim.enemies.find((e) => e.kind === 'grunt')!;
+    sim.player.pos = { x: target.pos.x - 2, y: target.pos.y };
+    sim.player.hp = 10;
+    const events = sim.step({ ...emptyInput(), aim: { ...target.pos }, useSlot: def.minLevel });
+    expect(events.some((e) => e.t === 'heal')).toBe(true);
+  });
+
+  it('Coro da Discórdia marca os comuns da área', () => {
+    const { sim, target } = castHigh('discordChoir', 0.1);
+    expect(target.charmedUntil).toBeGreaterThan(sim.time);
+  });
+});
 
 describe('Segunda leva de magias', () => {
   it.each(['quake', 'needleFan', 'fallingStar', 'acidPool', 'razorWhip', 'groundSpikes', 'kneel', 'gravityWell'] as const)(

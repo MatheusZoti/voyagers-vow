@@ -298,14 +298,44 @@ const pct = (v: number) => `${num(v * 100, 0)}%`;
 
 /** Como a magia escolhe e atinge os alvos, com os números reais. */
 function howItWorks(s: SpellDef): string[] {
+  return [...shapeLines(s), ...extraLines(s)];
+}
+
+/** Efeitos que qualquer forma pode ter (vêm do fx da magia). */
+function extraLines(s: SpellDef): string[] {
+  const fx = s.fx;
+  const R = SPELL_RULES;
+  const out: string[] = [];
+  const own = (shapes: string[]) => shapes.includes(fx.shape);
+  if (fx.waves && fx.waves > 1) out.push(`Repete <b>${fx.waves}</b> vezes, uma a cada <b>${sec(fx.waveS!)}</b>; cada vez causa o dano inteiro.`);
+  if (fx.stunS && !own(['delayed', 'aura', 'single'])) out.push(`Atordoa quem for atingido por <b>${sec(fx.stunS)}</b> (chefe: ${sec(fx.stunS * R.bossStunMult)}).`);
+  if (fx.rootS && !own(['delayed', 'targetArea'])) out.push(`Prende quem for atingido por <b>${sec(fx.rootS)}</b> (chefe: <b>${sec(fx.rootBossS ?? fx.rootS * 0.4)}</b>).`);
+  if (fx.pushM && !own(['aura', 'cone'])) out.push(`Empurra cada atingido <b>${met(fx.pushM)}</b> (elites, ${pct(R.eliteShoveMult)}; o chefe não se move).`);
+  if (fx.pull) out.push(`Puxa o alvo até ficar a cerca de <b>1 m</b> de você (elites vêm só ${pct(R.eliteShoveMult)} do caminho; o chefe não se move).`);
+  if (fx.pullM) out.push(`A cada pulso, arrasta quem está dentro <b>${met(fx.pullM)}</b> para o centro.`);
+  if (fx.pierce) out.push(`Sempre <b>ignora a armadura</b>.`);
+  if (fx.lifesteal) out.push(`<b>${pct(fx.lifesteal)}</b> do dano causado volta para você como vida.`);
+  if (fx.executeBelow) out.push(`Em inimigos com menos de <b>${pct(fx.executeBelow)}</b> da vida, o dano é <b>×${num(fx.executeMult!)}</b>.`);
+  if (fx.dotTicks) out.push(`Depois do acerto, o alvo sofre mais <b>${fx.dotTicks}</b> pulsos (um a cada 0,5 s) de <b>${pct(fx.dotFrac!)}</b> do dano, ignorando armadura.`);
+  if (fx.guardS) out.push(`Por <b>${sec(fx.guardS)}</b>, você recebe <b>${pct(1 - fx.guardMult!)}</b> menos dano.`);
+  if (fx.empowerS) out.push(`Por <b>${sec(fx.empowerS)}</b>, seus golpes e magias causam <b>${pct(fx.empowerMult! - 1)}</b> mais dano.`);
+  return out;
+}
+
+function shapeLines(s: SpellDef): string[] {
   const fx = s.fx;
   const R = SPELL_RULES;
   switch (fx.shape) {
+    case 'leap':
+      return [
+        `Você salta até o ponto mirado, a até <b>${met(s.range)}</b>; para ao bater numa parede.`,
+        `Na queda, atinge todos num raio de <b>${met(s.radius)}</b> ao seu redor.`,
+      ];
     case 'dash':
       return [
         `Você avança até <b>${met(s.range)}</b> na direção da mira; para ao bater numa parede.`,
         `Ao chegar, atinge todos num raio de <b>${met(s.radius)}</b> logo à sua frente.`,
-        `A cada <b>${fx.pierceEvery}</b> acertos no mesmo inimigo, o golpe ignora a armadura dele (a contagem fica guardada em cada inimigo).`,
+        ...(fx.pierce ? [] : [`A cada <b>${fx.pierceEvery}</b> acertos no mesmo inimigo, o golpe ignora a armadura dele (a contagem fica guardada em cada inimigo).`]),
       ];
     case 'charge':
       return [
@@ -330,8 +360,10 @@ function howItWorks(s: SpellDef): string[] {
     case 'cone':
       return [
         `Atinge os inimigos até <b>${met(s.range)}</b> num cone de <b>${num(fx.coneHalfDeg! * 2, 0)}°</b> à sua frente (quem está colado em você, a menos de 0,8 m, sempre é pego).`,
-        `Puxa cada um até ficar a cerca de <b>1 m</b> de você. Elites vêm só ${pct(R.eliteShoveMult)} do caminho; o chefe não se move.`,
-        `Todos os puxados passam a perseguir você.`,
+        fx.pushM
+          ? `Empurra cada um <b>${met(fx.pushM)}</b> para longe de você (elites, ${pct(R.eliteShoveMult)}; o chefe não se move).`
+          : `Puxa cada um até ficar a cerca de <b>1 m</b> de você. Elites vêm só ${pct(R.eliteShoveMult)} do caminho; o chefe não se move.`,
+        `Todos os atingidos passam a perseguir você.`,
       ];
     case 'chain': {
       const seq = Array.from({ length: fx.jumps! + 1 }, (_, i) => pct(Math.pow(fx.jumpFalloff!, i))).join(' → ');
@@ -356,19 +388,27 @@ function howItWorks(s: SpellDef): string[] {
     case 'aura':
       return [
         `Atinge todos ao seu redor num raio de <b>${met(s.radius)}</b>; não precisa mirar.`,
-        `Empurra cada um <b>${met(fx.pushM!)}</b> para longe (elites, ${pct(R.eliteShoveMult)}; o chefe não se move).`,
-        `Atordoa por <b>${sec(fx.stunS!)}</b> (chefe: ${sec(fx.stunS! * R.bossStunMult)}). Atordoar durante o preparo cancela o golpe do inimigo.`,
+        ...(fx.pushM ? [`Empurra cada um <b>${met(fx.pushM)}</b> para longe (elites, ${pct(R.eliteShoveMult)}; o chefe não se move).`] : []),
+        ...(fx.stunS ? [`Atordoa por <b>${sec(fx.stunS)}</b> (chefe: ${sec(fx.stunS * R.bossStunMult)}). Atordoar durante o preparo cancela o golpe do inimigo.`] : []),
       ];
     case 'mark':
       return [
-        `Marca o inimigo <b>comum</b> (não elite) visível mais próximo da mira, até <b>${met(s.range)}</b>.`,
-        `Por <b>${sec(fx.charmS!)}</b> ele luta do seu lado: ataca o aliado dele mais próximo (até ${met(fx.charmSeekM!)}) com <b>${pct(fx.charmDamageMult!)}</b> do dano normal; a armadura do alvo conta.`,
+        s.radius
+          ? `Marca <b>todos</b> os inimigos <b>comuns</b> (não elites) num raio de <b>${met(s.radius)}</b> do ponto mirado, até <b>${met(s.range)}</b>.`
+          : `Marca o inimigo <b>comum</b> (não elite) visível mais próximo da mira, até <b>${met(s.range)}</b>.`,
+        `Por <b>${sec(fx.charmS!)}</b> o marcado luta do seu lado: ataca o aliado dele mais próximo (até ${met(fx.charmSeekM!)}) com <b>${pct(fx.charmDamageMult!)}</b> do dano normal; a armadura do alvo conta.`,
         `Não causa dano direto. Sem inimigo comum ao alcance, o Fluxo é gasto mesmo assim.`,
       ];
     case 'self':
       return [
-        `Cura <b>${pct(fx.healFrac!)}</b> da sua vida máxima, ou <b>${pct(fx.healFrac! + fx.healLowBonus!)}</b> se você estiver abaixo de ${pct(fx.lowHpFrac!)} de vida.`,
-        `A cura escala com o nível do Elo: 70% + 30% da potência.`,
+        ...(fx.healFrac
+          ? [
+              fx.healLowBonus
+                ? `Cura <b>${pct(fx.healFrac)}</b> da sua vida máxima, ou <b>${pct(fx.healFrac + fx.healLowBonus)}</b> se você estiver abaixo de ${pct(fx.lowHpFrac!)} de vida.`
+                : `Cura <b>${pct(fx.healFrac)}</b> da sua vida máxima.`,
+              `A cura escala com o nível do Elo: 70% + 30% da potência.`,
+            ]
+          : []),
         `Não precisa mirar e não causa dano.`,
       ];
     case 'ward':
@@ -378,18 +418,20 @@ function howItWorks(s: SpellDef): string[] {
       ];
     case 'fan':
       return [
-        `Dispara <b>${fx.fanCount}</b> agulhas num leque de <b>${num(fx.fanDeg!, 0)}°</b>, até <b>${met(s.range)}</b>.`,
-        `Cada agulha para no primeiro inimigo e causa o dano inteiro: de perto, várias acertam o mesmo alvo.`,
+        `Dispara <b>${fx.fanCount}</b> projéteis num leque de <b>${num(fx.fanDeg!, 0)}°</b>, até <b>${met(s.range)}</b>.`,
+        fx.through
+          ? `Cada um <b>atravessa</b> todos os inimigos no caminho e causa o dano inteiro: de perto, vários acertam o mesmo alvo.`
+          : `Cada um para no primeiro inimigo e causa o dano inteiro: de perto, vários acertam o mesmo alvo.`,
       ];
     case 'zone':
       return [
-        `Cria uma poça no ponto mirado (até <b>${met(s.range)}</b>), num raio de <b>${met(s.radius)}</b>, que dura <b>${sec(fx.durationS!)}</b>.`,
+        `Cria uma zona no ponto mirado (até <b>${met(s.range)}</b>), num raio de <b>${met(s.radius)}</b>, que dura <b>${sec(fx.durationS!)}</b>.`,
         `A cada <b>${sec(fx.tickS!)}</b>, fere todos dentro dela e <b>ignora armadura</b>: até ${Math.round(fx.durationS! / fx.tickS!)} pulsos.`,
       ];
     case 'single':
       return [
         `Atinge só o inimigo visível mais próximo da mira, até <b>${met(s.range)}</b>. Funciona em elites.`,
-        `Atordoa por <b>${sec(fx.stunS!)}</b> (chefe: ${sec(fx.stunS! * R.bossStunMult)}). Atordoar durante o preparo cancela o golpe do inimigo.`,
+        ...(fx.stunS ? [`Atordoa por <b>${sec(fx.stunS)}</b> (chefe: ${sec(fx.stunS * R.bossStunMult)}). Atordoar durante o preparo cancela o golpe do inimigo.`] : []),
       ];
     case 'vortex':
       return [
@@ -431,7 +473,7 @@ function headlineStats(sim: Simulation, s: SpellDef): string {
   const reach =
     fx.shape === 'charge' || fx.shape === 'aura' || fx.shape === 'self' || fx.shape === 'ward'
       ? stat('Alcance', fx.shape === 'aura' ? 'ao redor' : fx.shape === 'charge' ? '—' : 'você')
-      : stat(fx.shape === 'dash' ? 'Avanço' : 'Alcance', met(s.range));
+      : stat(fx.shape === 'dash' ? 'Avanço' : fx.shape === 'leap' ? 'Salto' : 'Alcance', met(s.range));
   const size =
     fx.shape === 'beam'
       ? stat('Largura', met(s.radius * 2))
@@ -442,7 +484,7 @@ function headlineStats(sim: Simulation, s: SpellDef): string {
           : fx.shape === 'arc'
             ? stat('Arco', `${num(fx.arcDeg!, 0)}°`)
             : fx.shape === 'fan'
-              ? stat('Leque', `${num(fx.fanDeg!, 0)}°`, `${fx.fanCount} agulhas`)
+              ? stat('Leque', `${num(fx.fanDeg!, 0)}°`, `${fx.fanCount} disparos`)
             : s.radius
               ? stat('Raio', met(s.radius))
               : stat('Alvo', fx.shape === 'mark' || fx.shape === 'single' ? '1 inimigo' : 'você');
