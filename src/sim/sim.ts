@@ -512,6 +512,7 @@ export class Simulation {
       characterAffinity: this.c.affinity,
       techniqueAffinity: tech.affinity,
       modDiscount: 0,
+      spellMinLevel: tech.minLevel,
     });
   }
 

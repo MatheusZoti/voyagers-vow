@@ -260,7 +260,7 @@ export function forgeEqualizer(slot: EloSlot, info: EffectiveInfo, tech: Techniq
     })
     .join('');
   return `<div class="forge">
-    <div class="budget"><span>Pontos de forja</span><div class="bdots">${budget || '<em class="muted">nenhum no nível 1 — adicione uma Restrição</em>'}</div><b>${info.pointsUsed}/${info.points}</b></div>
+    <div class="budget"><span>Pontos de forja</span><div class="bdots">${budget || '<em class="muted">nenhum no estado base — adicione uma Restrição</em>'}</div><b>${info.pointsUsed}/${info.points}</b></div>
     <div class="fcols">${cols}</div>
   </div>`;
 }

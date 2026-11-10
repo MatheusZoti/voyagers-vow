@@ -248,7 +248,7 @@ export interface EffectiveInfo {
 
 export function evaluateSlot(
   slot: EloSlot,
-  opts: { values: Values; characterAffinity: Affinity; techniqueAffinity: Affinity | null; modDiscount: number },
+  opts: { values: Values; characterAffinity: Affinity; techniqueAffinity: Affinity | null; modDiscount: number; spellMinLevel?: number },
 ): EffectiveInfo {
   const row = ELO_TABLE[slot.level];
   if (!row) throw new Error(`Elo inválido: ${slot.level}`);
@@ -276,7 +276,8 @@ export function evaluateSlot(
     affinityPenalty: penalty,
     effective,
     beyondLimit: effective > 8,
-    points: pointsForLevel(effective),
+    // A magia no seu nível mínimo é o estado base: só ganha pontos de forja acima dele (via Restrições).
+    points: Math.max(0, pointsForLevel(effective) - pointsForLevel(opts.spellMinLevel ?? 1)),
     pointsUsed,
     costPct: row.cost,
     cooldown: row.cooldown,

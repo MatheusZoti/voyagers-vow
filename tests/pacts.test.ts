@@ -21,6 +21,14 @@ describe('Cada nível de Restrição = 1 nível efetivo', () => {
     expect(info.cooldown).toBe(2);
   });
 
+  it('magia de nível mínimo 8 no Elo 8 está no estado base: sem pontos até receber Restrição', () => {
+    const s = newSlot(8, true);
+    const o = { ...opts, spellMinLevel: 8 };
+    expect(evaluateSlot(s, o).points).toBe(0);
+    s.restrictions = ['recentlyHit'];
+    expect(evaluateSlot(s, o).points).toBe(pointsForLevel(9) - pointsForLevel(8));
+  });
+
   it('Restrição +1 leva uma técnica de nível 1 ao nível 2 e libera pontos de forja', () => {
     const s = newSlot(1, true);
     expect(evaluateSlot(s, opts).points).toBe(0);
